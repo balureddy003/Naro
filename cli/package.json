@@ -1,0 +1,23 @@
+{
+  "name": "@naro/cli",
+  "version": "0.1.0",
+  "description": "naro \u2014 run agents, replay audit streams, execute benchmarks.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "naro": "./src/bin.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@naro/core": "0.1.0",
+    "@naro/evaluation": "0.1.0",
+    "@naro/observability": "0.1.0",
+    "@naro/runtime": "0.1.0",
+    "@naro/environment": "0.1.0"
+  }
+}

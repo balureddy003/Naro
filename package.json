@@ -21,6 +21,7 @@
     "multiagent",
     "adapters/*",
     "contract-tests",
+    "cli",
     "profiles/*",
     "examples/*"
   ],

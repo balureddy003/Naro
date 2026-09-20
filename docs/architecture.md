@@ -129,6 +129,7 @@ flowchart TB
 
     subgraph profiles["Domain profiles"]
         coding["@naro/profile-coding\nworkspace env + coding tools"]
+        research["@naro/profile-research\nfetch + citations"]
     end
 
     subgraph adapters["Edge adapters"]
@@ -169,6 +170,9 @@ flowchart TB
     coding --> environment
     coding --> tools
     coding --> core
+    research --> environment
+    research --> tools
+    research --> core
     otel --> core
 ```
 
