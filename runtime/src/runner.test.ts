@@ -346,3 +346,25 @@ test('model.usage events accumulate; totals land on agent.completed', async () =
   const done = res.events.find((e) => e.type === 'agent.completed');
   assert.deepEqual(done?.data.usage, { inputTokens: 18, outputTokens: 9, totalTokens: 27, costUsd: 0 });
 });
+
+test('token budget fails the run fast when usage crosses the cap', async () => {
+  const goal = createGoal({ description: 'budget' });
+  const model = new MockModel({ responses: [
+    { message: { role: 'assistant', content: '', toolCalls: [{ id: 'c1', name: 'x', arguments: {} }] },
+      finishReason: 'tool-calls', usage: { inputTokens: 100, outputTokens: 50 } },
+    { message: { role: 'assistant', content: 'never reached' }, finishReason: 'stop',
+      usage: { inputTokens: 1, outputTokens: 1 } },
+  ]});
+  const runner = new AgentRunner({
+    spec: createAgentSpec({ name: 't', goal }),
+    reasoner: new ReActReasoner(model),
+    executor: echoExecutor,
+    policy: allowAllPolicy,
+    budgets: { maxTotalTokens: 100 },
+  });
+  const res = await runner.run();
+  assert.equal(res.status, 'failed');
+  assert.match(res.error!, /token budget 100 exceeded \(150\)/);
+  // the second model call never happened — budget stopped the loop
+  assert.equal(res.events.filter((e) => e.type === 'model.usage').length, 1);
+});

@@ -55,3 +55,15 @@ test('JsonlExporter writes a replayable audit file', async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('computeMetrics aggregates model.usage totals', async () => {
+  const { computeMetrics } = await import('./metrics.ts');
+  const ev = (seq: number, type: string, data: object) => ({
+    id: `e${seq}`, type, seq, at: seq, agentId: 'a', goalId: 'g', runId: 'r', data,
+  });
+  const m = computeMetrics([
+    ev(1, 'model.usage', { iteration: 0, usage: { inputTokens: 10 }, totals: { inputTokens: 10, outputTokens: 5, totalTokens: 15, costUsd: 0.01 } }),
+    ev(2, 'model.usage', { iteration: 1, usage: { inputTokens: 8 }, totals: { inputTokens: 18, outputTokens: 9, totalTokens: 27, costUsd: 0.02 } }),
+  ] as never);
+  assert.deepEqual(m.usage, { inputTokens: 18, outputTokens: 9, totalTokens: 27, costUsd: 0.02 });
+});

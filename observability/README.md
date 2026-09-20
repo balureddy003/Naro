@@ -48,8 +48,7 @@ denials, approval requests, observations, verification pass/fail counts,
 replans, checkpoints, and event-stream duration.
 
 The runtime emits `model.usage` and includes totals on terminal events. Those
-fields are present in the journal, but `computeMetrics()` does not yet aggregate
-token or cost totals into `AgentMetrics`.
+`computeMetrics()` aggregates them into `AgentMetrics.usage`.
 
 ## OpenTelemetry
 

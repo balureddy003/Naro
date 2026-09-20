@@ -16,6 +16,8 @@ export interface AgentMetrics {
   readonly replans: number;
   readonly checkpoints: number;
   readonly durationMs: number;
+  /** Token/cost totals when the model reports usage — undefined otherwise. */
+  readonly usage?: { inputTokens: number; outputTokens: number; totalTokens: number; costUsd: number };
 }
 
 export function computeMetrics(events: readonly NaroEvent[]): AgentMetrics {
@@ -23,6 +25,7 @@ export function computeMetrics(events: readonly NaroEvent[]): AgentMetrics {
       approvalsRequested = 0, observations = 0, replans = 0, checkpoints = 0,
       vTotal = 0, vPassed = 0;
 
+  let usage: AgentMetrics['usage'];
   for (const e of events) {
     switch (e.type) {
       case 'reasoning.completed': iterations++; break;
@@ -35,6 +38,13 @@ export function computeMetrics(events: readonly NaroEvent[]): AgentMetrics {
         if (e.data.ok) vPassed++;
         break;
       case 'replan.triggered': replans++; break;
+      // totals is cumulative — the LAST model.usage carries the run sum.
+      case 'model.usage': usage = {
+        inputTokens: e.data.totals.inputTokens ?? 0,
+        outputTokens: e.data.totals.outputTokens ?? 0,
+        totalTokens: e.data.totals.totalTokens ?? 0,
+        costUsd: e.data.totals.costUsd ?? 0,
+      }; break;
       case 'checkpoint.created': checkpoints++; break;
       default: break;
     }
@@ -53,5 +63,6 @@ export function computeMetrics(events: readonly NaroEvent[]): AgentMetrics {
     replans,
     checkpoints,
     durationMs: last - first,
+    ...(usage !== undefined && { usage }),
   };
 }

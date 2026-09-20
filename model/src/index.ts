@@ -4,3 +4,4 @@ export * from './messages.ts';
 export * from './model.ts';
 export * from './provider.ts';
 export * from './mock-model.ts';
+export * from './failover.ts';

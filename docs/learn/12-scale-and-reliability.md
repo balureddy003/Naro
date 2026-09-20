@@ -88,7 +88,7 @@ belongs in the reasoner or model adapter today. Durable storage arrived with
 `SqliteCheckpointStore`, `SqliteEventStore`, and `SqliteMemoryStore` (FTS5
 recall), plus `DurableAgentBus` — an at-least-once SQLite task queue where
 pending work survives crashes and stale claims are reclaimed. What remains
-external: circuit breakers, hosted metrics, and provider failover.
+in-process: circuit breakers and failover are `failover()`/`retrying()` model wrappers; hosted metrics and dashboards remain external.
 
 ## Distribution primitives
 
@@ -111,6 +111,12 @@ external: circuit breakers, hosted metrics, and provider failover.
   URL), verifies RS256/ES256 JWTs with native crypto, pins iss/aud/exp,
   and refreshes keys on rotation. Wire it into `HttpAgentBus`'s
   `authenticate` hook.
+- **Budgets** — `deps.budgets: { maxTotalTokens, maxCostUsd }` fails the
+  run fast when accumulated `model.usage` crosses the cap.
+- **Provider resilience** — `failover([m1, m2])` tries lanes in order with
+  per-lane circuit breaking (`tripAfter`/`resetMs`, half-open probe);
+  capabilities are the intersection, so a weaker fallback narrows — never
+  inflates — the surface. `retrying(model)` adds transient-failure retry.
 - **Releases** — changesets manage versioning (`npm run changeset`),
   `npm run release` gates publish on the full check + pack-check.
 

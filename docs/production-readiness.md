@@ -143,6 +143,8 @@ services for:
 - container or VM isolation;
 - organization-specific service identity and tenant authorization;
 - centralized secret management;
-- circuit breakers and provider failover;
 - backup, migration, retention, and disaster recovery;
 - release and checkpoint-schema compatibility policy.
+
+Provider failover and circuit breaking are in-process (`failover`,
+`retrying`); token and cost budgets are enforced by `AgentDeps.budgets`.

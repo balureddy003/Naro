@@ -64,6 +64,8 @@ export interface AgentDeps {
   readonly lease?: { store: LeaseStore; ttlMs?: number };
   /** Runaway protection — max reasoning cycles before FAILED. */
   readonly maxIterations?: number;
+  /** Spend ceilings — the run fails fast when usage crosses them. */
+  readonly budgets?: { maxTotalTokens?: number; maxCostUsd?: number };
   /** Per-action execution deadline (ms). 0 = no timeout. */
   readonly actionTimeoutMs?: number;
   /** Retry policy applied to action execution. Default: none. */
@@ -216,6 +218,13 @@ export class AgentRunner {
           this.usage.totalTokens += u.totalTokens ?? (u.inputTokens ?? 0) + (u.outputTokens ?? 0);
           this.usage.costUsd += u.costUsd ?? 0;
           this.bus.emit('model.usage', { iteration: this.iteration, usage: u, totals: { ...this.usage } });
+          const b = this.deps.budgets;
+          if (b?.maxTotalTokens !== undefined && this.usage.totalTokens > b.maxTotalTokens) {
+            return this.finish('FAILED', 'failed', { error: `token budget ${b.maxTotalTokens} exceeded (${this.usage.totalTokens})` });
+          }
+          if (b?.maxCostUsd !== undefined && this.usage.costUsd > b.maxCostUsd) {
+            return this.finish('FAILED', 'failed', { error: `cost budget $${b.maxCostUsd} exceeded ($${this.usage.costUsd})` });
+          }
         }
 
         const outcome = await this.handle(decision, signal);
