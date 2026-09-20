@@ -1,57 +1,113 @@
 # 10 — Evaluation
 
-## The one-sentence version
+Agent quality is not “the answer looked smart once.” It is the probability of a
+useful, safe outcome at an acceptable cost.
 
-If you can't measure whether the agent did well, you can't improve it —
-evals turn "seems smart" into regression-tested numbers.
+Evaluation turns that into a repeatable engineering loop: collect representative
+tasks, run them under controlled conditions, score outcomes, inspect failures,
+and stop regressions before release.
 
-## Analogy
-
-Unit tests for non-deterministic systems: instead of asserting exact output,
-you score outcomes across many runs and watch distributions, not single
-samples.
-
-## What to measure
+## Measure more than the final answer
 
 ```mermaid
 flowchart LR
-    RUN["agent run"] --> S["success: did verification pass?"]
-    RUN --> C["cost: tokens, $, latency"]
-    RUN --> T["trace: events, tool calls, retries"]
-    RUN --> P["policy: violations, approvals"]
-    S --> B["benchmark suite → pass rate"]
-    C --> B
-    T --> B
-    P --> B
-    B --> R["regression gate in CI"]
+    T["task set"] --> R["agent runs"]
+    R --> O["outcome scores"]
+    R --> B["behavior metrics"]
+    R --> C["cost and latency"]
+    R --> S["safety checks"]
+    O --> G["release gate"]
+    B --> G
+    C --> G
+    S --> G
 ```
 
-- **Task success**: did the verifier say yes — with evidence?
-- **Behavioral**: tool-call count, retries, iterations to converge.
-- **Economic**: tokens in/out, latency, cost per success.
-- **Governance**: policy denials, approval rate, violations.
-- **LLM-as-judge**: a model scoring free-text outcomes — useful, but treat
-  as a noisy metric, never as ground truth.
+A useful scorecard has several layers:
+
+| Layer | Questions |
+|---|---|
+| outcome | Did the task actually succeed? Is there external evidence? |
+| behavior | Which tools ran? How many retries and reasoning cycles occurred? |
+| efficiency | What were the token use, latency, and cost per success? |
+| reliability | How variable are results across repeated runs? |
+| safety | Were permissions, approvals, and tenant boundaries respected? |
+
+A higher pass rate is not an improvement if the agent doubled cost or began
+requesting dangerous tools.
+
+## Build the dataset from real work
+
+Start with cases that represent production distribution, then add failures as
+you discover them. Include:
+
+- common, boring tasks;
+- important edge cases;
+- incomplete or ambiguous requests;
+- tool and dependency failures;
+- prompt injection and permission tests;
+- tasks the agent should refuse or escalate.
+
+Keep a holdout set. If every prompt change is tuned against the same examples,
+you are optimizing a benchmark rather than the product.
+
+## Choose the strongest available judge
+
+Prefer direct, deterministic evidence: tests pass, a record has the expected
+state, a file matches a schema, or a known answer is returned.
+
+Use heuristic checks when exact matching is too strict. Use human review for
+high-impact or subjective decisions. An LLM judge can help score open-ended
+text at scale, but it is another noisy model. Calibrate it against human labels
+and never make it the sole judge of safety-critical behavior.
+
+Run non-deterministic cases more than once. Report pass rates and distributions,
+not a single lucky sample.
 
 ## In Naro
 
-- The event log IS the eval data source: `events` carries iterations, tool
-  calls, denials, verifications, cost-relevant observations.
-- `Verifier` results are structured (`ok`, `evidence`, `reason`) — evaluation
-  hooks read the same evidence the agent did.
-- Phase 9 adds benchmark harnesses (OpenAI Evals-style tasks as Goals,
-  scored by Verifiers) — the primitives already exist.
+Naro gives you useful evaluation primitives, not a complete benchmark harness:
+
+- `Verifier` returns structured `ok`, `reason`, and `evidence` results;
+- `AgentRunner` returns the ordered event history for the run;
+- events expose decisions, state changes, actions, observations, denials, and
+  verification outcomes;
+- `ChatResponse.usage` can carry token and cost information when the provider
+  reports it;
+- `MockModel` makes controlled tests deterministic;
+- `@naro/observability` computes run metrics from events and can export the
+  stream to JSONL or the console.
+
+The repository does not currently include a dedicated eval runner or dashboard.
+An application can build one by expressing each test case as a goal, running the
+agent, scoring the result and events, and storing aggregate metrics.
+
+## A minimal release gate
+
+For each candidate change:
+
+1. Pin the model and configuration.
+2. Run the same task set, with multiple samples where needed.
+3. Compare outcome, cost, latency, and policy metrics with the baseline.
+4. Inspect newly failing traces.
+5. Release only when the trade-off is understood.
+
+Store enough metadata to reproduce a run: model ID, prompt or strategy version,
+tool versions, dataset revision, and provider settings.
 
 ## Failure modes
-- **Evaluating vibes**: "the answer looks right" → verifier evidence or it
-  didn't happen.
-- **Overfitting evals**: tuning prompts to the benchmark → holdout sets.
-- **Single-run judgments**: flaky pass/fail → n runs, report rates.
 
-## Security
-- Include adversarial cases in evals: injection attempts, denied-permission
-  requests, destructive probes — verify the agent refuses correctly.
+**Evaluating vibes.** Replace “looks good” with evidence tied to success
+criteria.
 
-## Scale
-- Evals run the same runner with a `MockModel` or recorded traces for
-  determinism — replay is built in because events are the record.
+**Only testing happy paths.** Add dependency failures and adversarial inputs.
+
+**Treating flaky results as noise.** Variance is a product characteristic. Track
+it.
+
+**Leaking the answer into the prompt.** Keep test metadata and expected results
+out of the agent's context.
+
+**Ignoring operational cost.** Optimize cost per successful outcome, not tokens
+per call.
+
+Next: [Security and policy](11-security-and-policy.md).

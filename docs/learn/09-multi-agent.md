@@ -1,60 +1,101 @@
 # 09 — Multi-Agent Systems
 
-## The one-sentence version
+A multi-agent system is useful when work has real boundaries: different
+specialties, privileges, context, ownership, or execution environments. It is
+not automatically better because several model calls can talk to one another.
 
-Multi-agent isn't a different architecture — it's the same primitives with
-more than one participant: a task delegated *is* a goal owned by another
-agent.
+Start with one agent. Split it only when the split makes the system easier to
+reason about.
 
-## Analogy
-
-An org chart: a lead decomposes work, delegates tickets to specialists,
-reviews outcomes. The org works because roles, handoffs, and review are
-explicit — not because everyone shares one brain.
-
-## Patterns
+## Common coordination patterns
 
 ```mermaid
 flowchart LR
-    subgraph delegation["Delegation"]
-      L["lead agent"] -->|task| W1["worker A"]
-      L -->|task| W2["worker B"]
-      W1 -->|observation| L
-      W2 -->|observation| L
-    end
-    subgraph bus["Orchestration Bus"]
-      E["events / A2A messages"] --> O["orchestrator"] --> AG["agents"]
+    subgraph delegation["Lead and workers"]
+      L["lead"] -->|bounded task| W1["worker A"]
+      L -->|bounded task| W2["worker B"]
+      W1 -->|result + evidence| L
+      W2 -->|result + evidence| L
     end
 ```
 
-- **Delegation**: `Task.owner` is another agent's id — delegation is already
-  expressible; the child agent's completion arrives as an Observation.
-- **Shared context**: parents pass *selected* context, not their whole
-  transcript — attention and injection control in one move.
-- **A2A protocol**: agent-to-agent messaging standard (like MCP for tools).
-  In Naro it's an adapter surface, same as MCP — same primitives, new wire.
+**Lead and workers:** one agent decomposes a goal and reviews worker results.
+This fits tasks that can be divided cleanly.
 
-## In Naro
+**Pipeline:** each agent owns one stage and hands structured output to the next.
+This fits stable workflows, but one bad handoff can contaminate everything
+downstream.
 
-- `Task.owner`, `parentId`, `dependsOn` — the decomposition graph.
-- Child agents emit their own event streams scoped by `agentId`/`goalId` —
-  supervision is just subscribing to another agent's bus.
-- Approval chains compose: a child's `require_approval` can surface to the
-  parent's human bridge.
+**Peer collaboration:** agents exchange proposals or critiques. Use it when
+independent perspectives have measured value, not as a default conversation
+pattern.
+
+**Supervisor:** a separate controller monitors budgets, policy, and progress.
+The supervisor should rely on events and evidence, not merely another model's
+opinion.
+
+## Design the handoff first
+
+A delegated task should state:
+
+- the exact outcome;
+- available tools and permissions;
+- selected context, not the parent's complete transcript;
+- time, token, and iteration budgets;
+- the expected result schema;
+- evidence required for acceptance.
+
+If the handoff cannot be made explicit, the work is probably not ready to
+split.
+
+## What Naro supports today
+
+Naro's core primitives already express part of the design:
+
+- `Task.owner` identifies who owns work;
+- `parentId` and `dependsOn` describe decomposition and ordering;
+- events are scoped by agent and goal IDs;
+- policy and grants can be configured per runner.
+
+These are building blocks, not a complete multi-agent orchestrator. Naro does
+not currently provide child-agent spawning, a distributed message bus, or an
+A2A adapter. An application can compose multiple runners around the existing
+contracts, but it owns their lifecycle and communication.
+
+A2A protocols aim to standardize agent-to-agent discovery and messaging, much
+as MCP standardizes tool-facing integration. In Naro, such a protocol should be
+an adapter around tasks, observations, and events rather than a second agent
+model hidden inside the kernel.
+
+## Why context should not be copied wholesale
+
+Passing a full parent transcript to every child is expensive and risky. It
+spreads irrelevant instructions, sensitive data, and prompt injections across
+the system.
+
+Send the smallest task packet the worker needs. Return a structured result with
+source evidence. This reduces both attention problems and blast radius.
 
 ## Failure modes
-- **Infinite delegation**: A delegates to B delegates to A → depth limits +
-  budgets per sub-goal.
-- **Context telephone**: each hop loses fidelity → pass structured task
-  specs, not summaries of summaries.
-- **Overlapping writes**: two agents, one environment → environment
-  capabilities + policy decide who may write what.
 
-## Security
-- Inter-agent messages are *untrusted input* — a compromised agent can
-  inject another. Same fencing rules as tool output.
-- Least privilege per agent: delegate narrow grants, not your whole policy.
+**Infinite delegation.** Track ancestry and enforce depth and budget limits.
 
-## Scale
-- Agents are independent processes — scale horizontally; the event bus
-  abstraction tolerates moving from in-process pub/sub to a real broker.
+**Context telephone.** Repeated prose summaries lose qualifiers. Pass structured
+task specs and original evidence references.
+
+**Conflicting writes.** Give agents narrow environments or use locks,
+transactions, and policy to coordinate shared resources.
+
+**Duplicated work.** Assign ownership explicitly and make task status visible.
+
+**Trust by job title.** A “reviewer agent” is still untrusted software output.
+Verify its findings and restrict its permissions.
+
+## When not to add another agent
+
+Do not split a workflow just to obtain a second opinion, imitate an org chart,
+or make a demo look autonomous. First try a stronger verifier, a clearer plan,
+or parallel tool calls. Coordination has a real cost in tokens, latency,
+security review, and failure handling.
+
+Next: [Evaluation](10-evaluation.md).

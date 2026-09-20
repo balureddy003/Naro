@@ -1,0 +1,24 @@
+{
+  "name": "@naro/observability",
+  "version": "0.1.0",
+  "description": "Naro observability \u2014 event exporters (JSONL/console) and metrics computed from the event stream.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@naro/core": "0.1.0"
+  },
+  "devDependencies": {
+    "@naro/runtime": "0.1.0"
+  }
+}

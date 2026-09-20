@@ -1,59 +1,96 @@
-# 01 — Training (and why Naro doesn't do it)
+# 01 — Training (and Why Naro Does Not Do It)
 
-## The one-sentence version
+Training changes a model's parameters. Naro uses the trained model through an
+inference interface. Those are different systems, with different costs and
+failure modes.
 
-Training adjusts billions of parameters on massive compute so the model's
-next-token predictions get better; Naro *consumes* the result through an
-inference interface — it will never train anything.
+You do not need to train a model to build a capable agent. Most agent work is
+about giving an existing model the right context, tools, constraints, and
+feedback loop.
 
-## Analogy
-
-Training is building the engine; Naro is the car. You should understand the
-engine to drive well, but you don't manufacture pistons on the way to work.
-
-## The pipeline
+## From raw text to an assistant
 
 ```mermaid
 flowchart LR
-    A["raw text (trillions of tokens)"] --> B["pre-training: next-token prediction"]
+    A["large text corpus"] --> B["pre-training"]
     B --> C["base model"]
-    C --> D["SFT: supervised fine-tuning on instructions"]
-    D --> E["RLHF / DPO: preference alignment"]
+    C --> D["instruction tuning"]
+    D --> E["preference or safety tuning"]
     E --> F["assistant model"]
-    F -.-> G["LoRA/adapters: cheap domain tuning"]
+    F -.-> G["optional domain adaptation"]
 ```
 
-| Stage | What happens | Cost |
+The real pipelines differ by model family, but these stages are useful mental
+landmarks:
+
+| Stage | What changes | What you get |
 |---|---|---|
-| **Pre-training** | predict next token on web-scale text | millions of $, months |
-| **SFT** | imitate curated instruction→answer pairs | thousands of $ |
-| **RLHF / DPO** | prefer helpful/harmless outputs via human prefs | high |
-| **LoRA / adapters** | tune a small sidecar of weights, freeze the rest | tens of $ |
+| pre-training | weights learn statistical structure from a large corpus | a base model that can continue text |
+| supervised fine-tuning | weights learn from curated input/output examples | better instruction following |
+| preference tuning | outputs are optimized toward ranked preferences | behavior people tend to prefer |
+| adapter tuning, such as LoRA | a smaller set of trainable parameters is updated | cheaper specialization than full training |
 
-## What this explains about behavior
+Training cost varies wildly with model size, data, hardware, and technique.
+Avoid rules such as “fine-tuning costs tens of dollars.” Sometimes it does.
+Sometimes data preparation and evaluation cost far more than the compute.
 
-- **Why models are sycophantic**: RLHF rewards answers humans rate highly —
-  which correlates with confidence and agreement. → Verify with evidence.
-- **Why models "know" old facts**: knowledge is frozen at training time. → RAG
-  (page 04) supplies fresh facts at inference.
-- **Why fine-tuning ≠ memory**: training bakes in patterns, not retrievable
-  records. → Memory (page 07) is a different mechanism entirely.
+## What training explains—and what it does not
 
-## In Naro
+**A model may sound confident when it is wrong.** Training rewards useful
+continuations, not a guarantee that each sentence has been checked.
 
-Naro's boundary is the `Model` interface — adapters reach hosted APIs or
-self-hosted inference (vLLM, llama.cpp, Ollama). Training stays in their
-world; the adapter boundary is the contract.
+**A model has a knowledge boundary.** Facts represented in its weights reflect
+its training data and later updates. For current or private information, use
+[retrieval](04-rag.md).
 
-## Failure modes
-- Assuming a fine-tuned model "remembers" your data (it doesn't — retrieve it).
-- Assuming alignment training prevents misuse (it reduces it — policy remains).
+**Fine-tuning is not a database.** It can teach style, format, or recurring
+behavior. It is a poor replacement for records that must be retrieved exactly,
+updated, deleted, or access-controlled. That is a [memory](07-memory.md) or
+retrieval problem.
 
-## Security
-- Training data can leak (memorization). Don't train on secrets.
-- Fine-tuning can *weaken* safety training; evaluate after tuning.
+**Alignment is not authorization.** A model trained to refuse unsafe requests
+may still be manipulated or simply make a mistake. Permission checks belong in
+code, outside the model.
 
-## Scale
-- If you ever do train: LoRA on a small model beats retraining a large one
-  by orders of magnitude. But most agent problems are context problems,
-  not capability problems — fix retrieval before you fine-tune.
+## Choose the cheapest mechanism that solves the problem
+
+Use this order before reaching for fine-tuning:
+
+1. Fix the instruction if the task is underspecified.
+2. Add examples if the desired format or behavior is hard to describe.
+3. Add retrieval if the model lacks current, private, or precise facts.
+4. Add tools if the task needs computation or side effects.
+5. Add evaluation so you can see what is actually failing.
+6. Fine-tune when a stable, repeated behavior still does not improve enough.
+
+This order is not ideology. It is a debugging strategy. Prompt, retrieval, and
+tool changes are easier to inspect and reverse than weight changes.
+
+## Where Naro draws the boundary
+
+Naro's boundary is `Model`. An adapter may call a hosted service or a local
+runtime such as Ollama, vLLM, or llama.cpp. Naro cares about the declared
+capabilities and the request/response contract, not how the model acquired its
+weights.
+
+That separation gives you two useful freedoms:
+
+- change the model without rewriting the agent loop;
+- improve the agent without retraining the model.
+
+## Production instincts
+
+- Never assume training data stays private merely because it is “inside the
+  model.” Memorization and extraction risks are real.
+- Re-run safety and task evaluations after fine-tuning. Specialization can
+  weaken behavior you relied on.
+- Keep model versions explicit. A silent model upgrade is a production change.
+- Compare cost per successful task, not cost per model call.
+
+## Check your understanding
+
+Suppose an agent gives outdated shipping rules. Fine-tuning might help, but a
+versioned policy source retrieved at run time is usually the better design. It
+can be updated immediately, cited, audited, and filtered by tenant.
+
+Next: [Prompting and structured output](02-prompting.md).

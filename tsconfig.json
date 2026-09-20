@@ -23,7 +23,22 @@
       "path": "reasoning"
     },
     {
+      "path": "policy"
+    },
+    {
+      "path": "observability"
+    },
+    {
       "path": "runtime"
+    },
+    {
+      "path": "evaluation"
+    },
+    {
+      "path": "adapters/openai"
+    },
+    {
+      "path": "adapters/mcp"
     },
     {
       "path": "examples/minimal-agent"

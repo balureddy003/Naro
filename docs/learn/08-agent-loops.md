@@ -1,85 +1,107 @@
-# 08 — Agent Loops & State Machines
+# 08 — Agent Loops and State Machines
 
-## The one-sentence version
+An agent is a loop: inspect the current situation, decide, act, observe, and
+repeat until the goal is complete or execution must stop.
 
-An agent is a loop — perceive, decide, act, repeat — and making that loop an
-explicit state machine is the difference between a demo and a system.
+A plain `while` loop can demonstrate the idea. A state machine makes it
+operable. It tells you where the agent is, which transitions are legal, where
+policy runs, and what can be resumed after failure.
 
-## Analogy
+## Why explicit state pays off
 
-A while-loop says "keep going until done". A state machine says *where* you
-are, *how* you got there, and *where you're allowed to go next* — which is
-what lets you pause, resume, audit, and prove the agent can't teleport.
+Without explicit states, basic production questions become guesswork:
 
-## Why explicit states
+- Is the agent thinking, waiting for approval, or executing a side effect?
+- Can this run be paused safely?
+- Did policy authorize the action?
+- What should happen after a crash?
+- Is “complete” a model claim or a verified outcome?
 
-The naive loop `while (!done) { llm(); tool(); }` can't answer: Can I pause?
-Resume after a crash? Prove an action was authorized? Reconstruct what
-happened? Naro's 18 states exist so every answer is yes:
+Naro models those distinctions as 17 states rather than hiding them in log
+messages.
 
 ```mermaid
 stateDiagram-v2
     [*] --> CREATED
     CREATED --> INITIALIZING
     INITIALIZING --> UNDERSTANDING
-    INITIALIZING --> RECOVERING : checkpoint found
     UNDERSTANDING --> PLANNING
-    PLANNING --> WAITING_FOR_CONTEXT
     PLANNING --> REASONING
+    REASONING --> WAITING_FOR_CONTEXT
     WAITING_FOR_CONTEXT --> REASONING
-    REASONING --> WAITING_FOR_PERMISSION : action chosen
-    REASONING --> WAITING_FOR_CONTEXT : needs context
-    REASONING --> WAITING_FOR_HUMAN : question
-    REASONING --> VERIFYING : claiming done
-    REASONING --> REPLANNING
-    REASONING --> COMPLETED
-    WAITING_FOR_PERMISSION --> ACTING : allowed
-    WAITING_FOR_PERMISSION --> WAITING_FOR_HUMAN : approval needed
-    WAITING_FOR_PERMISSION --> REASONING : denied
-    WAITING_FOR_HUMAN --> WAITING_FOR_PERMISSION : approved
-    WAITING_FOR_HUMAN --> REASONING
+    REASONING --> WAITING_FOR_PERMISSION
+    WAITING_FOR_PERMISSION --> ACTING: allowed
+    WAITING_FOR_PERMISSION --> REASONING: denied
+    WAITING_FOR_PERMISSION --> WAITING_FOR_HUMAN: approval required
+    WAITING_FOR_HUMAN --> WAITING_FOR_PERMISSION: approved
     ACTING --> OBSERVING
     OBSERVING --> VERIFYING
     OBSERVING --> REASONING
-    VERIFYING --> REASONING : keep going
-    VERIFYING --> REPLANNING : evidence says no
-    VERIFYING --> COMPLETED
+    VERIFYING --> REPLANNING: evidence failed
     REPLANNING --> REASONING
+    VERIFYING --> COMPLETED: evidence passed
     REASONING --> FAILED
     FAILED --> RECOVERING
     PAUSED --> RECOVERING
     RECOVERING --> REASONING
-    REASONING --> PAUSED
-    REASONING --> CANCELLED
-    COMPLETED --> [*]
-    CANCELLED --> [*]
 ```
 
-Rules worth memorizing:
+The complete transition table lives in `@naro/core`; the diagram focuses on the
+main execution path.
 
-- **`REASONING → ACTING` does not exist.** The only road to action runs
-  through `WAITING_FOR_PERMISSION`. Policy is a topology, not a check.
-- **FAILED is semi-terminal** — it may go to RECOVERING, never silently back.
-- **Checkpoints only at reasoning boundaries** — a restore never resumes
-  inside a half-finished side effect.
+## The structural rules
+
+**There is no `REASONING → ACTING` transition.** Every action passes through
+`WAITING_FOR_PERMISSION`. Policy is part of the topology, not an optional line
+inside a tool.
+
+**`COMPLETED` and `CANCELLED` are terminal.** `FAILED` is recoverable only
+through `RECOVERING`, so a failed run cannot silently continue.
+
+**Reasoning is bounded.** `maxIterations` defaults to 64. A flexible loop still
+needs a hard stop.
+
+**Failures become evidence where possible.** Tool and environment errors are
+recorded as observations so the reasoner can adapt instead of losing the run to
+an exception.
 
 ## In Naro
 
-`AgentRunner` is the *only* code that can transition states
-(`assertTransition` throws on anything else). `ctx.iteration` +
-`maxIterations` bound the loop. `AbortSignal` cancels at boundaries;
-`runner.pause()` parks at PAUSED → checkpoint → a fresh process can resume.
+`AgentRunner` owns transitions and calls `assertTransition` for every move. A
+reasoner can request only one of the known `Decision` variants; it cannot mutate
+the state machine directly.
+
+At a high level, each cycle does this:
+
+```text
+reason → authorize → act → observe → verify → replan or continue
+```
+
+The runner emits typed events throughout the cycle. Those events support audit,
+UI updates, debugging, and evaluation without changing the execution logic.
+
+When a `CheckpointStore` is configured, the runner saves tasks, observations,
+retrieved context, and iteration state after completed cycles. A resumed runner
+loads the latest checkpoint, enters `RECOVERING`, and returns to a reasoning
+boundary. It does not resume halfway through a side effect.
+
+Cancellation uses `AbortSignal`, and executors should propagate that signal to
+the work they start.
 
 ## Failure modes
-- Runaway loops → `maxIterations` (default 64).
-- Mid-action crashes → error observations, not corrupted state.
-- Zombie agents → cancellation propagates via `AbortSignal` to executors.
 
-## Security
-- Denied and refused-approval actions are *observations* — the reasoner sees
-  "no" as evidence and can adapt, instead of the runtime hiding it.
+- **Runaway loop:** cap iterations, tokens, cost, and time.
+- **Zombie action:** enforce deadlines and make executors honor cancellation.
+- **Duplicate side effect after retry or recovery:** use idempotency keys and
+  record external operation IDs.
+- **False completion:** require verifier evidence for important goals.
+- **Unrecoverable checkpoint:** version the checkpoint shape and test restore,
+  not just save.
 
-## Scale
-- Long-running agents are normal: checkpoint file per agent (`JSONL`), resume
-  anywhere. This is what makes hour-long runs and multi-day supervision
-  possible without special machinery.
+## Read a trace like a story
+
+A healthy trace should answer: what did the agent know, what did it decide, who
+authorized it, what changed in the world, and what evidence justified the next
+step? If one of those is missing, add structure before adding more model calls.
+
+Next: [Multi-agent systems](09-multi-agent.md).

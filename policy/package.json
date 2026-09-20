@@ -1,0 +1,17 @@
+{
+  "name": "@naro/policy",
+  "version": "0.1.0",
+  "description": "Naro policy — declarative, composable policy rules: allow, deny, require_approval, limit, audit.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": { ".": "./dist/index.js" },
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@naro/core": "0.1.0"
+  }
+}

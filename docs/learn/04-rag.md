@@ -1,67 +1,108 @@
-# 04 — RAG: Retrieval-Augmented Generation
+# 04 — Retrieval-Augmented Generation
 
-## The one-sentence version
+Retrieval-augmented generation, or RAG, gives the model evidence at request
+time. Instead of hoping a fact is encoded in the model's weights, you fetch the
+best source material and place it in context.
 
-Instead of hoping the model memorized the answer, fetch the relevant facts
-and put them in the prompt — give the amnesiac consultant a good filing
-cabinet.
+The hard part is not “use a vector database.” The hard part is retrieving the
+right evidence, preserving where it came from, and fitting it into a limited
+context window.
 
-## Analogy
-
-Closed-book exam vs open-book exam. RAG is open-book: the model doesn't need
-to *know*, it needs to *look up well*.
-
-## The pipeline
+## The two halves of RAG
 
 ```mermaid
 flowchart LR
-    subgraph indexing["Indexing (offline)"]
-      D["documents"] --> CH["chunk"] --> E["embed → vectors"] --> IX["index (vector DB / BM25 / graph)"]
+    subgraph indexing["Prepare sources"]
+      D["documents"] --> CH["split or structure"]
+      CH --> IX["index"]
     end
-    subgraph query["Query time"]
-      Q["query"] --> R["retrieve candidates"] --> RK["rank / rerank"] --> A["assemble within token budget"] --> L["LLM"]
+    subgraph request["Answer a request"]
+      Q["query"] --> R["retrieve"]
+      R --> RK["rank"]
+      RK --> S["select and budget"]
+      S --> L["model"]
     end
     IX --> R
 ```
 
-1. **Chunk**: split documents into retrievable pieces. Chunk size is the
-   classic trade-off — too big dilutes relevance, too small loses context.
-2. **Embed**: a model maps text → vector; similar meanings land near each
-   other in vector space.
-3. **Retrieve**: vector similarity, keyword/BM25, SQL filters, graph
-   traversal — or hybrid, which usually wins.
-4. **Rerank**: a second model re-scores candidates for precision.
-5. **Assemble**: fit the best pieces into the token budget (page 06).
+During preparation, you make source material searchable. During the request,
+you retrieve candidates and decide which pieces deserve space in the prompt.
+
+A practical pipeline looks like this:
+
+1. **Split or structure the source.** Preserve enough local context for each
+   result to make sense.
+2. **Index it.** That may mean embeddings, BM25, SQL columns, a graph, or no
+   special index at all.
+3. **Retrieve candidates.** Use semantic similarity, exact terms, filters, or a
+   hybrid.
+4. **Rank or rerank them.** Retrieval gets candidates; ranking decides priority.
+5. **Select within budget.** The best ten results are useless if only three fit.
+6. **Generate with citations or provenance.** The answer should remain tied to
+   its evidence.
+
+## Retrieval choices
+
+Vector search is good at semantic similarity. Keyword search is good at exact
+names, identifiers, and rare terms. SQL filters are good at hard constraints
+such as tenant, date, or status. Graph traversal is good when relationships are
+the question.
+
+Hybrid retrieval often performs well because these methods fail differently.
+Do not add all of them by default. Build a small eval set from real questions
+and measure recall before increasing complexity.
+
+## Chunking is a product decision
+
+Large chunks preserve context but may hide the relevant sentence and consume
+more tokens. Small chunks retrieve precisely but can lose headings, qualifiers,
+and neighboring definitions.
+
+Start from the structure people already use: sections, functions, records,
+tickets, or policy clauses. Fixed token windows are a fallback, not a law.
+Always retain source identifiers so the original can be inspected.
 
 ## In Naro
 
-- The seam: `ContextProvider.retrieve(query) → ContextItem[]` in `@naro/core`.
-- The runner handles `decision.kind === 'need-context'` by calling it —
-  reasoning *requests* context, retrieval *serves* it.
-- `ContextItem.source` preserves provenance — every piece of context is
-  attributable, which is what makes audit and injection defense possible.
-- `@naro/context` implements the pipeline (sources → rank → select →
-  compress → budget) behind this interface — `KeywordSource` ships as the
-  reference; vector/SQL/graph sources plug in unchanged.
+A reasoner asks for context with a `need-context` decision. The runtime passes
+the query to `ContextProvider.retrieve()` and returns the resulting
+`ContextItem[]` to later reasoning cycles.
+
+`@naro/context` now provides a working `ContextEngine`:
+
+```text
+sources → merge → rank → select → truncate → budget
+```
+
+Each `ContextItem` carries `id`, `source`, `content`, and an optional `score`.
+`KeywordSource` is the in-memory reference source. SQL, vector, file, or API
+sources can implement the same retrieval contract without changing the runner.
+
+The default budget is expressed in items and characters. A token-aware adapter
+can be more exact, but a hard character cap is still better than an unbounded
+prompt.
 
 ## Failure modes
-- **Retrieval misses**: the right fact exists but isn't fetched → hybrid
-  retrieval, better chunking, query rewriting.
-- **Poisoned context**: retrieved text contains instructions ("ignore
-  previous directions") → treat retrieved content as untrusted data.
-- **Stale index**: doc changed, embedding didn't → index freshness policy.
 
-## Security
-- Retrieved content is the #1 indirect prompt-injection vector. Mark
-  provenance, strip or fence instructions in retrieved text, never let a
-  document grant permissions.
-- Per-tenant retrieval filters must be enforced *before* the LLM sees data.
+**The answer exists but is never retrieved.** Improve query rewriting,
+chunking, filters, or hybrid recall.
 
-## Scale
-- Vector DBs (Qdrant, Milvus, pgvector) scale retrieval; BM25 (OpenSearch)
-  complements semantics with exact terms.
-- Cache embeddings; embed once, query many.
+**The best result is buried.** Add ranking and inspect whether source scores are
+comparable.
 
-## Swap
-`ContextProvider` is one method — in-memory today, Qdrant+reranker tomorrow,
-zero changes to the runner.
+**The index is stale.** Define freshness, deletion, and re-indexing behavior as
+part of the data pipeline.
+
+**Retrieved text contains instructions.** It is still untrusted data. A document
+can provide evidence; it cannot grant the agent permission.
+
+**Tenant filters happen too late.** Enforce access control before retrieval
+results reach the model. Prompt instructions are not row-level security.
+
+## Try this
+
+Build twenty questions whose answers you can point to in the source material.
+Measure whether the required chunk appears in the top results. Debug retrieval
+before judging the final prose—the model cannot cite evidence it never saw.
+
+Next: [Tool calling and MCP](05-tool-calling.md).

@@ -68,6 +68,11 @@ const result = await runner.run();
 | `@naro/memory` | Tiered `MemoryStore` (working→longterm) + in-memory/file stores | core |
 | `@naro/context` | `ContextEngine`: sources → rank → select → compress → budget | core |
 | `@naro/reasoning` | `ReAct`, `PlanExecute`, `Reflection` strategies over `Model` | core, model |
+| `@naro/policy` | `PolicyEngine`: rules-as-data (allow/deny/approval/limit/audit), rate limiting, composition | core, tools |
+| `@naro/observability` | `EventExporter` seam, `JsonlExporter` audit trail, `metrics()` from the event stream | core |
+| `@naro/evaluation` | `Benchmark` harness: cases → runs → event-stream scores | core, runtime, observability |
+| `@naro/adapter-openai` | OpenAI-compatible `Model`/`Provider` (OpenAI, Ollama, vLLM, …) — raw fetch, injectable | core, model |
+| `@naro/adapter-mcp` | MCP `ToolSource`: discovered server tools flow through the standard pipeline | core, tools |
 | `examples/` | `minimal-agent` (scripted loop) · `react-agent` (real model loop) | all |
 
 ## Learn the stack
@@ -94,10 +99,12 @@ Design rules: [docs/principles.md](docs/principles.md).
 
 ## Status
 
-`v0.1` — kernel, runtime, model, tools, environment, memory, context, and
-three reasoning strategies (ReAct / Plan-Execute / Reflection), proven by two
-working reference agents. Next: MCP adapter, real model providers, OPA policy,
-evaluation harness.
+`v0.2` — kernel, runtime, model, tools, environment, memory, context,
+three reasoning strategies (ReAct / Plan-Execute / Reflection), declarative
+policy, event-derived observability, and a benchmark harness — plus two live
+adapters: OpenAI-compatible models and MCP tool servers. Proven by two
+working reference agents. Next: OPA policy adapter, OpenTelemetry exporter,
+verification package, domain profiles (coding/research/browser), multi-agent.
 
 ## License
 

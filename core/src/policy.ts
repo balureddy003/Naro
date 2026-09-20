@@ -3,10 +3,15 @@ import type { Goal } from './goal.ts';
 
 /**
  * What the policy engine can say about an action.
- * 'require_approval' pushes the agent into WAITING_FOR_HUMAN until a
- * HumanBridge answers — policy can pause the world, not just veto it.
+ *
+ *  - `allow` — proceed.
+ *  - `deny` — refused; becomes an observation the reasoner must see.
+ *  - `require_approval` — park in WAITING_FOR_HUMAN until a HumanBridge answers.
+ *  - `limit` — allowed, but counted/throttled by the engine (rate/cost caps);
+ *    the engine itself denies once the cap is exhausted.
+ *  - `audit` — allowed, and flagged for the audit record.
  */
-export type PolicyDecision = 'allow' | 'deny' | 'require_approval';
+export type PolicyDecision = 'allow' | 'deny' | 'require_approval' | 'limit' | 'audit';
 
 export interface PolicyContext {
   readonly agentId: string;

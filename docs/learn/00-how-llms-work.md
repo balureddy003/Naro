@@ -1,67 +1,96 @@
 # 00 — How LLMs Work
 
-## The one-sentence version
+Start with the least magical description: an LLM predicts the next token.
 
-An LLM is a function that predicts the next token given all previous tokens.
-Everything else — reasoning, tool use, agents — is built on top of that.
+That sounds small. Repeated thousands of times, it can produce an explanation,
+a plan, a tool call, or a convincing mistake. Understanding that loop will save
+you from designing around abilities the model does not actually have.
 
-## Analogy
+## What happens when you send a prompt
 
-Think of an LLM as the world's best-read autocomplete. It has read a
-significant fraction of public text and learned statistical structure so deep
-that "what comes next" often looks like understanding. It doesn't *know*
-anything the way a database does — it *predicts*.
-
-## The mechanism (enough to be dangerous, not enough to build one)
-
-1. **Tokens**: text is split into sub-word units (`"unbelievable"` → `un`,
-   `believ`, `able`). Models see integers, not strings. Context windows,
-   costs, and limits are all measured in tokens.
-2. **Transformers**: stacked attention layers let every token "look at" every
-   previous token and weigh relevance. That's how the model tracks "it" in
-   "the cat sat on the mat because **it** was tired".
-3. **Inference**: one forward pass produces a probability distribution over
-   the next token. Sample from it (temperature controls sharpness), append,
-   repeat. Generation is a loop — one token at a time.
-4. **Context window**: the hard limit on how many tokens the model can see.
-   Everything the model "knows" this turn must fit inside it — which is why
-   context engineering (page 06) is a discipline.
+1. **The tokenizer splits text into tokens.** A token may be a word, part of a
+   word, punctuation, or whitespace. The model receives token IDs, not strings.
+2. **The transformer processes those tokens.** Attention helps each generated
+   token use relevant parts of the available context.
+3. **The model scores possible next tokens.** It produces a probability
+   distribution, not a fact.
+4. **The decoder chooses one token.** Temperature and other sampling settings
+   influence that choice.
+5. **The loop repeats.** The chosen token becomes part of the input for the
+   next step.
 
 ```mermaid
 flowchart LR
-    A["text"] --> B["tokenizer"] --> C["token ids"]
-    C --> D["transformer stack (attention)"]
-    D --> E["distribution over next token"]
-    E -->|sample| F["next token"] --> C
+    A["text"] --> B["tokenizer"] --> C["token IDs"]
+    C --> D["transformer"]
+    D --> E["next-token probabilities"]
+    E -->|choose one| F["next token"]
+    F --> C
 ```
 
-## Key vocabulary
+This explains a lot of model behavior. The output can be fluent because the
+model is good at language patterns. It can still be wrong because plausible
+continuation and verified truth are different jobs.
 
-| Term | Meaning | Why you care |
+## The context window is the model's working view
+
+A model can only use the tokens available in its current context window. That
+usually includes instructions, conversation history, retrieved evidence, tool
+results, and the output generated so far.
+
+A larger window gives you room. It does not guarantee attention. Important
+instructions can still be buried, irrelevant text can distract the model, and
+every input token adds cost. We will deal with that directly in
+[context engineering](06-context-engineering.md).
+
+## Terms you will keep seeing
+
+| Term | Plain meaning | Why it matters |
 |---|---|---|
-| temperature | sampling sharpness (0=deterministic-ish) | reliability vs creativity |
-| context window | max tokens in one call | hard budget for prompts |
-| hallucination | fluent but wrong output | why verification exists |
-| system prompt | highest-priority instruction channel | steerability & injection risk |
-| finish reason | why generation stopped | `length` = you got truncated |
+| token | the unit a model reads and writes | limits and billing use tokens |
+| context window | the tokens available for one request | it is a hard capacity limit |
+| temperature | how sharply the decoder favors likely tokens | lower is steadier; higher is more varied |
+| hallucination | a plausible output unsupported by evidence | fluent is not the same as correct |
+| finish reason | why generation stopped | `length` often means incomplete output |
+| system message | high-priority instructions sent with the request | useful for behavior, not a security boundary |
 
-## In Naro
+Temperature `0` is often more repeatable, but do not treat it as a proof of
+determinism. Providers, model versions, routing, and infrastructure can still
+change the result.
 
-`@naro/model` wraps all of this behind `Model.chat(request)`. Your agent
-code never touches tokenizers or sampling directly — but `Usage`
-(input/output tokens, cost) flows through every response so budgets and
-evaluation can measure it.
+## Where Naro draws the boundary
 
-## Failure modes
-- Hallucination: the model asserts falsehoods fluently → verify with evidence.
-- Truncation: `finish_reason=length` mid-JSON → check finish reasons.
-- Non-determinism: same prompt, different output → temperature, evals.
+Naro does not implement tokenization or inference. `@naro/model` exposes a
+provider-neutral `Model` interface and a canonical `ChatRequest`. Provider
+adapters translate that request to a hosted API or local runtime.
 
-## Security
-- The model will happily follow instructions embedded in *data* it reads
-  (prompt injection). Treat model output as untrusted input.
-- Never put secrets in prompts you can't fully control.
+The useful detail is what comes back: `ChatResponse` includes a `finishReason`
+and may include `Usage`. The reasoner can catch truncation, while evaluation
+and budget code can account for input tokens, output tokens, and cost.
 
-## Scale
-- Inference cost scales with tokens in + tokens out. Long contexts are
-  expensive; see page 06 (budgeting) and 12 (scale).
+```ts
+const response = await model.chat(request);
+
+if (response.finishReason === 'length') {
+  // The answer may be incomplete. Do not parse or execute it blindly.
+}
+```
+
+## Production instincts
+
+- Verify claims with evidence. The model is generating, not consulting a truth
+  table.
+- Treat model output as untrusted input before parsing it or turning it into an
+  action.
+- Check the finish reason before accepting structured output.
+- Keep secrets out of prompts unless the complete data path is trusted.
+- Measure token use. Long prompts affect cost, latency, and often quality.
+
+## Check your understanding
+
+If the same prompt produces two different answers, that is not automatically a
+bug. Ask which part varied: sampling, model version, retrieved context, tool
+results, or provider routing. Agent engineering starts when those variables
+become explicit.
+
+Next: [Training—and why Naro does not do it](01-training.md).

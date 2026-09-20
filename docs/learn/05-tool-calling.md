@@ -1,67 +1,115 @@
-# 05 — Tool Calling (and MCP)
+# 05 — Tool Calling and MCP
 
-## The one-sentence version
+A language model can describe an action. It cannot perform that action by
+itself. Tool calling is the protocol that turns a model's structured request
+into code your application may choose to run.
 
-Tool calling lets a model emit a *structured request* to run code instead of
-prose — the model describes the call, your system executes it and feeds the
-result back.
+That distinction matters: the model proposes; your runtime validates,
+authorizes, executes, and records.
 
-## Analogy
-
-The model is a manager who can't leave their desk: they write a work order
-(tool call), someone else executes it, and the report comes back to their
-desk (observation). A good manager is judged on the orders they write.
-
-## The mechanics
+## One tool call, end to end
 
 ```mermaid
 sequenceDiagram
-    participant Agent
     participant Model
-    participant ToolExec as Tool Executor
-    participant World
-    Agent->>Model: messages + tool specs (name, description, JSON Schema)
-    Model-->>Agent: tool_call {name:'calculator', args:{a:40,b:2}}
-    Agent->>ToolExec: validate args against schema → authorize → run
-    ToolExec->>World: side effect / query
-    World-->>ToolExec: result
-    ToolExec-->>Agent: observation {success, output}
-    Agent->>Model: tool result appended to messages
-    Model-->>Agent: final answer (or next tool_call)
+    participant Agent
+    participant Policy
+    participant Tool
+    Model-->>Agent: call calculator({a: 40, b: 2})
+    Agent->>Agent: validate name and input
+    Agent->>Policy: may this agent do this?
+    Policy-->>Agent: allow / deny / require approval
+    Agent->>Tool: execute validated input
+    Tool-->>Agent: structured result
+    Agent->>Agent: validate output and record observation
+    Agent->>Model: tool result
 ```
 
-- **Schemas are the contract**: the model writes JSON that must validate
-  against `inputSchema`; tools promise `outputSchema`. Naro validates both
-  directions — a tool that lies about its output breaches the contract.
-- **MCP** (Model Context Protocol) is the emerging standard wire format for
-  discovering and invoking tools on external servers. In Naro it's a
-  `ToolSource` adapter — one way to fill the registry, not the only way.
+The model does not call a function directly. It emits a tool name and
+arguments. Your application remains responsible for every step with real-world
+consequences.
+
+## Schemas are part of the safety model
+
+A tool schema tells the model what to request and gives the executor something
+to validate. Good schemas use narrow types, required fields, bounded values,
+and descriptions that distinguish similar tools.
+
+Validation must run in both directions:
+
+- validate input before execution so malformed calls have no partial effect;
+- validate output before it enters the next prompt or another component.
+
+A schema does not authorize anything. `{ "service": "payments" }` can be valid
+JSON and still be forbidden for this agent.
 
 ## In Naro
 
-- `Tool` = metadata + `inputSchema`/`outputSchema` + `permissions` +
-  `sideEffects` + `execute()`. Everything declarative except the work.
-- `ToolExecutor` runs `resolve → validate → execute → observe`; the runner
-  adds `authorize` before it via `PolicyEngine`.
-- `createToolPolicy(registry)` turns tool metadata into decisions:
-  missing permissions → `deny`, `sideEffects:'destructive'` → `require_approval`.
+A Naro `Tool` combines declarative metadata with one `execute()` function:
+
+```ts
+const deploy: Tool = {
+  name: 'deploy',
+  description: 'Deploy one service to a named environment',
+  inputSchema: deployInputSchema,
+  outputSchema: deployOutputSchema,
+  permissions: ['deploy.write'],
+  sideEffects: 'write',
+  execute: async (input, ctx) => deployService(input, ctx.signal),
+};
+```
+
+The execution path is split across clear boundaries:
+
+```text
+resolve → policy gate → validate input → execute → validate output → observe
+```
+
+`ToolRegistry` resolves names and can merge multiple `ToolSource`s.
+`ToolExecutor` handles validation and execution. `AgentRunner` invokes the
+`PolicyEngine` before the executor. `createToolPolicy(registry)` derives a
+baseline policy from each tool's permissions and side-effect declaration.
+
+Destructive tools require human approval under that baseline policy. If no
+human bridge is configured, approval is denied rather than silently granted.
+
+## Where MCP fits
+
+MCP, the Model Context Protocol, standardizes how clients discover and invoke
+capabilities exposed by external servers. In Naro, an MCP integration belongs
+behind `ToolSource`: it discovers remote tools and presents them through the
+same registry contract as local tools.
+
+Naro currently provides the `ToolSource` seam, not an MCP adapter. That is an
+important status distinction. The runtime design is ready for the adapter; the
+wire implementation still has to be supplied.
 
 ## Failure modes
-- **Bad arguments**: model invents params → schema validation rejects before
-  execution (no partial side effects).
-- **Tool spam**: loops calling the same tool → iteration bounds + reasoner
-  sees failures as observations.
-- **Wrong tool**: poor descriptions → mis-selection. Tool descriptions are
-  part of your prompt engineering.
 
-## Security
-- *Every* call passes the policy gate; `REASONING → ACTING` isn't a legal
-  transition — there is no path around it.
-- `sideEffects` is declared so governance can reason about blast radius
-  *before* execution.
-- Tool outputs are untrusted content (injection vector — see pages 04, 11).
+**The model invents an argument.** Reject it at validation. Do not repair a
+write request by guessing.
 
-## Scale
-- Registries can merge many `ToolSource`s (local + MCP + remote catalog);
-  `refresh()` re-discovers.
-- Long-running tools: executors receive `ctx.signal` — honor it.
+**The wrong tool is selected.** Improve names, descriptions, and examples.
+Tools that sound interchangeable will be treated as interchangeable.
+
+**The agent repeats a failed call.** Return the failure as an observation and
+bound the reasoning loop.
+
+**A retry duplicates a side effect.** Use idempotency keys for writes and do
+not blindly retry destructive work.
+
+**Tool output contains a prompt injection.** Treat output as untrusted content,
+just like a retrieved document.
+
+## Design checklist
+
+Before registering a tool, answer:
+
+- What is the narrowest input contract?
+- Which permission does it require?
+- Is it read-only, a write, or destructive?
+- Can it be retried safely?
+- Does it honor `AbortSignal`?
+- What output can safely return to the model?
+
+Next: [Context engineering](06-context-engineering.md).

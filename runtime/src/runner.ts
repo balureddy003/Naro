@@ -236,6 +236,8 @@ export class AgentRunner {
       return 'continue'; // WAITING_FOR_PERMISSION → REASONING
     }
 
+    // 'limit' and 'audit' are allow-variants: limit is enforced by the
+    // engine's counters (deny once exhausted); audit just marks the record.
     if (verdict === 'require_approval') {
       this.bus.emit('human.approval.requested', { action });
       this.transition('WAITING_FOR_HUMAN');

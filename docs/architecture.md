@@ -35,12 +35,17 @@ C4Container
     Container(core, "@naro/core", "types", "Goal · Task · Action · Observation · Events · 18-state machine · Reasoner/Policy/Verifier/Context/Executor seams")
     Container(runtime, "@naro/runtime", "engine", "AgentRunner · EventBus · retry/timeout · checkpoint+recovery")
     Container(model, "@naro/model", "interface", "Model · ModelProvider · MockModel")
-    Container(tools, "@naro/tools", "interface", "Tool · Registry · schema validation · executor pipeline · tool policy")
+    Container(tools, "@naro/tools", "interface", "Tool · Registry · schema validation · executor pipeline")
     Container(env, "@naro/environment", "interface", "Environment · InMemoryEnvironment")
-    Container_Boundary(adapters, "Adapters (later phases)") {
-      Container(mcp, "MCP", "", "ToolSource impl")
-      Container(oa, "OpenAI/Anthropic/Ollama", "", "Model impls")
-      Container(mem, "SQLite/Redis/Qdrant", "", "Context/Memory stores")
+    Container(memory, "@naro/memory", "store", "Tiered MemoryStore · in-memory + JSONL")
+    Container(context, "@naro/context", "pipeline", "retrieve → rank → select → budget")
+    Container(reasoning, "@naro/reasoning", "strategies", "ReAct · PlanExecute · Reflection over Model")
+    Container(policy, "@naro/policy", "governance", "PolicyEngine · rules-as-data · rate limiting")
+    Container(obs, "@naro/observability", "telemetry", "Event exporters · metrics() · JSONL audit")
+    Container(evaluation, "@naro/evaluation", "scoring", "Benchmark harness · event-stream scorers")
+    Container_Boundary(adapters, "Adapters") {
+      Container(mcp, "@naro/adapter-mcp", "", "MCP ToolSource")
+      Container(oa, "@naro/adapter-openai", "", "OpenAI-compatible Model/Provider")
     }
     Rel(runtime, core, "drives")
     Rel(model, core, "contracts")
