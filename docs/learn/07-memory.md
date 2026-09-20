@@ -28,9 +28,9 @@ either.
 - Today's memory IS the event log + observation list + context items —
   session memory is already real: `ctx.observations` is the agent's
   evidence trail, and checkpoints persist it.
-- Phase 6 adds a `MemoryStore` port (`write`/`read`/`search`) with
-  in-memory/SQLite/Redis/vector adapters — same adapter-first rule:
-  Naro defines the contract, mature stores do the storing.
+- `@naro/memory` implements the tiered `MemoryStore` port
+  (`write`/`read`/`search`/`searchTier`/`forget`) with in-memory and file
+  stores; DB/vector adapters follow the same contract.
 - `memory.written` events already exist so the future subsystem is
   observable from day one.
 

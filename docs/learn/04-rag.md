@@ -40,8 +40,9 @@ flowchart LR
   reasoning *requests* context, retrieval *serves* it.
 - `ContextItem.source` preserves provenance — every piece of context is
   attributable, which is what makes audit and injection defense possible.
-- Phase 6 grows this into the full engine: discover → retrieve → rank →
-  select → assemble → compress → budget. The interface won't change.
+- `@naro/context` implements the pipeline (sources → rank → select →
+  compress → budget) behind this interface — `KeywordSource` ships as the
+  reference; vector/SQL/graph sources plug in unchanged.
 
 ## Failure modes
 - **Retrieval misses**: the right fact exists but isn't fetched → hybrid

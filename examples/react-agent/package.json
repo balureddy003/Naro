@@ -1,0 +1,21 @@
+{
+  "name": "@naro/example-react-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ReAct agent: a real Model in the loop — think → tool call → observe → answer.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.ts"
+  },
+  "dependencies": {
+    "@naro/core": "0.1.0",
+    "@naro/runtime": "0.1.0",
+    "@naro/model": "0.1.0",
+    "@naro/tools": "0.1.0",
+    "@naro/environment": "0.1.0",
+    "@naro/context": "0.1.0",
+    "@naro/memory": "0.1.0",
+    "@naro/reasoning": "0.1.0"
+  }
+}

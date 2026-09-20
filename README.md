@@ -65,7 +65,10 @@ const result = await runner.run();
 | `@naro/model` | Capability-gated `Model`/`ModelProvider`, message vocabulary, `MockModel` | core |
 | `@naro/tools` | Tool contract, registry, JSON-schema validation, executor pipeline, baseline policy | core |
 | `@naro/environment` | `Environment` contract + `InMemoryEnvironment` | core |
-| `examples/` | Reference agents built on the public APIs only | all |
+| `@naro/memory` | Tiered `MemoryStore` (working→longterm) + in-memory/file stores | core |
+| `@naro/context` | `ContextEngine`: sources → rank → select → compress → budget | core |
+| `@naro/reasoning` | `ReAct`, `PlanExecute`, `Reflection` strategies over `Model` | core, model |
+| `examples/` | `minimal-agent` (scripted loop) · `react-agent` (real model loop) | all |
 
 ## Learn the stack
 
@@ -91,9 +94,10 @@ Design rules: [docs/principles.md](docs/principles.md).
 
 ## Status
 
-`v0.1` — kernel + runtime + model/tools/environment layers, one working
-reference agent. Reasoning strategies, context/memory engines, MCP adapter,
-policy (OPA), and evaluation land in later phases — their seams already exist.
+`v0.1` — kernel, runtime, model, tools, environment, memory, context, and
+three reasoning strategies (ReAct / Plan-Execute / Reflection), proven by two
+working reference agents. Next: MCP adapter, real model providers, OPA policy,
+evaluation harness.
 
 ## License
 

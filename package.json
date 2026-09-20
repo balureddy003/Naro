@@ -2,7 +2,7 @@
   "name": "naro",
   "version": "0.1.0",
   "private": true,
-  "description": "Naro — a universal, open-source foundation for building autonomous agents.",
+  "description": "Naro \u2014 a universal, open-source foundation for building autonomous agents.",
   "license": "Apache-2.0",
   "type": "module",
   "workspaces": [
@@ -11,6 +11,9 @@
     "model",
     "tools",
     "environment",
+    "memory",
+    "context",
+    "reasoning",
     "examples/*"
   ],
   "scripts": {

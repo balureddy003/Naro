@@ -1,11 +1,35 @@
 {
   "files": [],
   "references": [
-    { "path": "core" },
-    { "path": "model" },
-    { "path": "tools" },
-    { "path": "environment" },
-    { "path": "runtime" },
-    { "path": "examples/minimal-agent" }
+    {
+      "path": "core"
+    },
+    {
+      "path": "model"
+    },
+    {
+      "path": "tools"
+    },
+    {
+      "path": "environment"
+    },
+    {
+      "path": "memory"
+    },
+    {
+      "path": "context"
+    },
+    {
+      "path": "reasoning"
+    },
+    {
+      "path": "runtime"
+    },
+    {
+      "path": "examples/minimal-agent"
+    },
+    {
+      "path": "examples/react-agent"
+    }
   ]
 }

@@ -34,8 +34,9 @@ Key ideas:
 ## In Naro
 
 - `ContextItem { id, source, content, score? }` — provenance built in.
-- `ContextProvider.retrieve(query)` is the seam; the full engine
-  (rank/select/assemble/compress/budget) is Phase 6 behind this interface.
+- `ContextProvider.retrieve(query)` is the seam; `@naro/context`'s
+  `ContextEngine` implements the pipeline (rank/select/compress/budget)
+  behind it — swap sources and rankers without touching the runner.
 - The runner mediates: reasoner says `need-context`, runtime calls the
   provider, emits `context.retrieved`. Context is *requested*, never
   hard-coded into prompts.
