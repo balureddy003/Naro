@@ -74,7 +74,9 @@ const result = await runner.run();
 | `@naro/multiagent` | Agent directory, in-memory request bus, and policy-gated delegation tool | core, tools |
 | `@naro/adapter-openai` | OpenAI-compatible `Model`/`Provider` (OpenAI, Ollama, vLLM, …) — raw fetch, injectable | core, model |
 | `@naro/adapter-mcp` | MCP `ToolSource`: discovered server tools flow through the standard pipeline | core, tools |
-| `examples/` | `minimal-agent` (scripted loop) · `react-agent` (real model loop) | all |
+| `@naro/adapter-otel` | OTLP/HTTP `EventExporter` — events land in any OTel collector | core, observability |
+| `@naro/profile-coding` | Reference domain profile: `WorkspaceEnvironment` (jailed fs + shell) + `codingTools()` | core, environment, tools |
+| `examples/` | `minimal-agent` (scripted loop) · `react-agent` (real model loop) · `coding-agent` (domain profile) | all |
 
 ## Learn the stack
 

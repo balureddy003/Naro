@@ -47,10 +47,19 @@
       "path": "adapters/mcp"
     },
     {
+      "path": "adapters/otel"
+    },
+    {
+      "path": "profiles/coding"
+    },
+    {
       "path": "examples/minimal-agent"
     },
     {
       "path": "examples/react-agent"
+    },
+    {
+      "path": "examples/coding-agent"
     }
   ]
 }

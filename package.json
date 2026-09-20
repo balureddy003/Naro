@@ -20,6 +20,7 @@
     "verification",
     "multiagent",
     "adapters/*",
+    "profiles/*",
     "examples/*"
   ],
   "scripts": {
@@ -28,7 +29,8 @@
     "check": "npm run build && npm test",
     "clean": "tsc -b --clean",
     "example": "node examples/minimal-agent/src/index.ts",
-    "example:react": "node examples/react-agent/src/index.ts"
+    "example:react": "node examples/react-agent/src/index.ts",
+    "example:coding": "node examples/coding-agent/src/index.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
