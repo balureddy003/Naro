@@ -5,6 +5,8 @@ import {
   type ActionExecutor, type NaroEvent, type PolicyEngine, type Verifier,
 } from '@naro/core';
 import { AgentRunner } from './runner.ts';
+import { ReActReasoner } from '@naro/reasoning';
+import { MockModel } from '@naro/model';
 import { DirectReasoner } from './reasoner-direct.ts';
 import { InMemoryCheckpointStore } from './checkpoint.ts';
 
@@ -320,4 +322,27 @@ test('act-batch: gated serially, executed concurrently, each observed', async ()
   assert.ok(maxConcurrent > 1, `expected overlap, got max ${maxConcurrent}`);
   const obs = r.events.filter((e) => e.type === 'observation.created');
   assert.equal(obs.length, 3);
+});
+
+test('model.usage events accumulate; totals land on agent.completed', async () => {
+  const events: string[] = [];
+  const goal = createGoal({ description: 't' });
+  const model = new MockModel({ responses: [
+    { message: { role: 'assistant', content: '', toolCalls: [{ id: 'c1', name: 'x', arguments: {} }] },
+      finishReason: 'tool-calls', usage: { inputTokens: 10, outputTokens: 5 } },
+    { message: { role: 'assistant', content: 'done' },
+      finishReason: 'stop', usage: { inputTokens: 8, outputTokens: 4 } },
+  ]});
+  const runner = new AgentRunner({
+    spec: createAgentSpec({ name: 't', goal }),
+    reasoner: new ReActReasoner(model),
+    executor: echoExecutor,
+    policy: allowAllPolicy,
+  });
+  runner.on('model.usage', (e) => events.push(e.type));
+  const res = await runner.run();
+  assert.equal(res.status, 'completed');
+  assert.equal(events.length, 2);
+  const done = res.events.find((e) => e.type === 'agent.completed');
+  assert.deepEqual(done?.data.usage, { inputTokens: 18, outputTokens: 9, totalTokens: 27, costUsd: 0 });
 });

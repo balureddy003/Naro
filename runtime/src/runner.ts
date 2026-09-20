@@ -97,6 +97,7 @@ export class AgentRunner {
   private readonly actions: Action[] = [];
   private readonly contextItems: ContextItem[] = [];
   private iteration = 0;
+  private readonly usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0 };
   private pauseRequested = false;
   private readonly deps: AgentDeps;
 
@@ -181,6 +182,14 @@ export class AgentRunner {
         this.bus.emit('reasoning.started', { iteration: this.iteration });
         const decision = await this.deps.reasoner.decide(this.reasoningContext());
         this.bus.emit('reasoning.completed', { iteration: this.iteration, decision: decision.kind });
+        if (decision.usage) {
+          const u = decision.usage;
+          this.usage.inputTokens += u.inputTokens ?? 0;
+          this.usage.outputTokens += u.outputTokens ?? 0;
+          this.usage.totalTokens += u.totalTokens ?? (u.inputTokens ?? 0) + (u.outputTokens ?? 0);
+          this.usage.costUsd += u.costUsd ?? 0;
+          this.bus.emit('model.usage', { iteration: this.iteration, usage: u, totals: { ...this.usage } });
+        }
 
         const outcome = await this.handle(decision, signal);
         if (outcome !== 'continue') return outcome;
@@ -517,9 +526,10 @@ export class AgentRunner {
   ): RunResult {
     if (!isStopped(this.state)) this.transition(to);
     else if (this.state !== to) this.state = to; // already stopped (e.g. PAUSED→cancel)
-    if (status === 'completed') this.bus.emit('agent.completed', { result: extra.result });
-    if (status === 'failed') this.bus.emit('agent.failed', { error: extra.error ?? 'unknown' });
-    if (status === 'cancelled') this.bus.emit('agent.cancelled', { reason: extra.reason ?? '' });
+    const usage = this.usage.totalTokens > 0 || this.usage.costUsd > 0 ? { usage: { ...this.usage } } : {};
+    if (status === 'completed') this.bus.emit('agent.completed', { result: extra.result, ...usage });
+    if (status === 'failed') this.bus.emit('agent.failed', { error: extra.error ?? 'unknown', ...usage });
+    if (status === 'cancelled') this.bus.emit('agent.cancelled', { reason: extra.reason ?? '', ...usage });
     const out: RunResult = { status, state: this.state, events: this.bus.history() };
     if (extra.result !== undefined) (out as { result?: unknown }).result = extra.result;
     if (extra.error !== undefined) (out as { error?: string }).error = extra.error;

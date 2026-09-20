@@ -33,7 +33,7 @@ export class GeminiModel implements Model {
     this.id = id;
     this.opts = opts;
     this.fetchImpl = opts.fetchImpl ?? fetch;
-    this.capabilities = new Set(opts.capabilities ?? ['chat', 'tool-calling', 'vision']);
+    this.capabilities = new Set(opts.capabilities ?? ['chat', 'tool-calling', 'vision', 'structured-output']);
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
@@ -94,6 +94,12 @@ export class GeminiModel implements Model {
         ...(request.temperature !== undefined && { temperature: request.temperature }),
         maxOutputTokens: request.maxTokens ?? this.opts.defaultMaxTokens ?? 4096,
         ...(request.stop?.length && { stopSequences: request.stop }),
+        // Native structured output — no tool-forcing needed on Gemini.
+        ...(request.responseFormat === 'json' && { responseMimeType: 'application/json' }),
+        ...(typeof request.responseFormat === 'object' && {
+          responseMimeType: 'application/json',
+          responseSchema: request.responseFormat.schema,
+        }),
       },
     };
   }

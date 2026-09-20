@@ -74,3 +74,26 @@ test('provider errors surface as NaroError', async () => {
   const model = new AnthropicModel('m', { fetchImpl });
   await assert.rejects(model.chat({ messages: [] }), /429/);
 });
+
+test('structured output maps to a forced emit_result tool and unwraps back to JSON', async () => {
+  let sent: Record<string, unknown> = {};
+  const fetchImpl = async (_url: string, init?: RequestInit) => {
+    sent = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({
+      content: [{ type: 'tool_use', id: 't1', name: 'emit_result', input: { answer: 42 } }],
+      stop_reason: 'tool_use',
+    }), { status: 200 });
+  };
+  const model = new AnthropicModel('claude-x', { fetchImpl: fetchImpl as typeof fetch });
+  const res = await model.chat({
+    messages: [{ role: 'user', content: 'give json' }],
+    responseFormat: { type: 'schema', schema: { type: 'object', properties: { answer: { type: 'number' } } } },
+  });
+  // request: emit_result tool + tool_choice forcing it
+  const tools = sent['tools'] as { name: string }[];
+  assert.equal(tools[0]?.name, 'emit_result');
+  assert.deepEqual(sent['tool_choice'], { type: 'tool', name: 'emit_result' });
+  // response: unwrapped to JSON content — caller sees text, not a tool call
+  assert.equal(res.message.content, '{"answer":42}');
+  assert.equal(res.message.toolCalls, undefined);
+});

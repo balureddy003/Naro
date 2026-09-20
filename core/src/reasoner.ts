@@ -14,15 +14,23 @@ import type { MemoryReader } from './memory.ts';
  * strategy — ReAct, tree search, a rules engine, a human — plugs in
  * without the runtime learning anything new.
  */
+/** Token/cost accounting surfaced by the model call behind a decision. */
+export interface ModelUsage {
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly totalTokens?: number;
+  readonly costUsd?: number;
+}
+
 export type Decision =
-  | { kind: 'plan';           tasks: readonly TaskInput[] }
-  | { kind: 'act';            action: ActionInput }
+  | { kind: 'plan';           tasks: readonly TaskInput[]; usage?: ModelUsage }
+  | { kind: 'act';            action: ActionInput;          usage?: ModelUsage }
   /** Several independent calls in one cycle — parallel tool calls. */
-  | { kind: 'act-batch';      actions: readonly ActionInput[] }
-  | { kind: 'need-context';   query: string }
-  | { kind: 'wait-for-human'; question: string }
-  | { kind: 'complete';       result: unknown }
-  | { kind: 'fail';           reason: string };
+  | { kind: 'act-batch';      actions: readonly ActionInput[]; usage?: ModelUsage }
+  | { kind: 'need-context';   query: string;                usage?: ModelUsage }
+  | { kind: 'wait-for-human'; question: string;             usage?: ModelUsage }
+  | { kind: 'complete';       result: unknown;              usage?: ModelUsage }
+  | { kind: 'fail';           reason: string;               usage?: ModelUsage };
 
 /** Everything a reasoner is allowed to see when deciding. */
 export interface ReasoningContext {

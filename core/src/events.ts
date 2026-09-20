@@ -3,6 +3,7 @@ import type { Task } from './task.ts';
 import type { Action } from './action.ts';
 import type { Observation } from './observation.ts';
 import type { AgentState } from './state.ts';
+import type { ModelUsage } from './reasoner.ts';
 
 /**
  * Everything meaningful inside an agent execution is an event.
@@ -22,6 +23,8 @@ export interface EventDataMap {
   'context.retrieved':          { query: string; itemCount: number };
   'reasoning.started':          { iteration: number };
   'reasoning.completed':        { iteration: number; decision: DecisionKind };
+  /** Token/cost accounting for one model call, plus running totals. */
+  'model.usage':                { iteration: number; usage: ModelUsage; totals: ModelUsage };
   'action.requested':           { action: Action };
   'permission.requested':       { action: Action };
   'action.permitted':           { action: Action };
@@ -39,9 +42,9 @@ export interface EventDataMap {
   'agent.state_changed':        { from: AgentState; to: AgentState };
   'agent.paused':               { reason?: string };
   'agent.resumed':              { checkpointId?: string };
-  'agent.completed':            { result: unknown };
-  'agent.failed':               { error: string };
-  'agent.cancelled':            { reason?: string };
+  'agent.completed':            { result: unknown; usage?: ModelUsage };
+  'agent.failed':               { error: string; usage?: ModelUsage };
+  'agent.cancelled':            { reason?: string; usage?: ModelUsage };
 }
 
 export type EventType = keyof EventDataMap;

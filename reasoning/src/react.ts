@@ -53,21 +53,22 @@ export class ReActReasoner implements StatefulReasoner {
     };
     const res = await (this.onChunk ? this.streamed(req) : chat(this.model, req));
 
+    const usage = res.usage !== undefined ? { usage: res.usage } : {};
     const calls = res.message.toolCalls ?? [];
     if (calls.length === 1) {
-      return { kind: 'act', action: toolCallToAction(calls[0]!) };
+      return { kind: 'act', action: toolCallToAction(calls[0]!), ...usage };
     }
     if (calls.length > 1) {
       // Parallel tool calls — the runtime gates each, then runs them
       // concurrently. No per-cycle queue to checkpoint.
-      return { kind: 'act-batch', actions: calls.map((c) => toolCallToAction(c)) };
+      return { kind: 'act-batch', actions: calls.map((c) => toolCallToAction(c)), ...usage };
     }
 
     if (res.finishReason === 'length') {
-      return { kind: 'fail', reason: 'model response truncated (finish_reason=length)' };
+      return { kind: 'fail', reason: 'model response truncated (finish_reason=length)', ...usage };
     }
     const text = typeof res.message.content === 'string' ? res.message.content : JSON.stringify(res.message.content);
-    return { kind: 'complete', result: text };
+    return { kind: 'complete', result: text, ...usage };
   }
 
   /** Fold a streamed response into a normal ChatResponse, forwarding chunks. */

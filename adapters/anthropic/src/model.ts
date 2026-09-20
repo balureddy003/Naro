@@ -6,6 +6,8 @@ import {
   fromAnthropicStop, parseAnthropicContent, splitSystem, toAnthropicMessages, toAnthropicTools,
 } from './mapping.ts';
 
+const EMIT_RESULT_TOOL = 'emit_result';
+
 export interface AnthropicOptions {
   /** Default 'https://api.anthropic.com'. */
   readonly baseUrl?: string;
@@ -29,7 +31,7 @@ export class AnthropicModel implements Model {
     this.id = id;
     this.opts = opts;
     this.fetchImpl = opts.fetchImpl ?? fetch;
-    this.capabilities = new Set(opts.capabilities ?? ['chat', 'tool-calling', 'streaming', 'vision']);
+    this.capabilities = new Set(opts.capabilities ?? ['chat', 'tool-calling', 'streaming', 'vision', 'structured-output']);
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
@@ -47,7 +49,12 @@ export class AnthropicModel implements Model {
       model?: string;
     };
     const parsed = parseAnthropicContent(body.content as never);
-    const message: ChatMessage = { role: 'assistant', content: parsed.content, ...(parsed.toolCalls && { toolCalls: parsed.toolCalls }) };
+    // Structured output: the forced emit_result call IS the answer — unwrap
+    // it back to JSON content so callers see text, not a synthetic tool call.
+    const structured = parsed.toolCalls?.find((c) => c.name === EMIT_RESULT_TOOL);
+    const message: ChatMessage = structured
+      ? { role: 'assistant', content: JSON.stringify(structured.arguments ?? {}) }
+      : { role: 'assistant', content: parsed.content, ...(parsed.toolCalls && { toolCalls: parsed.toolCalls }) };
     return {
       message,
       finishReason: fromAnthropicStop(body.stop_reason),
@@ -101,10 +108,27 @@ export class AnthropicModel implements Model {
       max_tokens: request.maxTokens ?? this.opts.defaultMaxTokens ?? 4096,
       messages: toAnthropicMessages(rest),
       ...(system !== undefined && { system }),
-      ...(request.tools?.length && { tools: toAnthropicTools(request) }),
+      ...this.toolsAndFormat(request),
       ...(request.temperature !== undefined && { temperature: request.temperature }),
       ...(request.stop !== undefined && { stop_sequences: [...request.stop] }),
       ...(stream && { stream: true }),
+    };
+  }
+
+  /**
+   * Anthropic has no response_format param — structured output is a forced
+   * tool call: offer `emit_result` and require the model to call it. The
+   * response unwraps it back to JSON content, so the seam stays neutral.
+   */
+  private toolsAndFormat(request: ChatRequest): Record<string, unknown> {
+    const fmt = request.responseFormat;
+    if (fmt === undefined || fmt === 'text') {
+      return request.tools?.length ? { tools: toAnthropicTools(request) } : {};
+    }
+    const schema = typeof fmt === 'object' ? fmt.schema : { type: 'object' };
+    return {
+      tools: [{ name: EMIT_RESULT_TOOL, description: 'Emit the final answer as structured JSON.', input_schema: schema }],
+      tool_choice: { type: 'tool', name: EMIT_RESULT_TOOL },
     };
   }
 

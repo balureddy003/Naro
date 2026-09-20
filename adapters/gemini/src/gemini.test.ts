@@ -56,3 +56,21 @@ test('provider errors become NaroError', async () => {
   const m = new GeminiModel('m', { fetchImpl: f });
   await assert.rejects(m.chat({ messages: [{ role: 'user', content: 'x' }] }), /429/);
 });
+
+test('structured output maps to responseMimeType + responseSchema', async () => {
+  let sent: Record<string, unknown> = {};
+  const fetchImpl = async (_url: string, init?: RequestInit) => {
+    sent = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: '{"ok":true}' }] }, finishReason: 'STOP' }],
+    }), { status: 200 });
+  };
+  const model = new GeminiModel('gemini-x', { fetchImpl: fetchImpl as typeof fetch });
+  await model.chat({
+    messages: [{ role: 'user', content: 'give json' }],
+    responseFormat: { type: 'schema', schema: { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' } } } },
+  });
+  const gen = sent['generationConfig'] as Record<string, unknown>;
+  assert.equal(gen['responseMimeType'], 'application/json');
+  assert.deepEqual(gen['responseSchema'], { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' } } });
+});
