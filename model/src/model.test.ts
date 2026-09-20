@@ -49,3 +49,8 @@ test('streaming on a non-streaming model is refused', async () => {
     for await (const _ of stream(model, { messages: [] })) { /* unreachable */ }
   }, CapabilityNotSupportedError);
 });
+
+import { modelProviderContract } from '@naro/contract-tests';
+modelProviderContract('MockModel', () => new MockModel({ responses: [
+  { message: { role: 'assistant', content: 'hi' }, finishReason: 'stop', model: 'm' },
+]}));

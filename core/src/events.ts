@@ -45,7 +45,7 @@ export interface EventDataMap {
 }
 
 export type EventType = keyof EventDataMap;
-export type DecisionKind = 'plan' | 'act' | 'need-context' | 'wait-for-human' | 'complete' | 'fail';
+export type DecisionKind = 'plan' | 'act' | 'act-batch' | 'need-context' | 'wait-for-human' | 'complete' | 'fail';
 
 /**
  * A NaroEvent is an immutable fact: it happened, at this time, in this

@@ -62,7 +62,9 @@ Naro's core primitives express task ownership and dependency, while
 `@naro/adapter-a2a` implements agent cards and the synchronous JSON-RPC
 `tasks/send` subset. The caller still owns agent lifecycle, selected context,
 budgets, authentication, and result verification. Current network transports
-are not durable queues, and timed-out work may continue remotely.
+add `DurableAgentBus` — SQLite-backed, at-least-once, crash-safe queueing.
+Multi-host delivery still wants a Postgres/Redis implementation behind the
+same contract.
 
 ## Why context should not be copied wholesale
 

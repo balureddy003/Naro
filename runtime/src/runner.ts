@@ -216,6 +216,24 @@ export class AgentRunner {
       case 'act':
         return this.act(decision.action, signal);
 
+      case 'act-batch': {
+        // Policy stays serial — approvals are human and can't parallel —
+        // then permitted actions execute concurrently under one ACTING
+        // phase, observed and verified as one batch.
+        const gated: Action[] = [];
+        for (const input of decision.actions) {
+          const a = await this.gate(input);
+          if (a) gated.push(a);
+        }
+        if (!gated.length) return 'continue';
+        this.transition('ACTING');
+        const observations = await Promise.all(gated.map((a) => this.execAction(a, signal)));
+        this.transition('OBSERVING');
+        for (const o of observations) this.record(o);
+        await this.verifyAll(gated.map((a, i) => ({ action: a, observation: observations[i]! })));
+        return 'continue';
+      }
+
       case 'wait-for-human': {
         this.transition('WAITING_FOR_HUMAN');
         this.bus.emit('human.approval.requested', { question: decision.question });
@@ -254,6 +272,22 @@ export class AgentRunner {
   // --- the act → observe → verify pipeline ---
 
   private async act(input: ActionInput, signal?: AbortSignal): Promise<RunResult | 'continue'> {
+    const action = await this.gate(input);
+    if (!action) return 'continue';
+    this.transition('ACTING');
+    const observation = await this.execAction(action, signal);
+    this.transition('OBSERVING');
+    this.record(observation);
+    await this.verifyAll([{ action, observation }]);
+    return 'continue';
+  }
+
+  /**
+   * The policy gate: requested → (deny | approve → deny | permit).
+   * Returns the authorized Action, or undefined when denied — a denial
+   * is still recorded as an observation either way.
+   */
+  private async gate(input: ActionInput): Promise<Action | undefined> {
     const action = createAction(this.deps.spec.id, {
       ...input,
       // Replay-safe identity: a crash between side effect and checkpoint
@@ -263,8 +297,9 @@ export class AgentRunner {
     this.actions.push(action);
     this.bus.emit('action.requested', { action });
 
-    // 1. Policy — every action, every time. The model can never self-authorize.
-    this.transition('WAITING_FOR_PERMISSION');
+    // Policy — every action, every time. The model can never self-authorize.
+    // (Re-entrant: a batch gates several actions without leaving the gate.)
+    if (this.state !== 'WAITING_FOR_PERMISSION') this.transition('WAITING_FOR_PERMISSION');
     this.bus.emit('permission.requested', { action });
     const verdict = await this.deps.policy.evaluate(action, {
       agentId: this.deps.spec.id,
@@ -279,7 +314,7 @@ export class AgentRunner {
         actionId: action.id, source: 'policy', kind: 'error',
         success: false, error: 'action denied by policy',
       }));
-      return 'continue'; // WAITING_FOR_PERMISSION → REASONING
+      return undefined; // WAITING_FOR_PERMISSION → REASONING
     }
 
     // 'limit' and 'audit' are allow-variants: limit is enforced by the
@@ -296,7 +331,7 @@ export class AgentRunner {
           actionId: action.id, source: 'human', kind: 'human',
           success: false, error: res.note ?? 'approval refused',
         }));
-        return 'continue'; // WAITING_FOR_HUMAN → REASONING
+        return undefined; // WAITING_FOR_HUMAN → REASONING
       }
       // Approved: fall through — still counts as permitted.
       this.transition('WAITING_FOR_PERMISSION');
@@ -305,9 +340,16 @@ export class AgentRunner {
     action.state = 'authorized';
     this.bus.emit('action.permitted', { action });
     if (action.taskId) this.setTaskStatus(action.taskId, 'running');
+    return action;
+  }
 
+  /**
+   * Execute an authorized action — NO state transitions here so batches
+   * can run concurrently under a single ACTING phase. Returns the
+   * observation (success or error); recording/verifying is the caller's.
+   */
+  private async execAction(action: Action, signal?: AbortSignal): Promise<Observation> {
     // 2. Execute — tool/env errors become observations, not crashes.
-    this.transition('ACTING');
     action.state = 'running';
     this.bus.emit('action.started', { action });
     let observation: Observation;
@@ -348,12 +390,21 @@ export class AgentRunner {
       this.setTaskStatus(action.taskId, observation.success ? 'completed' : 'failed',
         observation.success ? { result: observation.output } : { error: observation.error });
     }
-    this.transition('OBSERVING');
-    this.record(observation);
+    return observation;
+  }
 
-    // 3. Verify — optional; evidence over assertion.
-    if (this.deps.verifier) {
-      this.transition('VERIFYING');
+  /**
+   * 3. Verify — one VERIFYING phase for the whole batch. Any failure
+   * triggers REPLANNING and leaves the reasoner an observation naming
+   * the verifier and the reason.
+   */
+  private async verifyAll(
+    results: readonly { action: Action; observation: Observation }[],
+  ): Promise<void> {
+    if (!this.deps.verifier) return;
+    this.transition('VERIFYING');
+    let anyFailed = false;
+    for (const { action, observation } of results) {
       this.bus.emit('verification.started', { subject: action.id });
       const v = await this.deps.verifier.verify({ goal: this.deps.spec.goal, observation });
       this.bus.emit('verification.completed', {
@@ -361,10 +412,7 @@ export class AgentRunner {
         ...(v.reason !== undefined && { reason: v.reason }),
       });
       if (!v.ok) {
-        this.transition('REPLANNING');
-        this.bus.emit('replan.triggered', { reason: v.reason ?? 'verification failed' });
-        // The reasoner sees observations, not events — make the failure
-        // (and which verifier produced it) part of its evidence trail.
+        anyFailed = true;
         this.record(createObservation({
           actionId: action.id, source: `verifier:${this.deps.verifier.id}`,
           kind: 'verification', success: false,
@@ -372,7 +420,10 @@ export class AgentRunner {
         }));
       }
     }
-    return 'continue'; // → REASONING at loop top
+    if (anyFailed) {
+      this.transition('REPLANNING');
+      this.bus.emit('replan.triggered', { reason: 'verification failed' });
+    }
   }
 
   // --- internals ---

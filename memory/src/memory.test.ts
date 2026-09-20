@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { InMemoryMemoryStore } from './in-memory.ts';
+import { memoryStoreContract } from '@naro/contract-tests';
 import { FileMemoryStore } from './file-store.ts';
 
 test('write → read → search round-trip', async () => {
@@ -51,4 +52,11 @@ test('forget is durable — a fresh store does not resurrect deleted entries', a
   // New instance = cold load from disk — the entry must stay gone.
   const s2 = new FileMemoryStore(dir);
   assert.equal(await s2.read('k1'), undefined);
+});
+
+// The contract suite — same bar every store must clear.
+memoryStoreContract('InMemoryMemoryStore', () => new InMemoryMemoryStore());
+memoryStoreContract('FileMemoryStore', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'naro-mem-'));
+  return new FileMemoryStore(dir);
 });

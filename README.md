@@ -144,8 +144,14 @@ redirect hop; `sql.query` is read-only at the database layer; robotics estop
 has an out-of-band channel; `naro bench --baseline` gates CI on regressions
 and removed cases.
 
-Remaining production work: durable distributed queues, transactional stores,
-stronger OS-level sandboxing, hosted operations, and release automation.
+Production substrate: `SqliteCheckpointStore`, `SqliteEventStore`,
+`SqliteMemoryStore` (FTS5 recall), and `DurableAgentBus` (at-least-once task
+queue) give real durability on zero-infrastructure SQLite; `naro init`
+scaffolds projects; `act-batch` decisions run gated tools in parallel;
+`ReActReasoner` streams tokens via `onChunk`; Gemini is a third provider.
+
+Remaining: Postgres/Redis stores for multi-host scale, tool sandboxing
+(worker-process isolation), OIDC on the HTTP bus, and release automation.
 
 ## License
 

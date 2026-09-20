@@ -17,6 +17,8 @@ import type { MemoryReader } from './memory.ts';
 export type Decision =
   | { kind: 'plan';           tasks: readonly TaskInput[] }
   | { kind: 'act';            action: ActionInput }
+  /** Several independent calls in one cycle — parallel tool calls. */
+  | { kind: 'act-batch';      actions: readonly ActionInput[] }
   | { kind: 'need-context';   query: string }
   | { kind: 'wait-for-human'; question: string }
   | { kind: 'complete';       result: unknown }

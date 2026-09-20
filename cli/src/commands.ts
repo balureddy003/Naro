@@ -1,7 +1,8 @@
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { AGENT_STATES, TRANSITIONS, type NaroEvent } from '@naro/core';
 import { computeMetrics } from '@naro/observability';
 import { BenchmarkRunner, diffReports, formatReport, JsonlReportStore, type EvalCase } from '@naro/evaluation';
@@ -18,8 +19,50 @@ const HELP = `naro — universal agent foundation CLI
                            [--save <store.jsonl>] [--label <name>]
                            [--baseline <store.jsonl>] — gate: exit 1 on regressions
   naro replay <file.jsonl> reprint + summarize a recorded event stream
+  naro init <dir>          scaffold a new agent project [--reasoner react|direct]
   naro states              print the agent lifecycle transition table
 `;
+
+const SCAFFOLD_MAIN = `import { createAgentSpec, createGoal, allowAllPolicy } from '@naro/core';
+import { AgentRunner, CompositeExecutor } from '@naro/runtime';
+import { MockModel } from '@naro/model';
+import { ReActReasoner } from '@naro/reasoning';
+import { InMemoryEnvironment } from '@naro/environment';
+import { createToolPolicy, ToolExecutor, ToolRegistry } from '@naro/tools';
+import { allOf } from '@naro/policy';
+
+// A working agent in ~30 lines: goal → reasoner → policy → executor.
+// Swap MockModel for OpenAiCompatibleProvider/AnthropicModel/GeminiModel
+// to go live — nothing else changes.
+const env = new InMemoryEnvironment('local');
+const registry = new ToolRegistry();
+const executor = new CompositeExecutor({
+  'tool://': new ToolExecutor(registry),
+  'env://': env,
+});
+
+const runner = new AgentRunner({
+  spec: createAgentSpec({ name: 'my-agent', goal: createGoal({ description: process.argv[2] ?? 'say hello' }) }),
+  reasoner: new ReActReasoner(new MockModel()),
+  executor,
+  // REQUIRED — policy is the gate. allowAllPolicy is fine for dev;
+  // compose real engines for anything that touches the world.
+  policy: allOf(createToolPolicy(registry)),
+});
+runner.on('*', (e) => console.log(\`[\${e.seq}] \${e.type}\`));
+const r = await runner.run();
+console.log(\`→ \${r.status}:\`, r.result ?? r.error ?? '');
+`;
+
+const SCAFFOLD_PKG = (name: string) => JSON.stringify({
+  name, version: '0.1.0', private: true, type: 'module',
+  scripts: { start: 'node src/index.ts' },
+  dependencies: {
+    '@naro/core': '*', '@naro/runtime': '*', '@naro/model': '*',
+    '@naro/reasoning': '*', '@naro/environment': '*', '@naro/tools': '*',
+    '@naro/policy': '*',
+  },
+}, null, 2) + '\n';
 
 /** Parse a JSONL audit stream back into events. */
 export async function loadEvents(file: string): Promise<NaroEvent[]> {
@@ -48,6 +91,23 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
       const m = computeMetrics(events);
       io.out(`\n— metrics —`);
       io.out(`  events=${m.totalEvents} iterations=${m.iterations} actions=${m.actionsRequested} denied=${m.actionsDenied} replans=${m.replans} duration=${m.durationMs}ms`);
+      return 0;
+    }
+
+    case 'init': {
+      const dir = rest[0];
+      if (!dir) { io.err('usage: naro init <dir>'); return 2; }
+      const abs = resolve(dir);
+      if (existsSync(abs) && (await readFile(abs).catch(() => undefined)) === undefined && existsSync(resolve(abs, 'package.json'))) {
+        io.err(`${dir} already contains a package.json`); return 2;
+      }
+      await mkdir(resolve(abs, 'src'), { recursive: true });
+      const name = basename(abs).replace(/[^a-z0-9-_]/gi, '-').toLowerCase() || 'naro-agent';
+      await writeFile(resolve(abs, 'package.json'), SCAFFOLD_PKG(name));
+      await writeFile(resolve(abs, 'src/index.ts'), SCAFFOLD_MAIN);
+      io.out(`created ${dir}/ — a working agent scaffold`);
+      io.out(`  cd ${dir} && npm install && npm start`);
+      io.out('  then swap MockModel for a real provider adapter to go live.');
       return 0;
     }
 

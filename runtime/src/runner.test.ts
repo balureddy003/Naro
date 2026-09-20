@@ -289,3 +289,35 @@ test('resume restores reasoner state and continues the event journal', async () 
   const seqs = evs.map((e) => e.seq);
   assert.deepEqual(seqs, [...seqs].sort((a, b) => a - b));
 });
+
+test('act-batch: gated serially, executed concurrently, each observed', async () => {
+  let concurrent = 0; let maxConcurrent = 0;
+  const slowExec: ActionExecutor = {
+    execute: (action) => new Promise((resolve) => {
+      concurrent++; maxConcurrent = Math.max(maxConcurrent, concurrent);
+      setTimeout(() => {
+        concurrent--;
+        resolve(createObservation({
+          actionId: action.id, source: action.target, kind: 'env-change',
+          success: true, output: action.target,
+        }));
+      }, 30);
+    }),
+  };
+  const runner = new AgentRunner({
+    ...makeDeps(),
+    executor: slowExec,
+    reasoner: new DirectReasoner((ctx) => ctx.observations.length >= 2
+      ? { kind: 'complete', result: 'both' }
+      : { kind: 'act-batch', actions: [
+          { capability: 'x', target: 'env://e/1' },
+          { capability: 'x', target: 'env://e/2' },
+          { capability: 'x', target: 'env://e/3' },
+        ] }),
+  });
+  const r = await runner.run();
+  assert.equal(r.status, 'completed');
+  assert.ok(maxConcurrent > 1, `expected overlap, got max ${maxConcurrent}`);
+  const obs = r.events.filter((e) => e.type === 'observation.created');
+  assert.equal(obs.length, 3);
+});

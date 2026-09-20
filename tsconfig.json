@@ -90,6 +90,9 @@
     },
     {
       "path": "examples/coding-agent"
+    },
+    {
+      "path": "./adapters/gemini"
     }
   ],
   "extends": "./tsconfig.base.json",

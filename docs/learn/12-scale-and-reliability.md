@@ -82,9 +82,12 @@ completed just before the process failed to record its observation.
 - optional token and cost fields in model `Usage`.
 
 `AgentRunner.retry` applies to action execution. Model-call retry behavior
-belongs in the reasoner or model adapter today. Naro does not include a durable
-distributed queue, circuit breaker, hosted metrics backend, or provider
-failover policy.
+belongs in the reasoner or model adapter today. Durable storage arrived with
+`SqliteCheckpointStore`, `SqliteEventStore`, and `SqliteMemoryStore` (FTS5
+recall), plus `DurableAgentBus` — an at-least-once SQLite task queue where
+pending work survives crashes and stale claims are reclaimed. What remains
+external: multi-host queues (Postgres/Redis behind the same ports), circuit
+breakers, hosted metrics, and provider failover.
 
 ## Scaling dimensions
 

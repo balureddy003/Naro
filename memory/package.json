@@ -1,17 +1,24 @@
 {
   "name": "@naro/memory",
   "version": "0.1.0",
-  "description": "Naro memory — tiered, provider-independent memory: working, session, episodic, semantic, procedural, long-term.",
+  "description": "Naro memory \u2014 tiered, provider-independent memory: working, session, episodic, semantic, procedural, long-term.",
   "license": "Apache-2.0",
   "type": "module",
-  "exports": { ".": "./dist/index.js" },
+  "exports": {
+    ".": "./dist/index.js"
+  },
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b",
     "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@naro/core": "0.1.0"
+  },
+  "devDependencies": {
+    "@naro/contract-tests": "0.1.0"
   }
 }

@@ -47,7 +47,7 @@ test('tool calls produce provider-faithful assistant + tool message pairs', asyn
   assert.equal(tool!.toolCallId, 'call_1'); // result references the call id, not the action id
 });
 
-test('pending tool calls survive capture/restore (checkpoint round-trip)', async () => {
+test('multiple tool calls become one act-batch decision (parallel calls)', async () => {
   const model = new MockModel({
     responses: [
       { message: { role: 'assistant', content: '', toolCalls: [
@@ -55,15 +55,13 @@ test('pending tool calls survive capture/restore (checkpoint round-trip)', async
       ] }, finishReason: 'tool-calls', model: 'm' },
     ],
   });
-  const r1 = new ReActReasoner(model, { tools: [{ name: 'a', description: '', parameters: {} }, { name: 'b', description: '', parameters: {} }] });
-  await r1.decide(ctx()); // queues c2 in pending
-  const state = r1.captureState();
-
-  const r2 = new ReActReasoner(model, { tools: [] });
-  r2.restoreState(state);
-  const d = await r2.decide(ctx());
-  assert.equal(d.kind, 'act');
-  if (d.kind === 'act') assert.equal(d.action.toolCallId, 'c2');
+  const r = new ReActReasoner(model, { tools: [{ name: 'a', description: '', parameters: {} }, { name: 'b', description: '', parameters: {} }] });
+  const d = await r.decide(ctx());
+  assert.equal(d.kind, 'act-batch');
+  if (d.kind !== 'act-batch') return;
+  assert.equal(d.actions.length, 2);
+  assert.equal(d.actions[0]!.toolCallId, 'c1');
+  assert.equal(d.actions[1]!.toolCallId, 'c2');
 });
 
 test('maxObservations windows the evidence without losing recent facts', async () => {
@@ -81,4 +79,16 @@ test('maxObservations windows the evidence without losing recent facts', async (
   assert.match(tail, /omitted/);
   assert.match(tail, /o4/);
   assert.doesNotMatch(tail, /o1[^0-9]/);
+});
+
+test('onChunk streams tokens live before the decision is made', async () => {
+  const model = new MockModel({ responses: [
+    { message: { role: 'assistant', content: 'the final answer' }, finishReason: 'stop', model: 'm' },
+  ]});
+  const chunks: string[] = [];
+  const r = new ReActReasoner(model, { onChunk: (c) => chunks.push(c.delta) });
+  const d = await r.decide(ctx());
+  assert.equal(d.kind, 'complete');
+  assert.ok(chunks.length > 1, 'streamed in pieces'); // MockModel splits words
+  assert.equal(chunks.join(''), 'the final answer');
 });

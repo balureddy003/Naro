@@ -56,7 +56,7 @@ test('react: plain text answer completes with the result', async () => {
   assert.deepEqual(d, { kind: 'complete', result: 'The answer is 42' });
 });
 
-test('react: multiple tool calls queue and drain one per cycle', async () => {
+test('react: multiple tool calls become one act-batch decision', async () => {
   const multi: ChatResponse = {
     message: { role: 'assistant', content: '', toolCalls: [
       { id: 'c1', name: 'a', arguments: {} },
@@ -66,13 +66,11 @@ test('react: multiple tool calls queue and drain one per cycle', async () => {
   };
   const model = new MockModel({ responses: [multi] });
   const r = new ReActReasoner(model);
-  const d1 = await r.decide(mkCtx());
-  const d2 = await r.decide(mkCtx()); // no model call — drains queue
-  assert.equal(d1.kind, 'act');
-  assert.equal(d2.kind, 'act');
-  if (d1.kind === 'act' && d2.kind === 'act') {
-    assert.equal(d1.action.target, 'tool://a');
-    assert.equal(d2.action.target, 'tool://b');
+  const d = await r.decide(mkCtx());
+  assert.equal(d.kind, 'act-batch');
+  if (d.kind === 'act-batch') {
+    assert.deepEqual(d.actions.map((a) => a.target), ['tool://a', 'tool://b']);
+    assert.equal(d.actions[0]!.toolCallId, 'c1');
   }
 });
 
