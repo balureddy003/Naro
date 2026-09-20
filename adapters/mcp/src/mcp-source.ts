@@ -5,9 +5,8 @@ import type { SideEffect } from '@naro/tools';
 
 export interface McpSourceOptions {
   /**
-   * MCP doesn't declare side effects — choose the conservative default.
-   * 'write' means every MCP tool is policy-visible as mutating;
-   * 'destructive' would gate them all behind humans.
+   * MCP doesn't declare side effects, so unknown tools default to
+   * 'destructive' and require approval under Naro's baseline tool policy.
    */
   readonly defaultSideEffects?: SideEffect;
   /** Per-tool overrides: { 'delete_*': 'destructive' } */
@@ -42,7 +41,7 @@ export class McpToolSource implements ToolSource {
 
   private toTool(t: McpTool): Tool {
     const sideEffects = this.opts.sideEffects?.[t.name]
-      ?? this.opts.defaultSideEffects ?? 'write';
+      ?? this.opts.defaultSideEffects ?? 'destructive';
     const client = this.client;
     return {
       name: t.name,

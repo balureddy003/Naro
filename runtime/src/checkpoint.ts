@@ -69,10 +69,15 @@ export class FileCheckpointStore implements CheckpointStore {
       const lines = text.trim().split('\n').filter(Boolean);
       if (lines.length === 0) return undefined;
       return JSON.parse(lines.at(-1)!) as Checkpoint;
-    } catch {
-      return undefined;
+    } catch (error) {
+      if (isMissingFileError(error)) return undefined;
+      throw error;
     }
   }
+}
+
+function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
 export function createCheckpoint(

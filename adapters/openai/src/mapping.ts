@@ -53,7 +53,8 @@ export function fromOaiFinish(reason: string | null | undefined): FinishReason {
     case 'tool_calls': return 'tool-calls';
     case 'length': return 'length';
     case 'content_filter': return 'content-filter';
-    case 'stop': default: return 'stop';
+    case 'stop': return 'stop';
+    default: return 'error';
   }
 }
 
@@ -62,7 +63,11 @@ export function fromOaiToolCalls(
 ): ToolCall[] | undefined {
   return calls?.map((c) => {
     let args: unknown = {};
-    try { args = JSON.parse(c.function.arguments); } catch { /* malformed args stay {} */ }
+    try {
+      args = JSON.parse(c.function.arguments);
+    } catch (error) {
+      throw new Error(`Invalid JSON arguments for tool call ${c.function.name}`, { cause: error });
+    }
     return { id: c.id, name: c.function.name, arguments: args };
   });
 }

@@ -17,14 +17,18 @@
     "policy",
     "observability",
     "evaluation",
+    "verification",
+    "multiagent",
     "adapters/*",
     "examples/*"
   ],
   "scripts": {
     "build": "tsc -b",
-    "test": "node --test \"*/src/**/*.test.ts\" \"examples/*/src/**/*.test.ts\"",
+    "test": "node --test \"*/src/**/*.test.ts\" \"adapters/*/src/**/*.test.ts\" \"examples/*/src/**/*.test.ts\"",
+    "check": "npm run build && npm test",
     "clean": "tsc -b --clean",
-    "example": "node examples/minimal-agent/src/index.ts"
+    "example": "node examples/minimal-agent/src/index.ts",
+    "example:react": "node examples/react-agent/src/index.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

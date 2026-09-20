@@ -1,13 +1,14 @@
 # @naro/adapter-openai
 
-One adapter, every OpenAI-compatible endpoint: OpenAI, Ollama, vLLM, llama.cpp, OpenRouter, Azure, LiteLLM gateways. Raw `fetch` — no SDK dependency.
+One adapter for OpenAI-compatible endpoints such as OpenAI, Ollama, vLLM, llama.cpp, OpenRouter, and LiteLLM gateways. Raw `fetch`—no SDK dependency.
 
 ## Usage
 
 ```ts
 const provider = new OpenAiCompatibleProvider({
   baseUrl: process.env.LLM_BASE_URL ?? 'http://localhost:11434/v1',
-  apiKey:  process.env.LLM_API_KEY,   // env — never in code
+  apiKey: process.env.LLM_API_KEY,
+  capabilities: ['chat', 'tool-calling'],
 });
 const model = await provider.getModel('qwen3');
 const react = new ReActReasoner(model);
@@ -25,7 +26,7 @@ const react = new ReActReasoner(model);
 
 ## Invariants
 
-- **No silent degradation**: capability flags are honest; a model that can't do tools still declares `tool-calling` only if the endpoint supports it — callers check `capabilities` (or supply per-model overrides).
+- **No guessed capabilities**: the adapter defaults to `chat` only. Declare additional capabilities after verifying that the endpoint and selected model support them.
 - **Errors surface**: non-2xx → `NaroError` with status + body. Never empty responses.
 - **`fetch` is injectable** — tests run offline against canned wire bytes.
 

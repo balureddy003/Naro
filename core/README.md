@@ -10,13 +10,13 @@ The universal kernel. **Zero dependencies, zero domain knowledge.**
 | `Task` / `createTask` / `isTaskReady` | executable work; decomposition via `parentId`, ordering via `dependsOn` |
 | `Action` / `createAction` | an attempt to change the world — `target` URIs, `state` lifecycle |
 | `Observation` / `createObservation` | evidence produced by acting — never merged into "messages" |
-| `AgentState`, `TRANSITIONS`, `assertTransition` | the 18-state lifecycle + its legal moves |
+| `AgentState`, `TRANSITIONS`, `assertTransition` | the 17-state lifecycle + its legal moves |
 | `NaroEvent`, `EventDataMap` | typed event union — the audit vocabulary |
 | `Reasoner`, `Decision`, `ReasoningContext` | the reasoning seam — closed decision union |
-| `PolicyEngine`, `PolicyDecision` | `allow \| deny \| require_approval` |
+| `PolicyEngine`, `PolicyDecision` | `allow \| deny \| require_approval \| limit \| audit` |
 | `ActionExecutor`, `ExecContext` | anything that turns an Action into an Observation |
 | `Verifier`, `Verification` | evidence-based success checks |
-| `ContextProvider`, `ContextItem` | Phase-6 context seam with provenance |
+| `ContextProvider`, `ContextItem` | retrieval seam with provenance |
 | `AgentSpec` | agent identity + goal (wiring lives in runtime) |
 
 ## Invariants

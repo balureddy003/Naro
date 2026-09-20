@@ -2,8 +2,8 @@ import type { Tool } from './tool.ts';
 
 /**
  * A source of tools — a local registry, an MCP server, a remote catalog.
- * The Phase-4 MCP adapter implements this interface; discovery stays
- * async because remote sources do I/O.
+ * The MCP adapter implements this interface; discovery stays async
+ * because remote sources do I/O.
  */
 export interface ToolSource {
   readonly id: string;

@@ -1,31 +1,41 @@
 # @naro/evaluation
 
-Benchmarks and scoring — the answer to "did it get better, or did it just get different?"
+A small benchmark harness for answering one question: did the agent get better,
+or did it merely change?
 
-## What it provides
+## Public API
 
-- **`Benchmark`** — `{ name, cases }`; each case is `{ goal, run, expect }`
-- **`runBenchmark()`** — executes cases, collects each run's `Event[]` stream, scores it
-- **`scorer`** — pluggable `(case, events, result) → CaseScore`; the default extracts pass/fail, duration, tool-call count, token usage from the event stream via `metrics()`
-
-## Why events, not internals
-
-A benchmark judges a run the same way an auditor does — from the emitted evidence. That keeps evaluation honest: no peeking at runner internals, and the same scorer works on replayed historical streams.
-
-## Invariants
-
-- `expect` is an explicit predicate — a benchmark that can't say what "good" means isn't a benchmark.
-- Scores are per-case, not averaged into mush: the report preserves per-case events for drill-down.
-
-## Example
+- `EvalCase` combines a goal, agent dependencies, and an optional outcome check.
+- `BenchmarkRunner.run(cases)` executes each case through a real `AgentRunner`.
+- `EvalResult` preserves status, score, result, reason, and event-derived metrics.
+- `EvalReport` contains per-case results and aggregate behavior totals.
+- `formatReport(report)` produces a compact summary for terminal and CI logs.
 
 ```ts
-const report = await runBenchmark({
-  name: 'arithmetic',
-  cases: [{
-    goal: mkGoal('add two numbers'),
-    run: (g) => runner.run(g),
-    expect: (r) => r.status === 'completed' && r.result === 42,
-  }],
-});
+const report = await new BenchmarkRunner().run([
+  {
+    id: 'arithmetic',
+    goal: createGoal({ description: 'Return 42' }),
+    deps: { reasoner, executor, policy, verifier },
+    check: (run) => run.status === 'completed' && run.result === 42,
+  },
+]);
+
+console.log(formatReport(report));
 ```
+
+## Why metrics come from events
+
+Each case runs through the production runtime. The harness scores the returned
+`RunResult`, while `@naro/observability` derives iterations, actions, denials,
+replans, checkpoints, and duration from the same ordered event history used for
+audit and debugging.
+
+There is no separate evaluation-only execution path to drift away from reality.
+
+## Current scope
+
+Cases run sequentially and once each. The caller owns repeated sampling,
+parallelism, persistence, model-judge calibration, and regression thresholds.
+The report keeps every case result so failures can be inspected instead of
+being hidden behind one average.

@@ -12,8 +12,7 @@ const client = new Client({ name: 'naro', version: '0.1.0' });
 await client.connect(new StdioClientTransport({ command: 'npx', args: ['-y', 'some-mcp-server'] }));
 
 registry.addSource(new McpToolSource(client, {
-  defaultSideEffects: 'write',
-  sideEffects: { 'delete_*': 'destructive' },
+  sideEffects: { search: 'read' },
 }));
 await registry.refresh();
 ```
@@ -25,6 +24,6 @@ await registry.refresh();
 
 ## Invariants
 
-- MCP doesn't declare side effects → conservative `defaultSideEffects: 'write'`; override per-tool or bump to `'destructive'` to gate behind humans.
+- MCP doesn't declare side effects, so tools default to `destructive` and require approval under `createToolPolicy`; downgrade only tools you have reviewed.
 - `isError` results become thrown errors — never silent empty outputs.
 - Tested in-process over `InMemoryTransport` — real protocol, no sockets needed.

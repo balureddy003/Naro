@@ -30,6 +30,7 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     });
     if (!res.ok) return [];
     const body = await res.json() as { data?: { id: string }[] };
-    return (body.data ?? []).map((m) => ({ id: m.id, capabilities: [] }));
+    const capabilities = this.opts.capabilities ?? ['chat'];
+    return (body.data ?? []).map((m) => ({ id: m.id, capabilities }));
   }
 }

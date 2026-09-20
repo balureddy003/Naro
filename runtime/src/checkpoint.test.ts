@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCheckpoint, FileCheckpointStore, InMemoryCheckpointStore } from './checkpoint.ts';
@@ -13,6 +13,25 @@ test('in-memory store keeps history and returns latest', async () => {
   await s.save(createCheckpoint('a1', 'REASONING', { ...data, iteration: 4 }));
   const latest = await s.latest('a1');
   assert.equal(latest?.data.iteration, 4);
+});
+
+test('missing checkpoint returns undefined', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'naro-ckpt-'));
+  try {
+    assert.equal(await new FileCheckpointStore(dir).latest('missing'), undefined);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('corrupt checkpoint fails loudly instead of starting a fresh run', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'naro-ckpt-'));
+  try {
+    await writeFile(join(dir, 'broken.checkpoints.jsonl'), '{not-json}\n');
+    await assert.rejects(new FileCheckpointStore(dir).latest('broken'), SyntaxError);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('file store survives across instances (crash recovery)', async () => {

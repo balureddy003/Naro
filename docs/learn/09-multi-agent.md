@@ -50,17 +50,18 @@ split.
 
 ## What Naro supports today
 
-Naro's core primitives already express part of the design:
+Naro's core primitives express task ownership and dependency, while
+`@naro/multiagent` adds three coordination building blocks:
 
-- `Task.owner` identifies who owns work;
-- `parentId` and `dependsOn` describe decomposition and ordering;
-- events are scoped by agent and goal IDs;
-- policy and grants can be configured per runner.
+- `AgentDirectory` registers agents and their advertised capabilities;
+- `InMemoryAgentBus` routes request/response delegation in one process;
+- `delegationTool()` turns delegation into a normal tool call, so permissions,
+  policy, validation, observations, and audit still apply.
 
-These are building blocks, not a complete multi-agent orchestrator. Naro does
-not currently provide child-agent spawning, a distributed message bus, or an
-A2A adapter. An application can compose multiple runners around the existing
-contracts, but it owns their lifecycle and communication.
+This is intentionally not a distributed orchestrator. The caller still owns
+agent lifecycle, selected context, budgets, and result verification. The
+in-memory bus has no persistence and a timed-out handler may continue running.
+A durable or A2A transport should implement the same `AgentBus` contract.
 
 A2A protocols aim to standardize agent-to-agent discovery and messaging, much
 as MCP standardizes tool-facing integration. In Naro, such a protocol should be

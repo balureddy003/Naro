@@ -26,10 +26,27 @@ function fakeFetch(capture: (body: Record<string, unknown>) => void): typeof fet
   return impl as unknown as typeof fetch;
 }
 
+test('capabilities default to chat and can be declared explicitly', async () => {
+  const defaultModel = await new OpenAiCompatibleProvider({
+    baseUrl: 'http://fake/v1', fetchImpl: fakeFetch(() => undefined),
+  }).getModel('test-model');
+  assert.deepEqual([...defaultModel.capabilities], ['chat']);
+
+  const configuredModel = await new OpenAiCompatibleProvider({
+    baseUrl: 'http://fake/v1',
+    capabilities: ['chat', 'tool-calling', 'structured-output'],
+    fetchImpl: fakeFetch(() => undefined),
+  }).getModel('test-model');
+  assert.ok(configuredModel.capabilities.has('tool-calling'));
+  assert.ok(configuredModel.capabilities.has('structured-output'));
+});
+
 test('chat maps canonical request → wire → canonical response', async () => {
   let sent: Record<string, unknown> = {};
   const provider = new OpenAiCompatibleProvider({
-    baseUrl: 'http://fake/v1', apiKey: 'k', fetchImpl: fakeFetch((b) => { sent = b; }),
+    baseUrl: 'http://fake/v1', apiKey: 'k',
+    capabilities: ['chat', 'tool-calling'],
+    fetchImpl: fakeFetch((b) => { sent = b; }),
   });
   const model = await provider.getModel('test-model');
   const res = await model.chat({
@@ -67,7 +84,9 @@ test('sse streaming yields deltas then done', async () => {
     body: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }),
   })) as unknown as typeof fetch;
 
-  const provider = new OpenAiCompatibleProvider({ baseUrl: 'http://fake/v1', fetchImpl });
+  const provider = new OpenAiCompatibleProvider({
+    baseUrl: 'http://fake/v1', capabilities: ['chat', 'streaming'], fetchImpl,
+  });
   const model = await provider.getModel('m');
   let text = '';
   let done = false;
@@ -77,6 +96,30 @@ test('sse streaming yields deltas then done', async () => {
   }
   assert.equal(text, 'hello');
   assert.ok(done);
+});
+
+test('malformed tool arguments fail instead of being repaired to an empty object', async () => {
+  const fetchImpl = (async () => ({
+    ok: true,
+    status: 200,
+    text: async () => '',
+    json: async () => ({
+      choices: [{
+        message: { content: '', tool_calls: [{ id: 'tc1', function: { name: 'write', arguments: '{bad' } }] },
+        finish_reason: 'tool_calls',
+      }],
+    }),
+  })) as unknown as typeof fetch;
+  const model = await new OpenAiCompatibleProvider({ baseUrl: 'http://fake/v1', fetchImpl }).getModel('m');
+  await assert.rejects(model.chat({ messages: [] }), /Invalid JSON arguments/);
+});
+
+test('empty provider choices fail instead of becoming an empty answer', async () => {
+  const fetchImpl = (async () => ({
+    ok: true, status: 200, text: async () => '', json: async () => ({ choices: [] }),
+  })) as unknown as typeof fetch;
+  const model = await new OpenAiCompatibleProvider({ baseUrl: 'http://fake/v1', fetchImpl }).getModel('m');
+  await assert.rejects(model.chat({ messages: [] }), /no chat completion choices/);
 });
 
 test('provider errors surface as NaroError, not silent data', async () => {

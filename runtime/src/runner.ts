@@ -41,9 +41,9 @@ export interface AgentDeps {
   readonly human?: HumanBridge;
   /** Permissions granted to this agent; checked by the policy engine. */
   readonly grants?: readonly string[];
-  /** Retrieves context for 'need-context' decisions. Phase-6 seam. */
+  /** Retrieves context for 'need-context' decisions. */
   readonly context?: ContextProvider;
-  /** Long-term recall available to reasoners. Phase-6 seam. */
+  /** Long-term recall available to reasoners. */
   readonly memory?: MemoryReader;
   /** Enables pause/crash recovery when provided. */
   readonly checkpoints?: CheckpointStore;

@@ -1,40 +1,50 @@
 # @naro/policy
 
-Policy-as-data authorization and governance — the answer to "who may do what, under what conditions."
+Composable policy rules for deciding who may perform an action and under which
+conditions.
 
-## What it provides
+## Public API
 
-- **`Policy` / `PolicyEngine`** — declarative rules evaluated in order
-- **`Rule`** — `{ id, match, outcome }` where `match` can select on tool name pattern, required permission, side-effect class, action capability, or resource
-- **`RateLimiter`** — counts actions within a rolling window so `limit` outcomes can enforce quotas
-- **`compose()`** — combines engines so org-wide and per-agent policies coexist
-
-## The five outcomes
-
-| Outcome | Runtime effect |
-|---|---|
-| `allow` | proceed |
-| `deny` | observation records the refusal |
-| `require-approval` | pause until a `HumanBridge` grants |
-| `limit` | proceed, but a `RateLimiter` records consumption; exceeding → `deny` |
-| `audit` | proceed **and** mark the observation `audited: true` for the audit trail |
-
-`PatternAuthorizer` (`@naro/tools`) is a `Policy` adapter — grant patterns become `allow`/`require-approval` rules, so existing callers upgrade transparently.
-
-## Invariants
-
-- Rules are **data** — serializable, reviewable, diffable. An OPA adapter implements the same `Policy` interface.
-- Denial is never silent: it flows back through the observation as a visible error.
-- Side-effect classes (`read` < `write` < `destructive`) are comparable — a rule matching `write` doesn't accidentally match `read`-only tools unless written to.
-
-## Example
+`RulePolicyEngine` evaluates `PolicyRule` values in order. The first matching
+rule wins. If no rule matches, the configured default decision is returned.
 
 ```ts
-const policy = new PolicyEngine([
-  { id: 'pii-audit',    match: { resource: 'data://*pii*' },  outcome: 'audit' },
-  { id: 'shell-gate',   match: { sideEffects: 'destructive' }, outcome: 'require-approval' },
-  { id: 'net-deny',     match: { capability: 'network.*' },   outcome: 'deny' },
-  { id: 'default',      match: {},                            outcome: 'allow' },
-]);
-executor.setPolicy(policy);
+const policy = new RulePolicyEngine([
+  requireGrants(),
+  denyCapability('network.*'),
+  requireApproval('tool://delete-*'),
+  limitCalls('tool://search', 100, 60_000),
+  auditCalls('data://*'),
+], { default: 'deny' });
 ```
+
+The included builders cover common cases:
+
+- `denyCapability(pattern)` denies matching capabilities or targets;
+- `requireApproval(pattern)` sends matching actions to a human bridge;
+- `limitCalls(pattern, maxCalls, windowMs?)` enforces an in-memory call limit;
+- `auditCalls(pattern)` allows and records matching actions;
+- `requireGrants()` denies actions whose requested permissions exceed the
+  agent's grants.
+
+## Policy outcomes
+
+| Outcome | Runtime behavior |
+|---|---|
+| `allow` | execution continues |
+| `deny` | the refusal becomes an observation |
+| `require_approval` | execution waits for the configured human bridge |
+| `limit` | the rule engine converts the outcome to allow or deny using its counter |
+| `audit` | execution continues and the rule engine records an audit entry |
+
+`auditLog()` exposes entries recorded by `audit` and `limit` rules.
+
+## Boundaries to understand
+
+Rules contain predicate functions, so they are code—not serializable policy
+data. The built-in call counters are process-local and are not suitable as a
+distributed quota. A database-backed limiter or OPA/Rego adapter can implement
+the same core `PolicyEngine` interface when those guarantees are required.
+
+The engine defaults to `allow` for convenience. Production configurations
+should normally set `{ default: 'deny' }` and add explicit allow rules.

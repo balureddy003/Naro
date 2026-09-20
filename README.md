@@ -35,8 +35,7 @@ opposite: **the smallest universal kernel, everything else an adapter.**
 
 ```bash
 npm install
-npm run build        # tsc project references — builds in dependency order
-npm test             # zero-dependency tests (node --test on TS directly)
+npm run check        # build every package, then run every test
 npm run example      # watch the full agent loop, event by event
 ```
 
@@ -60,7 +59,7 @@ const result = await runner.run();
 
 | Package | Role | Depends on |
 |---|---|---|
-| `@naro/core` | Primitives: Goal, Task, Action, Observation, Events, 18-state machine, Reasoner/Policy/Verifier/Context seams | nothing |
+| `@naro/core` | Primitives: Goal, Task, Action, Observation, Events, 17-state machine, Reasoner/Policy/Verifier/Context seams | nothing |
 | `@naro/runtime` | AgentRunner (the only place transitions happen), EventBus, retry/timeout, checkpoint + recovery | core |
 | `@naro/model` | Capability-gated `Model`/`ModelProvider`, message vocabulary, `MockModel` | core |
 | `@naro/tools` | Tool contract, registry, JSON-schema validation, executor pipeline, baseline policy | core |
@@ -68,17 +67,22 @@ const result = await runner.run();
 | `@naro/memory` | Tiered `MemoryStore` (working→longterm) + in-memory/file stores | core |
 | `@naro/context` | `ContextEngine`: sources → rank → select → compress → budget | core |
 | `@naro/reasoning` | `ReAct`, `PlanExecute`, `Reflection` strategies over `Model` | core, model |
-| `@naro/policy` | `PolicyEngine`: rules-as-data (allow/deny/approval/limit/audit), rate limiting, composition | core, tools |
-| `@naro/observability` | `EventExporter` seam, `JsonlExporter` audit trail, `metrics()` from the event stream | core |
-| `@naro/evaluation` | `Benchmark` harness: cases → runs → event-stream scores | core, runtime, observability |
+| `@naro/policy` | `RulePolicyEngine`: ordered rules for deny/approval/limit/audit decisions | core |
+| `@naro/observability` | `EventExporter`, JSONL/console export, `computeMetrics()` from events | core |
+| `@naro/evaluation` | `BenchmarkRunner`: cases → real runs → outcome checks and event metrics | core, runtime, observability |
+| `@naro/verification` | Schema, predicate, command, human, composite, and calibrated LLM-judge verifiers | core, model, tools |
+| `@naro/multiagent` | Agent directory, in-memory request bus, and policy-gated delegation tool | core, tools |
 | `@naro/adapter-openai` | OpenAI-compatible `Model`/`Provider` (OpenAI, Ollama, vLLM, …) — raw fetch, injectable | core, model |
 | `@naro/adapter-mcp` | MCP `ToolSource`: discovered server tools flow through the standard pipeline | core, tools |
 | `examples/` | `minimal-agent` (scripted loop) · `react-agent` (real model loop) | all |
 
 ## Learn the stack
 
-`docs/learn/` is a ground-up course — each concept explained plainly, with
-diagrams, failure modes, security notes, and where it lives in the code:
+`docs/learn/` is a ground-up course. Read 00–03 for the model and reasoning
+foundations, 04–07 for retrieval, tools, context, and memory, then 08–12 for
+runtime design, evaluation, security, and production reliability. After each
+section, trace the same concept through `examples/minimal-agent` and
+`examples/react-agent`.
 
 00 [how LLMs work](docs/learn/00-how-llms-work.md) ·
 01 [training](docs/learn/01-training.md) ·
@@ -94,17 +98,26 @@ diagrams, failure modes, security notes, and where it lives in the code:
 11 [security & policy](docs/learn/11-security-and-policy.md) ·
 12 [scale & reliability](docs/learn/12-scale-and-reliability.md)
 
+Practice in two passes:
+
+1. Run `npm run example` and read
+   [`examples/minimal-agent`](examples/minimal-agent/README.md) to see the
+   complete loop without a model dependency.
+2. Run `npm run example:react` and read
+   [`examples/react-agent`](examples/react-agent/README.md) to connect model
+   tool calls, context, memory, policy, and verification.
+
 Architecture deep-dive: [docs/architecture.md](docs/architecture.md) (C4 diagrams).
 Design rules: [docs/principles.md](docs/principles.md).
 
 ## Status
 
-`v0.2` — kernel, runtime, model, tools, environment, memory, context,
-three reasoning strategies (ReAct / Plan-Execute / Reflection), declarative
-policy, event-derived observability, and a benchmark harness — plus two live
-adapters: OpenAI-compatible models and MCP tool servers. Proven by two
-working reference agents. Next: OPA policy adapter, OpenTelemetry exporter,
-verification package, domain profiles (coding/research/browser), multi-agent.
+`v0.2` worktree — kernel, runtime, model, tools, environment, memory, context,
+three reasoning strategies, concrete verifiers, declarative policy,
+event-derived observability, a benchmark harness, and in-process multi-agent
+delegation—plus OpenAI-compatible and MCP adapters. Proven by two runnable
+reference agents. Next: durable distributed coordination, OPA policy and
+OpenTelemetry adapters, domain profiles, and release automation.
 
 ## License
 

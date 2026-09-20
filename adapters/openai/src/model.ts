@@ -9,14 +9,16 @@ export interface OpenAiCompatOptions {
   readonly baseUrl: string;
   /** Injected by the provider — never hard-coded in agent code. */
   readonly apiKey?: string;
+  /** Capabilities verified for this endpoint and model. Defaults to chat only. */
+  readonly capabilities?: readonly ModelCapability[];
   /** Injectable for tests. Defaults to global fetch. */
   readonly fetchImpl?: typeof fetch;
 }
 
 /**
  * A Model over any OpenAI-compatible HTTP API. One adapter covers
- * OpenAI, Ollama, vLLM, llama.cpp, OpenRouter, Azure — the endpoint is
- * config, the contract is code.
+ * OpenAI, Ollama, vLLM, llama.cpp, OpenRouter, and compatible gateways —
+ * the endpoint is config, the contract is code.
  */
 export class OpenAiCompatibleModel implements Model {
   readonly id: string;
@@ -30,9 +32,7 @@ export class OpenAiCompatibleModel implements Model {
     this.provider = provider;
     this.opts = opts;
     this.fetchImpl = opts.fetchImpl ?? fetch;
-    this.capabilities = new Set<ModelCapability>([
-      'chat', 'tool-calling', 'streaming', 'structured-output', 'embeddings', 'vision',
-    ]);
+    this.capabilities = new Set<ModelCapability>(opts.capabilities ?? ['chat']);
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
@@ -49,6 +49,7 @@ export class OpenAiCompatibleModel implements Model {
       model?: string;
     };
     const choice = body.choices[0];
+    if (!choice) throw new NaroError('provider-error', 'Provider returned no chat completion choices');
     const message: ChatMessage = {
       role: 'assistant',
       content: choice?.message.content ?? '',

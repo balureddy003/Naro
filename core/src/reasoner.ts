@@ -34,7 +34,7 @@ export interface ReasoningContext {
   readonly iteration: number;
   /** Context retrieved so far this run (see 'need-context' decisions). */
   readonly context: readonly ContextItem[];
-  /** Long-term recall seam (Phase 6) — absent if no memory is attached. */
+  /** Long-term recall — absent if no memory store is attached. */
   readonly memory?: MemoryReader;
 }
 

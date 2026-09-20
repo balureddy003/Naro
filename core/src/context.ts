@@ -12,10 +12,9 @@ export interface ContextItem {
 }
 
 /**
- * The Phase-6 seam for the full Context Engine (retrieve → rank →
- * assemble → compress → budget). Today the runtime calls this when a
- * reasoner returns a 'need-context' decision; later phases plug in
- * real retrieval pipelines without touching the runner.
+ * The runtime calls this contract when a reasoner returns a
+ * 'need-context' decision. @naro/context provides the standard pipeline;
+ * specialized retrieval backends plug in without changing the runner.
  */
 export interface ContextProvider {
   retrieve(query: string): Promise<readonly ContextItem[]> | readonly ContextItem[];

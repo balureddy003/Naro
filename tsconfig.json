@@ -35,6 +35,12 @@
       "path": "evaluation"
     },
     {
+      "path": "verification"
+    },
+    {
+      "path": "multiagent"
+    },
+    {
       "path": "adapters/openai"
     },
     {

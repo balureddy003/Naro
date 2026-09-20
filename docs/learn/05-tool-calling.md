@@ -80,9 +80,12 @@ capabilities exposed by external servers. In Naro, an MCP integration belongs
 behind `ToolSource`: it discovers remote tools and presents them through the
 same registry contract as local tools.
 
-Naro currently provides the `ToolSource` seam, not an MCP adapter. That is an
-important status distinction. The runtime design is ready for the adapter; the
-wire implementation still has to be supplied.
+`@naro/adapter-mcp` provides `McpToolSource`: it wraps a connected MCP client,
+discovers the server's tools, and registers them through the same registry
+contract as local tools. Calls then follow the standard validation, policy,
+execution, and observation path. MCP does not declare side effects, so unknown
+remote tools default to `destructive` until you review and override their
+metadata.
 
 ## Failure modes
 

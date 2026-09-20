@@ -41,7 +41,7 @@ test('MCP tools are discovered through the ToolSource seam', async () => {
   const tool = registry.get('echo');
   assert.ok(tool, 'echo should be registered');
   assert.equal(tool.metadata?.['origin'], 'mcp');
-  assert.equal(tool.sideEffects, 'write'); // conservative default
+  assert.equal(tool.sideEffects, 'destructive'); // unknown remote tools require approval
 });
 
 test('discovered MCP tools execute through the standard pipeline', async () => {

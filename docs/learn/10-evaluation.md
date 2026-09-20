@@ -56,8 +56,10 @@ Prefer direct, deterministic evidence: tests pass, a record has the expected
 state, a file matches a schema, or a known answer is returned.
 
 Use heuristic checks when exact matching is too strict. Use human review for
-high-impact or subjective decisions. An LLM judge can help score open-ended
-text at scale, but it is another noisy model. Calibrate it against human labels
+high-impact or subjective decisions. `CommandVerifier` is code execution, so
+its command must come from trusted configuration rather than model or user
+output. An LLM judge can help score open-ended text at scale, but it is another
+noisy model. Calibrate it against human labels
 and never make it the sole judge of safety-critical behavior.
 
 Run non-deterministic cases more than once. Report pass rates and distributions,
@@ -65,9 +67,11 @@ not a single lucky sample.
 
 ## In Naro
 
-Naro gives you useful evaluation primitives, not a complete benchmark harness:
+Naro provides both evaluation primitives and a small benchmark harness:
 
 - `Verifier` returns structured `ok`, `reason`, and `evidence` results;
+- `@naro/verification` supplies schema, predicate, command, human, composite,
+  and LLM-judge implementations;
 - `AgentRunner` returns the ordered event history for the run;
 - events expose decisions, state changes, actions, observations, denials, and
   verification outcomes;
@@ -75,11 +79,13 @@ Naro gives you useful evaluation primitives, not a complete benchmark harness:
   reports it;
 - `MockModel` makes controlled tests deterministic;
 - `@naro/observability` computes run metrics from events and can export the
-  stream to JSONL or the console.
+  stream to JSONL or the console;
+- `@naro/evaluation` runs `EvalCase` values through real `AgentRunner` instances,
+  applies outcome checks, and returns per-case results with aggregate metrics.
 
-The repository does not currently include a dedicated eval runner or dashboard.
-An application can build one by expressing each test case as a goal, running the
-agent, scoring the result and events, and storing aggregate metrics.
+`BenchmarkRunner` executes each case once and sequentially. Applications still
+own repeated sampling, parallel execution, persistence, model-judge
+calibration, release thresholds, and dashboards.
 
 ## A minimal release gate
 

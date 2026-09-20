@@ -1,29 +1,43 @@
 # @naro/observability
 
-Event-derived metrics, traces, and audit export — the answer to "what actually happened."
+Event-derived metrics and export for answering a practical question: what
+actually happened during this run?
 
-## What it provides
+## Public API
 
-- **`EventExporter`** — sink interface; `JsonlExporter` writes the ordered event stream to disk (replayable, greppable, diffable)
-- **`metrics(events)`** — pure function: event stream → `RunMetrics` (duration, action/tool counts, success rates, token usage summed across model calls, per-tool breakdown, states visited)
-- **`attachConsole(exporter)`** — trivial live-tap for development
-
-## Why event-derived
-
-The runtime already emits a complete ordered event log — observability adds **interpretation**, not instrumentation. No probes, no side-channels: if it happened, it's in the stream; if it's in the stream, it's in the metrics.
-
-## Invariants
-
-- `metrics()` is pure and deterministic — same events → same numbers.
-- `JsonlExporter.flush()` must be awaited before process exit; `export()` queues writes to preserve order under concurrency.
-- The exporter seam is where an OpenTelemetry adapter lands: same events, OTLP out.
-
-## Example
+- `computeMetrics(events)` derives counts and duration from a completed event
+  history.
+- `EventExporter` is the sink contract for batches of `NaroEvent` values.
+- `JsonlExporter` appends one JSON object per line to a file.
+- `ConsoleExporter` prints a compact live event stream.
+- `pipeTo(bus, exporter)` forwards each live event and returns an unsubscribe
+  function.
 
 ```ts
 const exporter = new JsonlExporter('.naro/audit.jsonl');
-runner.on('*', (e) => exporter.export(e));
-const result = await runner.run(goal);
-await exporter.flush();
-console.log(metrics(runner.eventBus.history));
+const unsubscribe = pipeTo(runner, exporter);
+const result = await runner.run();
+unsubscribe();
+
+console.log(computeMetrics(result.events));
 ```
+
+## Metrics available today
+
+`AgentMetrics` includes total events, reasoning iterations, requested and
+denied actions, approval requests, observations, verification pass/fail counts,
+replans, checkpoints, and event-stream duration.
+
+The function is pure: the same events produce the same metrics. Token and cost
+metrics require corresponding model-usage events; the current runtime event
+vocabulary does not emit those yet.
+
+## Exporter behavior
+
+`JsonlExporter.export()` returns a promise. Callers that invoke it directly
+should await it. `pipeTo()` is intended as a lightweight live tap; applications
+that require durable delivery, batching, backpressure, or error reporting
+should implement `EventExporter` with those guarantees.
+
+An OpenTelemetry exporter can use the same interface without changing the
+runtime.

@@ -26,13 +26,14 @@ C4Context
 
 ## C4 Level 2 — Containers (packages)
 
-Each box is a separately testable, separately replaceable package.
-Arrows only ever point *toward* `core` — nothing upstream depends on anything.
+Each box is a separately testable package. Dependencies point inward toward
+contracts: `core` depends on nothing, while runtimes, strategies, evaluation,
+and edge adapters compose the narrower packages they need.
 
 ```mermaid
 C4Container
     title Naro — Package View
-    Container(core, "@naro/core", "types", "Goal · Task · Action · Observation · Events · 18-state machine · Reasoner/Policy/Verifier/Context/Executor seams")
+    Container(core, "@naro/core", "types", "Goal · Task · Action · Observation · Events · 17-state machine · Reasoner/Policy/Verifier/Context/Executor seams")
     Container(runtime, "@naro/runtime", "engine", "AgentRunner · EventBus · retry/timeout · checkpoint+recovery")
     Container(model, "@naro/model", "interface", "Model · ModelProvider · MockModel")
     Container(tools, "@naro/tools", "interface", "Tool · Registry · schema validation · executor pipeline")
@@ -40,9 +41,11 @@ C4Container
     Container(memory, "@naro/memory", "store", "Tiered MemoryStore · in-memory + JSONL")
     Container(context, "@naro/context", "pipeline", "retrieve → rank → select → budget")
     Container(reasoning, "@naro/reasoning", "strategies", "ReAct · PlanExecute · Reflection over Model")
-    Container(policy, "@naro/policy", "governance", "PolicyEngine · rules-as-data · rate limiting")
+    Container(policy, "@naro/policy", "governance", "RulePolicyEngine · ordered predicates · in-process limits")
     Container(obs, "@naro/observability", "telemetry", "Event exporters · metrics() · JSONL audit")
-    Container(evaluation, "@naro/evaluation", "scoring", "Benchmark harness · event-stream scorers")
+    Container(evaluation, "@naro/evaluation", "scoring", "BenchmarkRunner · outcome checks · event metrics")
+    Container(verification, "@naro/verification", "evidence", "Schema · predicate · command · human · LLM judge")
+    Container(multiagent, "@naro/multiagent", "coordination", "Agent directory · request bus · delegation tool")
     Container_Boundary(adapters, "Adapters") {
       Container(mcp, "@naro/adapter-mcp", "", "MCP ToolSource")
       Container(oa, "@naro/adapter-openai", "", "OpenAI-compatible Model/Provider")
@@ -61,7 +64,7 @@ C4Component
     title AgentRunner — one reasoning cycle
     Component(runner, "AgentRunner", "", "owns ALL state transitions; enforces the loop")
     Component(reasoner, "Reasoner", "interface", "ctx → Decision (plan/act/need-context/wait/complete/fail)")
-    Component(policy, "PolicyEngine", "interface", "allow | deny | require_approval")
+    Component(policy, "PolicyEngine", "interface", "allow | deny | require_approval | limit | audit")
     Component(exec, "ActionExecutor", "interface", "action → observation (tool://, env:// routes)")
     Component(verifier, "Verifier", "interface", "evidence over assertion")
     Component(ckpt, "CheckpointStore", "interface", "reasoning-boundary snapshots")
