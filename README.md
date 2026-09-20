@@ -76,6 +76,7 @@ const result = await runner.run();
 | `@naro/adapter-mcp` | MCP `ToolSource`: discovered server tools flow through the standard pipeline | core, tools |
 | `@naro/adapter-otel` | OTLP/HTTP `EventExporter` — events land in any OTel collector | core, observability |
 | `@naro/adapter-opa` | `PolicyEngine` over OPA/Rego HTTP — fail-closed by default | core |
+| `@naro/adapter-anthropic` | Anthropic Messages API `Model` — tool_use blocks, hoisted system, required max_tokens | core, model |
 | `@naro/contract-tests` | Shared suites every port implementation must pass (dev-only) | core |
 | `@naro/profile-coding` | `WorkspaceEnvironment` (jailed fs + shell) + `codingTools()` | core, environment, tools |
 | `@naro/profile-research` | `ResearchEnvironment` (allowlisted fetch + citations that require fetched evidence) + `researchTools()` | core, environment, tools |

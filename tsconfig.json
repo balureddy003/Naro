@@ -50,6 +50,9 @@
       "path": "adapters/otel"
     },
     {
+      "path": "adapters/anthropic"
+    },
+    {
       "path": "profiles/coding"
     },
     {

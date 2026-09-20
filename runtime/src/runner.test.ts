@@ -189,3 +189,32 @@ test('need-context decisions route through WAITING_FOR_CONTEXT', async () => {
   assert.equal(result.result, 'fact');
   assert.ok(result.events.some((e) => e.type === 'context.retrieved'));
 });
+
+// ── live event streaming ─────────────────────────────────────────────
+test('events() streams live and closes at terminal event', async () => {
+  const runner = new AgentRunner({
+    ...makeDeps(),
+    reasoner: new DirectReasoner(() => ({ kind: 'complete', result: 'done' })),
+  });
+  const seen: string[] = [];
+  const consume = (async () => {
+    for await (const e of runner.events()) seen.push(e.type);
+  })();
+  await runner.run();
+  await consume;
+  assert.ok(seen.includes('agent.created'));
+  assert.ok(seen.includes('reasoning.started'));
+  assert.equal(seen.at(-1), 'agent.completed');
+});
+
+test('events() seeded with history — a late subscriber sees the whole run', async () => {
+  const runner = new AgentRunner({
+    ...makeDeps(),
+    reasoner: new DirectReasoner(() => ({ kind: 'complete', result: 'done' })),
+  });
+  await runner.run();
+  const seen: string[] = [];
+  for await (const e of runner.events()) seen.push(e.type);
+  assert.equal(seen[0], 'agent.created');
+  assert.equal(seen.at(-1), 'agent.completed');
+});

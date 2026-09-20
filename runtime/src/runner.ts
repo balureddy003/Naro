@@ -15,6 +15,7 @@ import {
   type Decision,
   type Observation,
   type MemoryReader,
+  type NaroEvent,
   type PolicyEngine,
   type Reasoner,
   type ReasoningContext,
@@ -98,6 +99,39 @@ export class AgentRunner {
 
   /** Subscribe to events — call before run(). */
   on: EventBus['on'] = (type, handler) => this.bus.on(type, handler);
+
+  /**
+   * Live event stream as an async iterable — seeded with history so a
+   * subscriber that arrives late sees the whole run, and closes on a
+   * terminal event (completed / failed / cancelled / paused).
+   *
+   *   for await (const e of runner.events()) render(e);
+   */
+  events(): AsyncIterable<NaroEvent> {
+    const TERMINAL = new Set(['agent.completed', 'agent.failed', 'agent.cancelled', 'agent.paused']);
+    const queue: NaroEvent[] = [...this.bus.history()];
+    let terminal = queue.some((e) => TERMINAL.has(e.type));
+    let wake: (() => void) | undefined;
+    const off = this.bus.on('*', (e) => {
+      queue.push(e);
+      if (TERMINAL.has(e.type)) terminal = true;
+      wake?.();
+    });
+    return {
+      [Symbol.asyncIterator]() {
+        return {
+          async next(): Promise<IteratorResult<NaroEvent>> {
+            for (;;) {
+              const e = queue.shift();
+              if (e !== undefined) return { done: false, value: e };
+              if (terminal) { off(); return { done: true, value: undefined }; }
+              await new Promise<void>((r) => { wake = r; });
+            }
+          },
+        };
+      },
+    };
+  }
 
   /** Request a pause; takes effect at the next reasoning boundary. */
   pause(): void {

@@ -138,6 +138,7 @@ flowchart TB
         mcp["@naro/adapter-mcp"]
         otel["@naro/adapter-otel"]
         opa["@naro/adapter-opa"]
+        anthropic["@naro/adapter-anthropic"]
     end
 
     runtime --> core
@@ -167,6 +168,8 @@ flowchart TB
     otel --> observability
     otel --> core
     opa --> core
+    anthropic --> model
+    anthropic --> core
 
     coding --> environment
     coding --> tools
