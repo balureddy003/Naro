@@ -1,9 +1,28 @@
 {
   "extends": "../tsconfig.base.json",
-  "compilerOptions": { "noEmit": true },
-  "include": ["src/**/*.ts"],
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
   "references": [
-    { "path": "../core" }, { "path": "../runtime" },
-    { "path": "../observability" }, { "path": "../evaluation" }
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../runtime"
+    },
+    {
+      "path": "../observability"
+    },
+    {
+      "path": "../evaluation"
+    }
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
   ]
 }

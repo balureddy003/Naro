@@ -82,5 +82,17 @@
     {
       "path": "examples/coding-agent"
     }
+  ],
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false
+  },
+  "include": [
+    "*/src/**/*.test.ts",
+    "adapters/*/src/**/*.test.ts",
+    "profiles/*/src/**/*.test.ts",
+    "examples/*/src/**/*.test.ts"
   ]
 }

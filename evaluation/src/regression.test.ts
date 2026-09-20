@@ -9,8 +9,9 @@ import type { EvalReport, EvalResult } from './benchmark.ts';
 const res = (caseId: string, ok: boolean): EvalResult => ({
   caseId, ok, status: ok ? 'completed' : 'failed',
   metrics: { totalEvents: 5, iterations: 1, actionsRequested: 1, actionsDenied: 0,
-    approvalsRequested: 0, observations: 1, verificationsPassed: 1,
-    verificationsFailed: 0, replans: 0, checkpoints: 0, durationMs: 10 },
+    approvalsRequested: 0, observations: 1,
+    verifications: { total: 1, passed: 1, failed: 0 },
+    replans: 0, checkpoints: 0, durationMs: 10 },
 });
 
 const report = (results: EvalResult[]): EvalReport => ({

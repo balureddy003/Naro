@@ -1,9 +1,34 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "noEmit": true },
-  "include": ["src/**/*.ts"],
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
   "references": [
-    { "path": "../../core" }, { "path": "../../runtime" }, { "path": "../../model" },
-    { "path": "../../tools" }, { "path": "../../reasoning" }, { "path": "../../profiles/coding" }
+    {
+      "path": "../../core"
+    },
+    {
+      "path": "../../runtime"
+    },
+    {
+      "path": "../../model"
+    },
+    {
+      "path": "../../tools"
+    },
+    {
+      "path": "../../reasoning"
+    },
+    {
+      "path": "../../profiles/coding"
+    }
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
   ]
 }

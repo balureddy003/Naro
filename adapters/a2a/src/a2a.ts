@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import { createGoal, newId, type Goal } from '@naro/core';
-import type { AgentBus, AgentDescriptor } from '@naro/multiagent';
+import type { AgentBus, AgentDescriptor, AgentMessage } from '@naro/multiagent';
 
 /**
  * A2A (Agent2Agent) adapter — the spec-shaped transport for AgentBus.
@@ -36,7 +36,7 @@ export class A2aAgentBus implements AgentBus {
   private readonly resolveCard: (agentId: string) => Promise<AgentCard | undefined>;
   private readonly fetchImpl: typeof fetch;
   private readonly token?: string;
-  private readonly handlers = new Map<string, (msg: { kind: 'task-request'; id: string; from: string; goal: Goal; at: number }) => Promise<unknown>>();
+  private readonly handlers = new Map<string, (msg: Extract<AgentMessage, { kind: 'task-request' }>) => Promise<unknown>>();
   private card?: Omit<AgentCard, 'url'>;
   private server?: Server;
 
@@ -58,8 +58,8 @@ export class A2aAgentBus implements AgentBus {
     };
   }
 
-  serve(agentId: string, handler: (msg: never) => Promise<unknown>): void {
-    this.handlers.set(agentId, handler as never);
+  serve(agentId: string, handler: (msg: Extract<AgentMessage, { kind: 'task-request' }>) => Promise<unknown>): void {
+    this.handlers.set(agentId, handler);
   }
 
   /** Publish this process's agent card (served at /.well-known/agent.json). */

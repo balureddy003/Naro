@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGoal, createObservation } from '@naro/core';
+import { createGoal, createObservation, type VerifyInput } from '@naro/core';
 import { MockModel } from '@naro/model';
 import { allOf, anyOf, CommandVerifier, LlmJudgeVerifier, PredicateVerifier, SchemaVerifier } from './index.ts';
 
@@ -22,15 +22,15 @@ test('SchemaVerifier can target observation output', async () => {
 });
 
 test('PredicateVerifier wraps domain checks', async () => {
-  const v = new PredicateVerifier('big-enough', (i) =>
+  const v = new PredicateVerifier('big-enough', (i: VerifyInput) =>
     typeof i.result === 'number' && i.result > 10 ? true : { ok: false, reason: 'too small' });
   assert.equal((await v.verify({ goal, result: 42 })).ok, true);
   assert.equal((await v.verify({ goal, result: 2 })).reason, 'too small');
 });
 
 test('CommandVerifier runs real commands', async () => {
-  assert.equal((await new CommandVerifier('true').verify({ goal })).ok, true);
-  const fail = await new CommandVerifier('echo oops >&2; exit 3').verify({ goal });
+  assert.equal((await new CommandVerifier('true').verify()).ok, true);
+  const fail = await new CommandVerifier('echo oops >&2; exit 3').verify();
   assert.equal(fail.ok, false);
   assert.match(fail.reason ?? '', /exit 3/);
 });

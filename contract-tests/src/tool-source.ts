@@ -5,7 +5,7 @@ export interface ToolLike {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: unknown;
-  readonly execute: (input: unknown, ctx: unknown) => Promise<unknown>;
+  execute(input: unknown, ctx: unknown): Promise<unknown>;
 }
 export interface ToolSourceLike {
   readonly id: string;

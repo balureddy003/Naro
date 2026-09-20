@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import { newId, type Goal } from '@naro/core';
-import type { AgentBus } from './bus.ts';
+import type { AgentBus, AgentMessage } from './bus.ts';
 
 /**
  * HTTP transport for AgentBus — the same two-method contract, now across
@@ -27,7 +27,7 @@ export class HttpAgentBus implements AgentBus {
   private readonly resolve: (id: string) => string | undefined;
   private readonly token?: string;
   private readonly fetchImpl: typeof fetch;
-  private readonly handlers = new Map<string, (msg: { kind: 'task-request'; id: string; from: string; goal: Goal; at: number }) => Promise<unknown>>();
+  private readonly handlers = new Map<string, (msg: Extract<AgentMessage, { kind: 'task-request' }>) => Promise<unknown>>();
   private server?: Server;
 
   constructor(opts: HttpBusOptions) {
@@ -36,8 +36,8 @@ export class HttpAgentBus implements AgentBus {
     this.fetchImpl = opts.fetchImpl ?? fetch;
   }
 
-  serve(agentId: string, handler: (msg: never) => Promise<unknown>): void {
-    this.handlers.set(agentId, handler as (typeof this.handlers extends Map<string, infer H> ? H : never));
+  serve(agentId: string, handler: (msg: Extract<AgentMessage, { kind: 'task-request' }>) => Promise<unknown>): void {
+    this.handlers.set(agentId, handler);
   }
 
   /** Start listening; returns the base URL to register in `resolve`. */
