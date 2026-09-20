@@ -24,5 +24,6 @@ systems lie to themselves.
 
 Implement `Model` (translate `ChatRequest` ↔ your wire format) and
 `ModelProvider`. Credentials come from environment/config — never code.
-An OpenAI-compatible adapter covers Ollama, vLLM, llama.cpp, and most
-hosted endpoints with one implementation.
+Included adapters cover OpenAI-compatible endpoints, Anthropic Messages, and
+Gemini `generateContent`. Each translates its wire format without leaking
+provider types into `ChatRequest`, `ChatResponse`, or reasoning code.

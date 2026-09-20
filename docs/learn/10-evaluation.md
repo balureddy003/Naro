@@ -75,8 +75,8 @@ Naro provides both evaluation primitives and a small benchmark harness:
 - `AgentRunner` returns the ordered event history for the run;
 - events expose decisions, state changes, actions, observations, denials, and
   verification outcomes;
-- `ChatResponse.usage` can carry token and cost information when the provider
-  reports it;
+- model usage attached to a decision emits `model.usage`, and terminal events
+  carry accumulated totals when providers report them;
 - `MockModel` makes controlled tests deterministic;
 - `@naro/observability` computes run metrics from events and can export the
   stream to JSONL or the console;

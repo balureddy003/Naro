@@ -8,3 +8,5 @@ export * from './reasoner-direct.ts';
 export * from './human.ts';
 export * from './runner.ts';
 export * from './sqlite-checkpoint.ts';
+export * from './lease.ts';
+export * from './sharded-executor.ts';

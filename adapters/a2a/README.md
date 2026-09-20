@@ -5,7 +5,8 @@ A2A (Agent2Agent) protocol transport for `AgentBus` — spec-shaped agent discov
 ## What it adds beyond raw HTTP
 
 - **Agent Cards** at `GET /.well-known/agent.json` — discoverable identity + skills. This is how agents find each other without a shared registry.
-- **JSON-RPC 2.0 `tasks/send`** — synchronous task delegation returning `completed`/`failed` task states with result artifacts.
+- **JSON-RPC task methods** — `tasks/send`, `tasks/get`, and `tasks/cancel`.
+- **SSE `message/stream`** — lifecycle frames for submitted, working, and terminal task state.
 
 ```ts
 // worker side
@@ -22,4 +23,9 @@ const result = await bus.request('worker', goal, 'parent-agent');
 
 ## Scope honesty
 
-This is the synchronous subset: cards + `tasks/send`. SSE streaming, push notifications, and multi-turn task graphs are spec features layered on later — the `AgentBus` seam doesn't change. Optional bearer token; TLS/mTLS are deployment concerns.
+`requestStream()` reports task lifecycle, not incremental model tokens or
+artifacts: the current `AgentBus` handler returns one result. Cancellation marks
+a stored task canceled; application handlers need their own cancellation path
+to stop work already running. Push notifications and multi-turn task graphs are
+not implemented. Bearer tokens are supported; TLS/mTLS remain deployment
+concerns.

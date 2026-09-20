@@ -76,14 +76,16 @@ closed by default on timeout, HTTP failure, or an invalid result.
 
 Be precise about the defaults:
 
-- `AgentRunner` falls back to `allowAllPolicy` when no policy is supplied;
-- `createToolPolicy()` defaults unknown tools and non-tool targets to `allow`;
+- `AgentRunner` requires a `PolicyEngine`; there is no implicit authorization;
+- tests and controlled examples may explicitly pass `allowAllPolicy`;
+- `createToolPolicy()` denies unknown `tool://` targets by default;
+- non-tool targets use `otherwise: 'allow'` by default because that engine
+  abstains from schemes it does not own—compose another policy for them;
 - destructive registered tools require approval by default;
 - an approval request without a configured `HumanBridge` is denied.
 
-Those permissive defaults make examples easy to run. They are not a production
-policy. Production wiring should supply an explicit deny-by-default policy and
-choose the `otherwise` behavior deliberately.
+Production wiring should cover every target scheme and normally end in an
+explicit deny rule.
 
 ## Defense in depth
 
@@ -136,8 +138,9 @@ and observations only ever hold the reference.
 
 ## Bus authentication
 
-`HttpAgentBus` accepts a `TokenVerifier` hook — `sharedTokenVerifier`
-(constant-time shared secret) for dev, `hmacTokenVerifier` for real
-HS256 JWTs with `exp`/`iss`/`aud` checks, and any OIDC/JWKS verifier
-behind the same hook for production. Serving is fail-closed: set
-`authenticate` and unverified requests get 401.
+`HttpAgentBus` accepts a `TokenVerifier` hook: `sharedTokenVerifier` for a
+constant-time shared secret, `hmacTokenVerifier` for HS256 JWTs, and
+`jwksVerifier` for cached RS256/ES256 keys with issuer, audience, expiry, and
+rotation checks. Serving is fail-closed: set `authenticate` and unverified
+requests get `401`. TLS/mTLS and tenant authorization remain deployment
+controls.

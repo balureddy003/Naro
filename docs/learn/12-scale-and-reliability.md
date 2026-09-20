@@ -37,13 +37,14 @@ hard cap on attempts and total elapsed time.
 
 ## Timeouts and cancellation are different
 
-A timeout decides that the caller will stop waiting. Cancellation asks the
-underlying operation to stop. If a tool ignores `AbortSignal`, the agent may
-move on while the side effect continues in the background.
+A deadline aborts the action's child `AbortSignal`. Cancellation is cooperative:
+if an executor ignores the signal, the operation may remain pending and the run
+may not make progress. `SandboxedExecutor` has a stronger local mechanism—it
+terminates the worker on timeout or abort.
 
 Propagate cancellation through every adapter that can honor it. For external
-systems that cannot be cancelled, record operation IDs and reconcile their
-final state.
+systems that may commit before cancellation, record operation IDs and reconcile
+authoritative state.
 
 ## Recovery needs a safe boundary
 
@@ -51,7 +52,7 @@ final state.
 sequenceDiagram
     participant Runner
     participant Store as Checkpoint Store
-    Runner->>Store: save tasks, observations, context, iteration
+    Runner->>Store: save tasks, actions, observations, context, reasoner + journal state
     Note over Runner: process stops
     Runner->>Store: load latest checkpoint
     Store-->>Runner: snapshot
@@ -74,7 +75,8 @@ completed just before the process failed to record its observation.
   `AbortSignal` (a timed-out action is cancelled, not abandoned);
   timed-out actions are not auto-retried — their result is indeterminate;
 - `maxIterations`, defaulting to 64;
-- `InMemoryCheckpointStore` and append-only `FileCheckpointStore`;
+- in-memory, JSONL, and transactional SQLite checkpoint stores;
+- in-memory and SQLite runner leases for single-agent mutual exclusion;
 - ordered runtime events through callbacks and `runner.events()` async
   iteration;
 - `@naro/observability` metrics plus JSONL and console event exporters;
@@ -86,8 +88,31 @@ belongs in the reasoner or model adapter today. Durable storage arrived with
 `SqliteCheckpointStore`, `SqliteEventStore`, and `SqliteMemoryStore` (FTS5
 recall), plus `DurableAgentBus` — an at-least-once SQLite task queue where
 pending work survives crashes and stale claims are reclaimed. What remains
-external: multi-host queues (Postgres/Redis behind the same ports), circuit
-breakers, hosted metrics, and provider failover.
+external: circuit breakers, hosted metrics, and provider failover.
+
+## Distribution primitives
+
+- **Shared quotas** — `RulePolicyEngine` accepts a `LimitStore`:
+  `InMemoryLimitStore` per process, `SqliteLimitStore` shares caps across
+  processes on one host (`BEGIN IMMEDIATE` serializes increments).
+  Redis/Postgres implementations plug the same port for multi-host.
+- **Runner leases** — `deps.lease: { store, ttlMs }` on `AgentRunner`:
+  acquire on start, heartbeat through the loop, release on exit. A second
+  runner for the same agent fails fast. A lost heartbeat emits a replan warning;
+  the current runner is not forcibly stopped, so external fencing still matters.
+  `InMemoryLeaseStore` and `SqliteLeaseStore` are provided.
+- **Sharding** — `ShardedExecutor` routes by stable FNV-1a hash of the
+  shard key (default `action.target`), so `env://tenant-x/...` always
+  lands on the same executor instance; `routedBy` for explicit layouts.
+- **A2A depth** — `message/stream` serves lifecycle SSE events
+  (submitted → working → completed) and `tasks/cancel` marks stored
+  tasks canceled; `requestStream` consumes them client-side.
+- **OIDC** — `jwksVerifier` fetches an issuer's JWKS (discovery or direct
+  URL), verifies RS256/ES256 JWTs with native crypto, pins iss/aud/exp,
+  and refreshes keys on rotation. Wire it into `HttpAgentBus`'s
+  `authenticate` hook.
+- **Releases** — changesets manage versioning (`npm run changeset`),
+  `npm run release` gates publish on the full check + pack-check.
 
 ## Scaling dimensions
 

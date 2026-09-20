@@ -57,3 +57,49 @@ test('unknown agent resolves to a clear error', async () => {
   const bus = new A2aAgentBus({ resolve: () => undefined });
   await assert.rejects(bus.request('ghost', createGoal({ description: 'x' }), 'p'), /no A2A endpoint/);
 });
+
+test('message/stream delivers lifecycle events then the completed task', async () => {
+  const endpoints = new Map<string, string>();
+  const worker = new A2aAgentBus({ resolve: (id) => endpoints.get(id) });
+  worker.advertise(card('worker'));
+  worker.serve('worker', async (msg) => `solved:${msg.goal.description}`);
+  const listener = await worker.listen(0);
+  endpoints.set('worker', listener.url);
+  try {
+    const states: string[] = [];
+    const parent = new A2aAgentBus({ resolve: (id) => endpoints.get(id) });
+    const res = await parent.requestStream('worker', createGoal({ description: '2+2' }), 'parent', (task) => {
+      states.push((task as { status?: { state?: string } }).status?.state ?? '?');
+    });
+    assert.deepEqual(states, ['submitted', 'working', 'completed']);
+    assert.equal(res, 'solved:2+2');
+  } finally { await listener.close(); }
+});
+
+test('tasks/cancel marks a stored task; unknown tasks error', async () => {
+  const endpoints = new Map<string, string>();
+  const worker = new A2aAgentBus({ resolve: (id) => endpoints.get(id) });
+  worker.advertise(card('worker'));
+  worker.serve('worker', async (msg) => `solved:${msg.goal.description}`);
+  const listener = await worker.listen(0);
+  try {
+    const rpc = (method: string, params: unknown) => fetch(`${listener.url}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 'x', method, params }),
+    }).then((r) => r.json()) as Promise<{ result?: { id: string; status: { state: string } }; error?: { message: string } }>;
+
+    const sent = await rpc('message/send', {
+      id: 'task-1', message: { role: 'user', parts: [{ kind: 'text', text: 'hi' }] },
+    });
+    assert.equal(sent.result?.status.state, 'completed');
+
+    const canceled = await rpc('tasks/cancel', { id: 'task-1' });
+    assert.equal(canceled.result?.status.state, 'canceled');
+
+    const got = await rpc('tasks/get', { id: 'task-1' });
+    assert.equal(got.result?.status.state, 'canceled');
+
+    const miss = await rpc('tasks/cancel', { id: 'nope' });
+    assert.match(miss.error!.message, /unknown task/);
+  } finally { await listener.close(); }
+});

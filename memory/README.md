@@ -1,36 +1,66 @@
 # @naro/memory
 
-Tiered, provider-independent memory. Context is what the model sees *now*;
-memory is what the agent retains *across time*.
+Provider-independent memory for information retained across decisions or runs.
+Context is what the reasoner sees now; memory is what it may recall later.
 
 ## Tiers
 
-`working` · `session` · `episodic` · `semantic` · `procedural` · `longterm`
+```text
+working · session · episodic · semantic · procedural · longterm
+```
 
-Different lifetimes, different access patterns — that's why they're
-separate, and why "just use a vector DB" is wrong.
+The tiers describe purpose and lifetime. They do not force one storage
+technology.
 
-## Contracts
+## Contract
 
 ```ts
-interface MemoryStore extends MemoryReader {   // MemoryReader lives in core
+interface MemoryStore extends MemoryReader {
   write(input: MemoryInput): Promise<MemoryEntry>;
   read(key: string): Promise<MemoryEntry | undefined>;
-  search(query: string, limit?): Promise<MemoryHit[]>;       // recall
-  searchTier(tier, query, limit?): Promise<MemoryHit[]>;     // scoped recall
+  search(query: string, limit?: number): Promise<readonly MemoryHit[]>;
+  searchTier(tier: MemoryTier, query: string, limit?: number): Promise<readonly MemoryHit[]>;
   forget(key: string): Promise<boolean>;
 }
 ```
 
+Reasoners receive the smaller `MemoryReader` through `ctx.memory`. The
+application or strategy decides what is safe and useful to write.
+
 ## Included stores
 
-- `InMemoryMemoryStore` — process-local, lexical recall. Dev/tests.
-- `FileMemoryStore` — JSONL append per tier; survives restarts, zero infra.
+| Store | Persistence | Recall | Use |
+|---|---|---|---|
+| `InMemoryMemoryStore` | process only | lexical | tests and local development |
+| `FileMemoryStore` | JSONL files | lexical | zero-infrastructure persistence |
+| `SqliteMemoryStore` | transactional SQLite | FTS5/BM25 with lexical fallback | durable single-host agents |
 
-Adapters for SQLite/Postgres/Redis/Qdrant implement the same interface.
+`SqliteMemoryStore` supports tier-scoped search and durable deletion. Its
+embedding column preserves a future vector-recall seam; the included search is
+FTS5 rather than vector similarity.
 
-## In the loop
+## Example
 
-Pass a store as `AgentDeps.memory` — reasoners see it as
-`ctx.memory` (a `MemoryReader`). What gets written, and when, is a
-strategy concern; the store itself never decides.
+```ts
+const memory = new SqliteMemoryStore('.naro/memory.db');
+await memory.write({
+  key: 'deploy:last-failure',
+  tier: 'episodic',
+  content: 'migration timed out',
+  agentId,
+  source: 'verification',
+});
+
+const hits = await memory.searchTier('episodic', 'migration failure', 5);
+```
+
+## Trust rules
+
+- Scope entries by agent or tenant before results reach the model.
+- Preserve source and time.
+- Do not promote model claims to facts without verification.
+- Treat recalled content as untrusted prompt data.
+- Define retention and deletion for PII and secrets.
+
+SQLite is a durable single-host implementation. Multi-host deployments need a
+shared store behind the same `MemoryStore` contract.

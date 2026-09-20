@@ -23,9 +23,9 @@ const react = new ReActReasoner(model);
 | `chat`, `tool-calling` | `POST /v1/messages`, `tool_use`/`tool_result` blocks |
 | `streaming` | SSE `content_block_delta` → `ChatChunk` |
 | `vision` | image parts → `image` blocks (url source) |
-| `structured-output` | not declared — Anthropic has no schema-constrained mode; use tools |
+| `structured-output` | forced synthetic `emit_result` tool call, unwrapped to JSON content |
 
 ## Invariants
 
-- Capabilities are explicit — `structured-output` is honestly absent rather than faked via prompt instructions.
+- Anthropic has no `response_format` equivalent. Structured output is implemented through a required tool whose input schema is the requested result schema; the adapter unwraps that call back into canonical JSON content.
 - Errors surface as `NaroError` with status + body; never empty responses.

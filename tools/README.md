@@ -1,41 +1,82 @@
 # @naro/tools
 
-Tools are capabilities with contracts — declarative metadata + one `execute`.
+Schema-contracted capabilities behind the runtime policy gate.
 
-## What's inside
+## Public surface
 
 | Export | Role |
 |---|---|
-| `Tool` | name, description, `inputSchema`/`outputSchema`, `permissions`, `sideEffects`, `execute` |
-| `ToolRegistry` | name → tool catalog; merges `ToolSource`s |
-| `ToolSource` | discovery port — where MCP/local/remote catalogs plug in |
-| `JsonSchema`, `validate()` | zero-dep schema subset (swap ajv/zod behind the same calls) |
-| `ToolExecutor` | `resolve → validate → execute → validate → observe` — implements `ActionExecutor` |
-| `createToolPolicy` | baseline `PolicyEngine` from tool metadata |
+| `Tool` | metadata, schemas, permissions, side effects, and `execute()` |
+| `ToolRegistry` | local catalog plus refreshable `ToolSource` values |
+| `ToolSource` | asynchronous discovery port used by MCP and other catalogs |
+| `JsonSchema`, `validate()` | built-in schema subset |
+| `ToolExecutor` | resolve, validate input, execute, validate output, observe |
+| `createToolPolicy()` | baseline policy derived from registered metadata |
+| `SecretProvider` | resolves secret references at execution time |
+| `EnvSecretProvider`, `MapSecretProvider`, `chainSecrets()` | included secret sources and composition |
+| `SandboxedExecutor` | worker-thread execution with heap and wall-clock limits |
 
-## The lifecycle
+## Tool lifecycle
 
-Every `tool://` action runs:
-
+```text
+model proposes call
+  → runtime creates Action
+  → PolicyEngine authorizes
+  → ToolExecutor resolves tool
+  → validate input
+  → execute with ExecContext
+  → validate output
+  → Observation
 ```
-resolve (registry) → authorize (runner's policy gate) → validate input
-→ execute → validate output → Observation (success or honest failure)
-```
 
-Tool errors produce `success:false` observations — the reasoner learns
-the tool failed instead of the run crashing.
+Unknown `tool://` names are denied by `createToolPolicy()` by default. Non-tool
+targets return `otherwise`—`allow` by default—because another policy engine is
+expected to own those schemes. Compose policies so every target is covered.
 
 ## Writing a tool
 
 ```ts
-const myTool: Tool = {
-  name: 'deploy', description: 'deploy a service',
-  inputSchema: { type: 'object', properties: { svc: { type: 'string' } }, required: ['svc'] },
-  permissions: ['deploy.write'],     // agent must hold this grant
-  sideEffects: 'write',              // 'destructive' → human approval
-  execute: async (input, ctx) => { /* honor ctx.signal */ },
+const deploy: Tool = {
+  name: 'deploy',
+  description: 'Deploy one service to one environment',
+  inputSchema: deployInputSchema,
+  outputSchema: deployOutputSchema,
+  permissions: ['deploy.write'],
+  sideEffects: 'destructive',
+  execute: async (input, ctx) => {
+    const token = await ctx.secrets?.resolve('env:DEPLOY_TOKEN');
+    return deployService(input, { token, signal: ctx.signal });
+  },
 };
 ```
 
-Be honest in `sideEffects` and `permissions` — policy is only as good as
-your metadata.
+Honor `ctx.signal`, keep permission and side-effect metadata honest, and never
+return resolved secret values.
+
+## Secret references
+
+Actions and prompts should contain references such as `env:API_KEY` or
+`vault:path#key`, not values. The runtime passes the configured resolver through
+`ExecContext`; the executor resolves at the last responsible moment.
+
+`EnvSecretProvider` reads `env:` references. `MapSecretProvider` is useful for
+tests and small controlled deployments. `chainSecrets()` returns the first
+resolved value. A Vault or cloud-secret adapter can implement the same port.
+
+## Worker-thread sandbox
+
+```ts
+const executor = new SandboxedExecutor({
+  module: new URL('./executor-module.ts', import.meta.url).href,
+  limits: { maxOldGenerationSizeMb: 64, stackSizeMb: 2 },
+  timeoutMs: 10_000,
+});
+```
+
+The module must export `createExecutor(): ActionExecutor`. Each action runs in a
+fresh worker. Timeout or abort terminates the worker, and observations cross the
+boundary through structured clone.
+
+This protects the host from crashes, runaway heaps, and stuck workers. It is
+not an OS security sandbox: workers share the process filesystem and network
+authority. Use a container or stronger isolation for hostile code.

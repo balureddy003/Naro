@@ -1,21 +1,53 @@
 # @naro/cli
 
-`naro` — the developer-facing entrypoint.
+Developer commands for running, scaffolding, inspecting, and regression-testing
+agents.
 
 ```bash
-npx naro run <agent.ts>       # run an agent module (Node 26 native TS)
-npx naro bench <bench.ts>     # run a module exporting EvalCase[]
-npx naro replay <audit.jsonl> # reprint + summarize a recorded event stream
-npx naro states               # print the lifecycle transition table
+naro init <dir> [--reasoner react|direct]
+naro run <agent.ts>
+naro bench <bench.ts> [--save reports.jsonl] [--label name]
+                       [--baseline baseline.jsonl]
+naro replay <events.jsonl>
+naro states
 ```
 
-## Why these four
+## Commands
 
-- **`run`** — zero-friction execution; the agent file is just a program.
-- **`bench`** — benchmarks are modules exporting `EvalCase[]`; exit code is CI-friendly (1 on any failure).
-- **`replay`** — the JSONL audit stream is a first-class artifact; replaying it produces the same metrics a live run would (`computeMetrics` is pure).
-- **`states`** — the transition table as documentation you can diff.
+### `init`
+
+Scaffolds a small TypeScript workspace with an explicit policy gate and a
+working reasoner. It refuses to overwrite an existing destination. The scaffold
+uses development-safe defaults and points to provider adapters for live models.
+
+### `run`
+
+Runs an agent module using Node's native TypeScript support. The agent file is a
+normal program; composition remains explicit.
+
+### `bench`
+
+Imports an `EvalCase[]` from a named `cases` export or default export. Any
+failed case returns exit code `1`.
+
+- `--save` appends a report to `JsonlReportStore`.
+- `--label` identifies the stored report.
+- `--baseline` compares with the latest stored baseline and returns `1` for
+  regressions, including silently removed cases.
+
+### `replay`
+
+Reads a JSONL event artifact, prints its ordered events, and derives the same
+behavior metrics used by live evaluation. It replays the journal for inspection;
+it does not re-execute external side effects.
+
+### `states`
+
+Prints the current transition table directly from `AGENT_STATES` and
+`TRANSITIONS`.
 
 ## Design
 
-`main(argv, io)` is pure and testable — the bin shim is 5 lines. `bench` dynamically imports the module, so benchmarks compose real runners, reasoners, and environments with zero framework magic.
+`main(argv, io)` is testable without a process shell. Agent and benchmark
+modules are dynamically imported, so the CLI does not introduce a hidden
+configuration model.

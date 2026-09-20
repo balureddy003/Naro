@@ -1,36 +1,65 @@
 # @naro/reasoning
 
-Pluggable reasoning strategies — how a model's capabilities get *used*.
-The model answers; the reasoner decides when and why to ask.
+Reasoning strategies decide how models and evidence are turned into Naro's
+closed `Decision` protocol. Strategies never execute capabilities directly.
 
 ## Strategies
 
 | Class | Pattern | Behavior |
 |---|---|---|
-| `ReActReasoner` | ReAct | transcript → model → tool calls become actions; text = done |
-| `PlanExecuteReasoner` | Plan-Execute | first call emits a JSON plan → tasks; then dispatches task-bound actions (`taskId`) |
-| `ReflectionReasoner` | ReAct + self-critique | on failed observations, writes a lesson into later prompts |
-| `DirectReasoner` (runtime) | scripted | the baseline — a function, no model |
+| `ReActReasoner` | ReAct | model tool calls become actions; text becomes a completion claim |
+| `PlanExecuteReasoner` | plan/execute | emits structured tasks, then dispatches task-bound actions |
+| `ReflectionReasoner` | ReAct + critique | adds evidence-backed lessons after failures |
+| `TreeSearchReasoner` | bounded search | expands and scores simulated decisions before choosing one |
+| `DirectReasoner` in runtime | scripted | deterministic function without a model |
 
-## The seam
+## Decision protocol
 
-```ts
-interface Reasoner { strategy: string; decide(ctx: ReasoningContext) → Decision }
+```text
+plan | act | act-batch | need-context | wait-for-human | complete | fail
 ```
 
-`Decision` is closed: `plan | act | need-context | wait-for-human |
-complete | fail`. Any strategy — these, tree search, a human — produces
-only these, so the runtime never changes when strategies do.
+Multiple tool calls from `ReActReasoner` become `act-batch`. The runtime gates
+each call serially, then executes authorized calls concurrently.
 
-## How they differ
+## ReAct options
 
-Strategies differ mostly in *how they shape the transcript*
-(`buildMessages` in `transcript.ts`): ReAct appends observations as tool
-results; Reflection adds a "LESSONS FROM PRIOR FAILURES" section;
-Plan-Execute asks for structured JSON once. Same evidence, different
-thinking style.
+```ts
+const reasoner = new ReActReasoner(model, {
+  tools,
+  instructions,
+  maxObservations: 20,
+  onChunk: (chunk) => renderToken(chunk.delta),
+});
+```
+
+When `onChunk` is configured and the model declares `streaming`, chunks are
+forwarded live and folded back into the normal response used to make the
+decision. Provider usage becomes `Decision.usage`, which the runtime records as
+`model.usage` events.
+
+`maxObservations` bounds the evidence window. It does not summarize discarded
+observations; choose a value that fits the provider context and task.
+
+## Checkpoint state
+
+Strategies with internal state implement `StatefulReasoner`:
+
+```ts
+interface StatefulReasoner extends Reasoner {
+  captureState(): unknown;
+  restoreState(state: unknown): void;
+}
+```
+
+The runtime stores that value in checkpoints and restores it on resume.
+`ReActReasoner` is currently stateless between decisions because all tool calls
+from one response dispatch as one action or atomic batch.
 
 ## Requirements
 
-- Model needs `chat` + `tool-calling` capabilities for ReAct/Reflection.
-- Plan-Execute benefits from `structured-output` (falls back to JSON text).
+- ReAct and Reflection need `chat`; tool use also needs `tool-calling`.
+- Streaming callbacks require `streaming`.
+- Plan-Execute benefits from `structured-output` and can fall back to JSON text.
+- Multi-ply tree search requires a simulator; depth greater than one without a
+  world model fails rather than pretending to predict consequences.

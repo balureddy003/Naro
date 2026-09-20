@@ -27,6 +27,7 @@ import { TimeoutError } from './timeout.ts';
 import { retry, type RetryPolicy } from './retry.ts';
 import { createCheckpoint, type CheckpointStore } from './checkpoint.ts';
 import { noHumanBridge, type HumanBridge } from './human.ts';
+import type { LeaseStore } from './lease.ts';
 
 /** Everything needed to compose an agent — the wiring, not the smarts. */
 export interface AgentDeps {
@@ -55,6 +56,12 @@ export interface AgentDeps {
   readonly memory?: MemoryReader;
   /** Enables pause/crash recovery when provided. */
   readonly checkpoints?: CheckpointStore;
+  /**
+   * Mutual exclusion: only one live runner may execute this agent.
+   * The store owns the fencing (TTL); we heartbeat through the loop and
+   * release on exit. Without it, two processes can double-run an agent.
+   */
+  readonly lease?: { store: LeaseStore; ttlMs?: number };
   /** Runaway protection — max reasoning cycles before FAILED. */
   readonly maxIterations?: number;
   /** Per-action execution deadline (ms). 0 = no timeout. */
@@ -154,11 +161,31 @@ export class AgentRunner {
     this.bus.emit('agent.created', { name: spec.name });
     this.bus.emit('goal.started', { goal: spec.goal });
 
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    const lease = this.deps.lease;
+    const leaseKey = lease ? `agent:${spec.id}` : undefined;
+    const holder = `${spec.id}:${this.bus.runId}`;
+
     try {
+      this.transition('INITIALIZING');
+      // Runner lease — a second process must fail here, not halfway
+      // through a duplicated side effect.
+      if (lease && leaseKey) {
+        const ttl = lease.ttlMs ?? 30_000;
+        if (!(await lease.store.acquire(leaseKey, holder, ttl))) {
+          return this.finish('FAILED', 'failed', { error: `agent '${spec.id}' is already running (lease held)` });
+        }
+        heartbeat = setInterval(() => {
+          void Promise.resolve(lease.store.heartbeat(leaseKey!, holder, ttl)).then((ok) => {
+            if (!ok) this.bus.emit('replan.triggered', { reason: 'lease lost — another runner may have taken over' });
+          });
+        }, Math.max(1000, Math.floor(ttl / 3)));
+        heartbeat.unref?.();
+      }
+
       if (options.resume) {
         await this.resumeFromCheckpoint();
       } else {
-        this.transition('INITIALIZING');
         this.transition('UNDERSTANDING');
         this.transition('PLANNING');
       }
@@ -199,6 +226,11 @@ export class AgentRunner {
       }
     } catch (error) {
       return this.finish('FAILED', 'failed', { error: errorMessage(error) });
+    } finally {
+      if (heartbeat) clearInterval(heartbeat);
+      if (lease && leaseKey) {
+        await lease.store.release(leaseKey, `${spec.id}:${this.bus.runId}`);
+      }
     }
   }
 
@@ -494,8 +526,8 @@ export class AgentRunner {
   }
 
   private async resumeFromCheckpoint(): Promise<void> {
+    // INITIALIZING already happened in run() — lease acquisition is part of it.
     const cp = await this.deps.checkpoints?.latest(this.deps.spec.id);
-    this.transition('INITIALIZING');
     if (!cp) {
       // Nothing to resume — fresh start through the normal path.
       this.transition('UNDERSTANDING');

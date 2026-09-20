@@ -1,4 +1,5 @@
 import type { Action, PolicyContext, PolicyDecision, PolicyEngine } from '@naro/core';
+import { InMemoryLimitStore, type LimitStore } from './limiter.ts';
 
 /**
  * A declarative rule: when `when` matches, `then` is the verdict.
@@ -34,37 +35,39 @@ export interface AuditEntry {
 export class RulePolicyEngine implements PolicyEngine {
   private readonly rules: readonly PolicyRule[];
   private readonly defaultDecision: PolicyDecision;
-  private readonly calls = new Map<string, number[]>();
+  private readonly limits: LimitStore;
   private readonly log: AuditEntry[] = [];
 
-  constructor(rules: readonly PolicyRule[], options: { default?: PolicyDecision } = {}) {
+  constructor(rules: readonly PolicyRule[], options: { default?: PolicyDecision; limits?: LimitStore } = {}) {
     this.rules = rules;
     this.defaultDecision = options.default ?? 'allow';
+    this.limits = options.limits ?? new InMemoryLimitStore();
   }
 
-  evaluate(action: Action, ctx: PolicyContext): PolicyDecision {
+  evaluate(action: Action, ctx: PolicyContext): Promise<PolicyDecision> | PolicyDecision {
     for (const rule of this.rules) {
       if (!rule.when(action, ctx)) continue;
-
-      let decision = rule.then;
-      if (decision === 'limit') decision = this.checkLimit(rule);
-      if (decision === 'audit' || rule.then === 'limit') {
-        this.log.push({ at: Date.now(), actionId: action.id, target: action.target, decision, ruleId: rule.id });
+      if (rule.then === 'limit') return this.limitVerdict(rule, action);
+      if (rule.then === 'audit') {
+        this.log.push({ at: Date.now(), actionId: action.id, target: action.target, decision: 'audit', ruleId: rule.id });
       }
-      return decision;
+      return rule.then;
     }
     return this.defaultDecision;
   }
 
-  private checkLimit(rule: PolicyRule): PolicyDecision {
+  private limitVerdict(rule: PolicyRule, action: Action): PolicyDecision | Promise<PolicyDecision> {
     const spec = rule.limit ?? { maxCalls: 1 };
-    const now = Date.now();
-    const windowStart = rule.limit?.windowMs !== undefined ? now - rule.limit.windowMs : 0;
-    const recent = (this.calls.get(rule.id) ?? []).filter((t) => t >= windowStart);
-    this.calls.set(rule.id, recent);
-    if (recent.length >= spec.maxCalls) return 'deny';
-    recent.push(now);
-    return 'allow';
+    // record() counts this call — attempts past the cap count too (that's
+    // what makes a rate limit a rate limit, not a success quota).
+    const n = this.limits.record(rule.id, spec.windowMs, Date.now());
+    const settle = (count: number): PolicyDecision => {
+      const decision: PolicyDecision = count <= spec.maxCalls ? 'allow' : 'deny';
+      this.log.push({ at: Date.now(), actionId: action.id, target: action.target, decision, ruleId: rule.id });
+      return decision;
+    };
+    // In-memory stays synchronous; durable stores go async.
+    return typeof n === 'number' ? settle(n) : n.then(settle);
   }
 
   /** The audit trail — which rules fired, on which actions. */

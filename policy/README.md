@@ -22,7 +22,7 @@ The included builders cover common cases:
 
 - `denyCapability(pattern)` denies matching capabilities or targets;
 - `requireApproval(pattern)` sends matching actions to a human bridge;
-- `limitCalls(pattern, maxCalls, windowMs?)` enforces an in-memory call limit;
+- `limitCalls(pattern, maxCalls, windowMs?)` enforces a call limit through the configured `LimitStore`;
 - `auditCalls(pattern)` allows and records matching actions;
 - `requireGrants()` denies actions whose requested permissions exceed the
   agent's grants.
@@ -42,9 +42,10 @@ The included builders cover common cases:
 ## Boundaries to understand
 
 Rules contain predicate functions, so they are code—not serializable policy
-data. The built-in call counters are process-local and are not suitable as a
-distributed quota. A database-backed limiter or OPA/Rego adapter can implement
-the same core `PolicyEngine` interface when those guarantees are required.
+data. `InMemoryLimitStore` scopes quotas to one process.
+`SqliteLimitStore` uses transactions to share counters across processes on one
+host. Redis or Postgres can implement `LimitStore` for multi-host quotas.
+OPA/Rego remains the adapter for centrally managed policy decisions.
 
 The engine defaults to `allow` for convenience. Production configurations
 should normally set `{ default: 'deny' }` and add explicit allow rules.

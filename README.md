@@ -60,23 +60,24 @@ const result = await runner.run();
 | Package | Role | Depends on |
 |---|---|---|
 | `@naro/core` | Primitives: Goal, Task, Action, Observation, Events, 17-state machine, Reasoner/Policy/Verifier/Context seams | nothing |
-| `@naro/runtime` | AgentRunner (the only place transitions happen), EventBus, retry/timeout, checkpoint + recovery | core |
+| `@naro/runtime` | AgentRunner, immutable event journal, aborting deadlines, checkpoints, SQLite durability, leases | core |
 | `@naro/model` | Capability-gated `Model`/`ModelProvider`, message vocabulary, `MockModel` | core |
-| `@naro/tools` | Tool contract, registry, JSON-schema validation, executor pipeline, baseline policy | core |
+| `@naro/tools` | Tool contracts, schemas, executor, baseline policy, secret providers, worker sandbox | core |
 | `@naro/environment` | `Environment` contract + `InMemoryEnvironment` | core |
-| `@naro/memory` | Tiered `MemoryStore` (working→longterm) + in-memory/file stores | core |
+| `@naro/memory` | Tiered memory with in-memory, JSONL, and SQLite FTS5 stores | core |
 | `@naro/context` | `ContextEngine`: sources → rank → select → compress → budget | core |
 | `@naro/reasoning` | `ReAct`, `PlanExecute`, `Reflection` strategies over `Model` | core, model |
 | `@naro/policy` | `RulePolicyEngine`: ordered rules for deny/approval/limit/audit decisions | core |
-| `@naro/observability` | `EventExporter`, JSONL/console export, `computeMetrics()` from events | core |
+| `@naro/observability` | metrics, redaction, JSONL/console export, and SQLite event journal | core |
 | `@naro/evaluation` | `BenchmarkRunner`: cases → real runs → outcome checks and event metrics | core, runtime, observability |
 | `@naro/verification` | Schema, predicate, command, human, composite, and calibrated LLM-judge verifiers | core, model, tools |
-| `@naro/multiagent` | Agent directory, in-memory request bus, and policy-gated delegation tool | core, tools |
+| `@naro/multiagent` | directory, local/HTTP/durable buses, JWT hooks, policy-gated delegation | core, tools |
 | `@naro/adapter-openai` | OpenAI-compatible `Model`/`Provider` (OpenAI, Ollama, vLLM, …) — raw fetch, injectable | core, model |
 | `@naro/adapter-mcp` | MCP `ToolSource`: discovered server tools flow through the standard pipeline | core, tools |
 | `@naro/adapter-otel` | OTLP/HTTP `EventExporter` — events land in any OTel collector | core, observability |
 | `@naro/adapter-opa` | `PolicyEngine` over OPA/Rego HTTP — fail-closed by default | core |
-| `@naro/adapter-anthropic` | Anthropic Messages API `Model` — tool_use blocks, hoisted system, required max_tokens | core, model |
+| `@naro/adapter-anthropic` | Anthropic Messages API, streaming, tools, forced-tool structured output | core, model |
+| `@naro/adapter-gemini` | Gemini generateContent, tools, vision, native structured output | core, model |
 | `@naro/adapter-a2a` | A2A transport for `AgentBus`: agent cards + JSON-RPC `tasks/send` | core, multiagent |
 | `@naro/contract-tests` | Shared suites every port implementation must pass (dev-only) | core |
 | `@naro/profile-coding` | `WorkspaceEnvironment` (jailed fs + shell) + `codingTools()` | core, environment, tools |
@@ -122,9 +123,11 @@ Practice in three passes:
 
 Documentation paths:
 
+- [Build your first safe agent](docs/getting-started.md)
 - [Documentation map](docs/README.md)
 - [Architecture](docs/architecture.md)
 - [End-to-end use cases](docs/use-cases.md)
+- [Production readiness](docs/production-readiness.md)
 - [Design principles](docs/principles.md)
 
 ## Status
@@ -155,8 +158,14 @@ heap caps and kill-on-timeout), `SecretProvider` ports (references, never
 values), HS256 JWT auth on the HTTP bus behind a `TokenVerifier` hook,
 and `npm run pack:check` gating publishability in CI.
 
-Remaining: Postgres/Redis stores for multi-host scale, container-level
-sandboxing, OIDC/JWKS verifier adapters, and changeset release automation.
+Track E landed: shared `LimitStore` quotas (SQLite-backed, multi-process),
+runner leases with heartbeat fencing, `ShardedExecutor` consistent-hash
+routing, A2A `message/stream` (SSE) + `tasks/cancel`, a zero-dep
+`jwksVerifier` for real OIDC tokens, and changeset release automation.
+
+Remaining: Redis/Postgres stores for multi-host fleets (ports are stable),
+container-level sandboxing for fully untrusted code, and a hosted
+control plane.
 
 ## License
 

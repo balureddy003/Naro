@@ -1,31 +1,79 @@
 # @naro/multiagent
 
-The A2A seam: agents address each other by id over a replaceable bus. Naro's kernel stays single-agent — coordination lives at the edge.
+Agent addressing and delegation outside the single-agent kernel. Delegation is
+a normal tool call, so grants, policy, validation, observations, and audit still
+apply.
 
-## The design trick: delegation is a tool
-
-`delegationTool(bus, agentId)` produces a standard `Tool` whose `execute()` sends a task request over the bus. Consequence: delegation flows through the same `resolve → authorize → validate → execute → observe` pipeline as everything else — policy can gate which agents may be addressed, humans can approve cross-agent calls, and every delegation lands in the event audit trail.
+## Core contract
 
 ```ts
-const bus = new InMemoryAgentBus();
-const dir = new AgentDirectory();
-dir.register({ id: 'researcher', name: 'Researcher', capabilities: ['web'] });
-
-// Worker side: serve requests with a real AgentRunner
-bus.serve('researcher', async (msg) => (await runner.run(msg.goal)).result);
-
-// Parent side: the model can call `delegate` like any tool
-registry.register(delegationTool(bus, 'parent', dir));
+interface AgentBus {
+  serve(agentId, handler): void;
+  request(to, goal, from, timeoutMs?): Promise<unknown>;
+}
 ```
 
-## Components
+`AgentDirectory` records agent identity and advertised capabilities.
+`delegationTool()` exposes the bus through a tool requiring the
+`agent.delegate` permission.
 
-- **`AgentBus`** — `serve(agentId, handler)` + `request(to, goal)` request/reply. Two transports: `InMemoryAgentBus` (same process) and `HttpAgentBus` (`POST /agents/{id}/task` — real cross-process delegation, `resolve(agentId) → base URL`).
-- **`AgentDirectory`** — capability-indexed registry so a reasoner (or the delegation tool) can find who can do what.
-- **`AgentMessage`** — `task-request` / `task-result` / `status` union, extensible toward full A2A semantics.
+## Included transports
 
-## Invariants
+| Transport | Scope | Delivery |
+|---|---|---|
+| `InMemoryAgentBus` | one process | direct request/reply |
+| `HttpAgentBus` | processes or hosts | synchronous HTTP request/reply |
+| `DurableAgentBus` | processes sharing one SQLite file | persistent at-least-once queue |
 
-- The kernel knows nothing about other agents — `core` has no multi-agent types.
-- Unknown agents fail visibly (`unknown agent 'x'`), never silently queue.
-- Bus timeouts are explicit — a worker that never replies surfaces as a failed observation, not a hung run.
+`@naro/adapter-a2a` implements agent cards and the synchronous JSON-RPC
+`tasks/send` subset over the same `AgentBus` contract.
+
+## HTTP authentication
+
+`HttpAgentBus` accepts a `TokenVerifier`:
+
+- `sharedTokenVerifier()` for a constant-time shared secret;
+- `hmacTokenVerifier()` for HS256 JWT verification with expiry, issuer, and
+  audience checks;
+- an application-supplied verifier for OIDC/JWKS or another identity system.
+
+Configure `authenticate` on the server and `tokenProvider` on the caller for
+rotating credentials. Once authentication is configured, missing or invalid
+bearer tokens fail closed with `401`.
+
+## Durable delegation
+
+```ts
+const bus = new DurableAgentBus('.naro/agents.db', {
+  pollMs: 25,
+  reclaimAfterMs: 30_000,
+});
+```
+
+Requests are SQLite rows. Pending work survives process restart. Claims older
+than `reclaimAfterMs` return to the queue, which gives at-least-once delivery.
+A handler can therefore run more than once and must make external writes
+idempotent.
+
+A requester timeout marks the task `timed-out`; work already claimed may still
+finish. `tasks()` exposes queue state for operations and forensics.
+
+## Example
+
+```ts
+const directory = new AgentDirectory();
+directory.register({ id: 'researcher', name: 'Researcher', capabilities: ['research'] });
+
+const bus = new InMemoryAgentBus();
+bus.serve('researcher', async (message) => runSpecialist(message.goal));
+registry.register(delegationTool(bus, 'lead', directory));
+```
+
+## Boundaries
+
+- Select context for the child; do not copy the parent transcript wholesale.
+- Apply delegation depth, token, time, and cost budgets.
+- Authenticate and encrypt network transports.
+- Verify child output before trusting it.
+- SQLite durability is single-host; multi-host queues need a shared database or
+  broker implementation behind `AgentBus`.

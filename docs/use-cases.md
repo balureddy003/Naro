@@ -231,12 +231,15 @@ event.
 **Profile:** `@naro/profile-workflow`.
 
 ```ts
-const env = new WorkflowEnvironment({ executor });
+const env = new WorkflowEnvironment({ executor, policy });
 ```
 
 `workflow.validate` checks duplicate IDs, unknown dependencies, and cycles.
 `workflow.run` executes topologically, substitutes `$step` outputs, retries
-configured steps, and fails fast.
+configured steps, and fails fast. The nested policy is required: every step is
+evaluated before its executor runs, so a workflow cannot hide actions behind
+one outer `workflow.run` permission. Nested `require_approval` resolves as deny
+because the workflow has no human interaction channel.
 
 Use a workflow when ordering is known and should be deterministic. Use a
 reasoner when the next step depends on evidence discovered at runtime. A real
@@ -316,6 +319,7 @@ These choices are independent from the domain profile:
 |---|---|
 | OpenAI-compatible endpoint | `@naro/adapter-openai` |
 | Anthropic Messages API | `@naro/adapter-anthropic` |
+| Gemini `generateContent` | `@naro/adapter-gemini` |
 | MCP tool server | `@naro/adapter-mcp` |
 | local policy rules | `@naro/policy` |
 | centrally managed Rego | `@naro/adapter-opa` |
@@ -332,9 +336,11 @@ change the runtime.
 
 Before shipping any use case, confirm:
 
-- explicit deny-by-default policy is supplied;
-- credentials and tenant scope are outside model control;
-- external writes are idempotent or reconcilable;
+- an explicit policy covers every target scheme;
+- credentials are secret references resolved only at execution;
+- hostile code runs in container-level isolation, not only worker threads;
+- external writes enforce idempotency keys or are reconcilable;
+- a runner lease prevents concurrent execution of the same agent;
 - every network and filesystem destination is bounded;
 - model, tool, context, iteration, time, and cost budgets exist;
 - verification checks authoritative evidence;

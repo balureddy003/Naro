@@ -1,43 +1,57 @@
 # @naro/observability
 
-Event-derived metrics and export for answering a practical question: what
-actually happened during this run?
+Metrics, redaction, and durable export derived from the same event journal the
+runtime returns.
 
 ## Public API
 
-- `computeMetrics(events)` derives counts and duration from a completed event
-  history.
-- `EventExporter` is the sink contract for batches of `NaroEvent` values.
-- `JsonlExporter` appends one JSON object per line to a file.
-- `ConsoleExporter` prints a compact live event stream.
-- `pipeTo(bus, exporter)` forwards each live event and returns an unsubscribe
-  function.
+| Export | Role |
+|---|---|
+| `computeMetrics(events)` | derives behavior and duration from an event history |
+| `EventExporter` | batch sink contract with optional `flush()` |
+| `JsonlExporter` | ordered append-only JSONL audit file |
+| `ConsoleExporter` | compact development stream |
+| `SqliteEventStore` | transactional, queryable single-host event journal |
+| `pipeTo(bus, exporter)` | attaches a live exporter and returns `stop()` plus `flush()` |
+| `redact()` / `redacting()` | masks sensitive keys and secret-shaped values before export |
+
+## Live export
 
 ```ts
-const exporter = new JsonlExporter('.naro/audit.jsonl');
-const unsubscribe = pipeTo(runner, exporter);
-const result = await runner.run();
-unsubscribe();
+const store = new SqliteEventStore('.naro/events.db');
+const tap = pipeTo(runner, redacting(store));
 
-console.log(computeMetrics(result.events));
+const result = await runner.run();
+await tap.flush();
+tap.stop();
 ```
 
-## Metrics available today
+The runner's internal event history remains complete. Redaction wraps the
+external exporter boundary.
 
-`AgentMetrics` includes total events, reasoning iterations, requested and
-denied actions, approval requests, observations, verification pass/fail counts,
+## Event guarantees
+
+- payloads are immutable structured-clone snapshots;
+- `seq` is monotonic within a run;
+- `runId` identifies one logical run and survives checkpoint resume;
+- subscriber exceptions do not crash execution;
+- JSONL, SQLite, and OTLP exporters serialize writes;
+- exporter failures surface through `flush()`.
+
+`SqliteEventStore.history()` filters by agent or run. `runs()` lists known runs
+for audit and operational tooling.
+
+## Metrics
+
+`AgentMetrics` currently includes event count, reasoning iterations, actions,
+denials, approval requests, observations, verification pass/fail counts,
 replans, checkpoints, and event-stream duration.
 
-The function is pure: the same events produce the same metrics. Token and cost
-metrics require corresponding model-usage events; the current runtime event
-vocabulary does not emit those yet.
+The runtime emits `model.usage` and includes totals on terminal events. Those
+fields are present in the journal, but `computeMetrics()` does not yet aggregate
+token or cost totals into `AgentMetrics`.
 
-## Exporter behavior
+## OpenTelemetry
 
-`JsonlExporter.export()` returns a promise. Callers that invoke it directly
-should await it. `pipeTo()` is intended as a lightweight live tap; applications
-that require durable delivery, batching, backpressure, or error reporting
-should implement `EventExporter` with those guarantees.
-
-An OpenTelemetry exporter can use the same interface without changing the
-runtime.
+`@naro/adapter-otel` maps events to OTLP/HTTP log records. Events are facts in
+sequence, not a parented timing tree, so the adapter does not invent spans.

@@ -1,10 +1,43 @@
 # Naro Documentation
 
-Use the documentation by outcome, not by file order.
+Choose the path that matches what you are trying to accomplish.
 
-## I want to understand agent systems
+## Get started
 
-Follow the course in `learn/`:
+New to Naro:
+
+1. [Build your first safe agent](getting-started.md) — offline, policy-gated,
+   verified, and observable.
+2. [Glossary](glossary.md) — the vocabulary used throughout the project.
+3. [How LLMs work](learn/00-how-llms-work.md) — begin the concept course.
+
+Runnable examples:
+
+| Level | Example | Run |
+|---|---|---|
+| 1 | [Minimal agent](../examples/minimal-agent/README.md) | `npm run example` |
+| 2 | [ReAct agent](../examples/react-agent/README.md) | `npm run example:react` |
+| 3 | [Coding agent](../examples/coding-agent/README.md) | `npm run example:coding` |
+
+## Tutorials and use cases
+
+[End-to-end use cases](use-cases.md) covers production-shaped compositions for:
+
+- coding;
+- cited research;
+- browser automation;
+- SQL and data;
+- DevOps runbooks;
+- deterministic workflows;
+- robotics;
+- multi-agent delegation.
+
+Each use case names its capabilities, controls, evidence, and production
+boundary.
+
+## Concepts
+
+The learning course moves from model mechanics to production operation:
 
 1. [How LLMs work](learn/00-how-llms-work.md)
 2. [Training](learn/01-training.md)
@@ -20,50 +53,73 @@ Follow the course in `learn/`:
 12. [Security and policy](learn/11-security-and-policy.md)
 13. [Scale and reliability](learn/12-scale-and-reliability.md)
 
-The course starts with model behavior and ends with production operation. Each
-chapter explains the concept, its failure modes, and where Naro implements it.
+## Architecture and design
 
-## I want to build an agent
+- [Architecture](architecture.md) — system, packages, runtime, data flow,
+  deployment, and extension rules.
+- [Design principles](principles.md) — enforceable review rules.
+- [Contract tests](../contract-tests/README.md) — executable compatibility for
+  replaceable ports.
+- [Documentation style](documentation-style.md) — page types, voice, claim
+  standards, and maintenance checklist.
 
-Start with a runnable example:
+## Operations and production
 
-| Level | Example | What it teaches | Run |
-|---|---|---|---|
-| 1 | [minimal agent](../examples/minimal-agent/README.md) | goal, decisions, tools, policy, observations, checkpoints | `npm run example` |
-| 2 | [ReAct agent](../examples/react-agent/README.md) | model tool calls, context, memory, verification | `npm run example:react` |
-| 3 | [coding agent](../examples/coding-agent/README.md) | a real domain profile with jailed files and shell | `npm run example:coding` |
+- [Production readiness](production-readiness.md) — authorization, secrets,
+  isolation, durability, leases, delivery, observability, and release gates.
+- [`@naro/observability`](../observability/README.md) — metrics, redaction,
+  JSONL, SQLite event journal, and export lifecycle.
+- [`@naro/adapter-otel`](../adapters/otel/README.md) — OTLP/HTTP logs.
+- [`@naro/evaluation`](../evaluation/README.md) — benchmark reports and baseline
+  comparison.
+- [`naro` CLI](../cli/README.md) — scaffold, run, bench, replay, and states.
 
-Then choose a production-shaped recipe from [Use cases](use-cases.md): coding,
-research, browser automation, data, DevOps, deterministic workflow, robotics,
-or multi-agent delegation.
+## Reference by subsystem
 
-## I want to understand or extend Naro
+### Kernel and runtime
 
-- [Architecture](architecture.md) moves from system context to packages,
-  runtime behavior, deployment, and code-level invariants.
-- [Design principles](principles.md) is the review checklist for changes.
-- [Contract tests](../contract-tests/README.md) explains how replacement
-  implementations prove compatibility.
-- Package READMEs document the public API and local trust boundary of each
-  package.
+- [`@naro/core`](../core/README.md)
+- [`@naro/runtime`](../runtime/README.md)
+- [`@naro/model`](../model/README.md)
+- [`@naro/reasoning`](../reasoning/README.md)
 
-Before adding a new abstraction, use the placement table in
-[Architecture: code-level extension rules](architecture.md#15-code-level-extension-rules).
+### Capabilities and knowledge
 
-## I want to operate and evaluate agents
+- [`@naro/tools`](../tools/README.md)
+- [`@naro/environment`](../environment/README.md)
+- [`@naro/context`](../context/README.md)
+- [`@naro/memory`](../memory/README.md)
 
-- Use `runner.events()` for a live async event stream.
-- Export events through JSONL, console, or
-  [`@naro/adapter-otel`](../adapters/otel/README.md).
-- Use [`@naro/evaluation`](../evaluation/README.md) for cases, reports,
-  persistence, and baseline diffs.
-- Use [`naro bench`](../cli/README.md) as a CI regression gate.
-- Use [`@naro/adapter-opa`](../adapters/opa/README.md) when policy must be
-  centrally managed in Rego.
+### Assurance and coordination
+
+- [`@naro/policy`](../policy/README.md)
+- [`@naro/verification`](../verification/README.md)
+- [`@naro/observability`](../observability/README.md)
+- [`@naro/evaluation`](../evaluation/README.md)
+- [`@naro/multiagent`](../multiagent/README.md)
+
+### Provider and protocol adapters
+
+- [OpenAI-compatible](../adapters/openai/README.md)
+- [Anthropic](../adapters/anthropic/README.md)
+- [Gemini](../adapters/gemini/README.md)
+- [MCP](../adapters/mcp/README.md)
+- [OPA](../adapters/opa/README.md)
+- [OTLP](../adapters/otel/README.md)
+- [A2A](../adapters/a2a/README.md)
+
+### Domain profiles
+
+- [Coding](../profiles/coding/README.md)
+- [Research](../profiles/research/README.md)
+- [Browser](../profiles/browser/README.md)
+- [Data](../profiles/data/README.md)
+- [DevOps](../profiles/devops/README.md)
+- [Workflow](../profiles/workflow/README.md)
+- [Robotics](../profiles/robotics/README.md)
 
 ## Historical research
 
-[Deep research report](deep-research-report.md) records the research and early
-roadmap that informed Naro. It is historical design input, not the current API
-reference. Current behavior is documented in package source, package READMEs,
-and `architecture.md`.
+[Deep research report](deep-research-report.md) preserves the research and early
+roadmap that informed Naro. It is historical input, not the current API
+reference.

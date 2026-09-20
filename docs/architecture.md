@@ -150,6 +150,7 @@ flowchart TB
         otel["@naro/adapter-otel"]
         opa["@naro/adapter-opa"]
         anthropic["@naro/adapter-anthropic"]
+        gemini["@naro/adapter-gemini"]
         a2a["@naro/adapter-a2a"]
     end
 
@@ -187,6 +188,8 @@ flowchart TB
     opa --> core
     anthropic --> model
     anthropic --> core
+    gemini --> model
+    gemini --> core
     a2a --> multiagent
     a2a --> core
 
@@ -248,10 +251,12 @@ flowchart LR
     reasoner["Reasoner"] --> runner
     context["ContextProvider"] --> runner
     memory["MemoryReader"] --> reasoner
-    policy["PolicyEngine"] --> runner
+    policy["PolicyEngine\nrequired"] --> runner
     human["HumanBridge"] --> runner
     verifier["Verifier"] --> runner
+    secrets["SecretProvider"] --> runner
     checkpoints["CheckpointStore"] <--> runner
+    lease["LeaseStore"] <--> runner
 
     runner --> router["CompositeExecutor"]
     router --> toolExec["ToolExecutor"]
@@ -269,11 +274,12 @@ A runner owns these values for one agent run:
 
 - current `AgentState`;
 - task map and task status;
-- ordered observations;
+- ordered actions and observations;
 - retrieved context items;
-- reasoning iteration count;
+- reasoning iteration and accumulated model usage;
+- stable run ID and event sequence;
 - pause request;
-- ordered event history.
+- immutable ordered event history.
 
 The reasoner receives a read-only `ReasoningContext`. It returns a `Decision`;
 it does not mutate runner state. Consumers may subscribe with `runner.on()` or
@@ -302,15 +308,18 @@ continues live, and closes after completion, failure, cancellation, or pause.
 Decision =
   | plan(tasks)
   | act(action)
+  | act-batch(actions)
   | need-context(query)
   | wait-for-human(question)
   | complete(result)
   | fail(reason)
 ```
 
-Keeping this union closed is the main plug-in boundary. ReAct, Plan-Execute,
-Reflection, deterministic rules, or a human-controlled reasoner all speak the
-same protocol. A new reasoning strategy should not require a new runtime branch
+Each decision may carry model usage. `act-batch` expresses independent actions
+from one reasoning cycle: policy and approval stay serial, then authorized
+actions execute concurrently. Keeping this union closed is the main plug-in
+boundary. ReAct, Plan-Execute, Reflection, tree search, deterministic rules, or
+a human-controlled reasoner all speak the same protocol. A new reasoning strategy should not require a new runtime branch
 unless it introduces a genuinely universal operation.
 
 ---
@@ -369,11 +378,13 @@ allows failure, cancellation, and pause from safe runtime boundaries.
 ### State invariants
 
 1. `REASONING → ACTING` is illegal. Every action crosses
-   `WAITING_FOR_PERMISSION`.
-2. `COMPLETED` and `CANCELLED` are terminal.
-3. `FAILED` and `PAUSED` resume only through `RECOVERING`.
-4. `maxIterations` bounds the reasoning loop; the default is 64.
-5. Tool and environment failures normally become observations instead of
+   `WAITING_FOR_PERMISSION`, and `AgentRunner` requires a policy dependency.
+2. When configured, a runner lease is acquired during initialization so a
+   second process cannot execute the same agent concurrently.
+3. `COMPLETED` and `CANCELLED` are terminal.
+4. `FAILED` and `PAUSED` resume only through `RECOVERING`.
+5. `maxIterations` bounds the reasoning loop; the default is 64.
+6. Tool and environment failures normally become observations instead of
    escaping the action boundary.
 
 ---
@@ -465,6 +476,20 @@ Tool metadata carries schemas, required permissions, and a side-effect class.
 MCP tools enter through `ToolSource` and then use the same registry, policy, and
 executor path as local tools.
 
+Each action receives an idempotency key. The default is deterministic for its
+run and iteration, but the target system must store or enforce that key for a
+retry to be safe.
+
+`ExecContext` carries an abort signal, goal, grants, and an optional secret
+resolver. Actions carry secret references such as `env:API_KEY`; executors
+resolve values at the last responsible moment and must not return them in
+observations.
+
+`SandboxedExecutor` can run an executor module in a fresh worker thread with V8
+heap limits and kill-on-timeout. This isolates crashes and resource exhaustion,
+not operating-system syscalls. Hostile code still requires a container or
+stronger process sandbox.
+
 ---
 
 ## 9. Context and memory
@@ -540,15 +565,18 @@ flowchart LR
     bus --> jsonl["JsonlExporter"]
     bus --> console["ConsoleExporter"]
     bus --> otlp["OtlpExporter\nOTLP/HTTP logs"]
+    bus --> sqlite["SqliteEventStore\ndurable journal"]
     bus --> ui["application subscribers"]
 
-    history["completed RunResult.events"] --> metrics["computeMetrics"]
+    history["completed RunResult.events\nincluding model.usage"] --> metrics["computeMetrics"]
     history --> benchmark["BenchmarkRunner"]
     benchmark --> report["per-case result + aggregate metrics"]
 ```
 
 Observability derives interpretation from the event stream rather than keeping
-a second hidden state. JSONL and OTLP exporters serialize writes and expose
+a second hidden state. Event payloads are structured-cloned snapshots; every
+event carries `runId` and monotonic `seq`. `SqliteEventStore` provides a durable,
+queryable single-host journal. JSONL and OTLP exporters serialize writes and expose
 `flush()` so callers can wait for delivery before process exit.
 
 The current OTLP adapter maps events to log records, not spans. The event model
@@ -564,8 +592,9 @@ into a CI exit code.
 
 ## 12. Checkpoint and recovery model
 
-A checkpoint stores iteration, tasks, observations, and retrieved context. It
-is written after a continued reasoning cycle, never during executor work.
+A checkpoint stores iteration, tasks, actions, observations, retrieved context,
+optional `StatefulReasoner` state, run ID, and the next event sequence. It is
+written after a continued reasoning cycle, never during executor work.
 
 ```mermaid
 sequenceDiagram
@@ -583,15 +612,15 @@ sequenceDiagram
     AR->>AR: INITIALIZING → RECOVERING → REASONING
 ```
 
-Recovery restores Naro's recorded state; it cannot roll back or infer an
-external side effect that completed before its observation was checkpointed.
-Production tools therefore need idempotency keys, reconciliation, or durable
-external operation IDs.
+Recovery restores actions and reasoner state, then continues the original
+`runId` and event sequence. It cannot roll back an external side effect that
+completed before its observation was checkpointed. At-least-once recovery
+therefore requires idempotency keys, reconciliation, or durable external
+operation IDs.
 
-Included stores are in-memory and append-only JSONL files. A production store
-can implement `CheckpointStore` with transactional persistence. Missing files
-mean no checkpoint; corrupt checkpoint data fails rather than silently starting
-a fresh run.
+Included stores are in-memory, append-only JSONL, and transactional SQLite.
+`SqliteCheckpointStore` is the durable single-host option. Missing files mean no
+checkpoint; corrupt data fails rather than silently starting a fresh run.
 
 ---
 
@@ -620,11 +649,15 @@ sequenceDiagram
 
 `AgentDirectory` advertises agent capabilities. `AgentBus` defines request and
 serve operations. `InMemoryAgentBus` stays within one process.
-`HttpAgentBus` sends tasks to resolved agent endpoints, while
-`@naro/adapter-a2a` adds agent cards and JSON-RPC `tasks/send`. These network
-transports are synchronous and non-durable; the A2A adapter does not yet
-implement streaming, push notifications, or multi-turn task graphs. A timed-out
-worker may continue running unless its implementation supports cancellation.
+`HttpAgentBus` sends authenticated tasks to resolved endpoints; token verification
+supports shared secrets, HS256 JWTs, JWKS-backed RS256/ES256 validation, and
+application-provided verifiers.
+`@naro/adapter-a2a` adds agent cards, task send/get/cancel, and SSE lifecycle
+streaming through `requestStream()`. The stream reports task state rather than
+incremental model tokens or artifacts. `DurableAgentBus` stores tasks in SQLite,
+atomically claims work, and reclaims
+stale claims for at-least-once single-host delivery. Handlers must therefore be
+idempotent. Multi-host durability still requires a shared database or broker.
 
 Delegation requires the `agent.delegate` permission and remains visible to
 policy and audit. Returned agent output is still untrusted and should be
@@ -644,7 +677,7 @@ flowchart LR
     app["Node.js process"]
     app --> runner["AgentRunner"]
     app --> local["in-memory env / memory / bus"]
-    app --> files["JSONL checkpoints + audit"]
+    app --> sqlite["SQLite checkpoints, events, memory, leases, task queue"]
     app --> model["local or hosted model"]
 ```
 
@@ -665,9 +698,10 @@ flowchart LR
     workers <-->|durable transport| peers["specialist agent workers"]
 ```
 
-Naro currently supplies contracts and local reference implementations for many
-of these edges. Durable queues, distributed locks, centralized secrets,
-tenant isolation, and service authentication remain deployment responsibilities.
+Naro supplies zero-infrastructure SQLite stores, single-host leases and durable
+delegation, secret-provider ports, JWT hooks, and OTLP export. Multi-host queues
+and leases, centralized secret backends, tenant isolation, TLS/mTLS, container
+sandboxing, and hosted operations remain deployment responsibilities.
 
 ---
 
@@ -719,14 +753,14 @@ A change is architecturally acceptable only if these remain true:
 
 These are deliberate implementation boundaries, not hidden guarantees:
 
-- `AgentRunner` falls back to `allowAllPolicy` when no policy is supplied.
-  Production composition should provide an explicit deny-by-default policy.
-- `withTimeout()` stops waiting but does not cancel underlying work unless the
-  executor also honors an `AbortSignal`.
-- file checkpoints and memory stores are reference implementations, not
-  transactional multi-process stores.
-- in-process policy limits are not distributed; HTTP and A2A agent transports
-  are networked but not durable queues.
+- `AgentRunner` requires a policy, but explicit `allowAllPolicy` remains suitable
+  only for tests and controlled development.
+- action deadlines abort the executor signal; an external system may still have
+  committed work before observing cancellation.
+- SQLite checkpoints, events, memory, leases, and delegation are durable across
+  processes sharing one host, not distributed across hosts.
+- in-process policy limits are not distributed; HTTP and A2A transports are
+  synchronous, while the included durable queue is SQLite-backed and single-host.
 - event history supports audit and derived metrics; deterministic replay of
   external side effects requires application-level fixtures or adapters.
 - OTLP export currently emits logs rather than a parented span graph.
@@ -742,6 +776,7 @@ where they can rely on Naro and where production infrastructure must take over.
 
 - [Documentation map](README.md)
 - [End-to-end use cases](use-cases.md)
+- [Production readiness](production-readiness.md)
 - [Design principles](principles.md)
 - [How LLMs work](learn/00-how-llms-work.md)
 - [Agent loops and state machines](learn/08-agent-loops.md)

@@ -52,8 +52,8 @@ main execution path.
 ## The structural rules
 
 **There is no `REASONING → ACTING` transition.** Every action passes through
-`WAITING_FOR_PERMISSION`. Policy is part of the topology, not an optional line
-inside a tool.
+`WAITING_FOR_PERMISSION`. `AgentRunner` requires a `PolicyEngine`; authorization
+is part of the topology, not an optional line inside a tool.
 
 **`COMPLETED` and `CANCELLED` are terminal.** `FAILED` is recoverable only
 through `RECOVERING`, so a failed run cannot silently continue.
@@ -74,19 +74,23 @@ the state machine directly.
 At a high level, each cycle does this:
 
 ```text
-reason → authorize → act → observe → verify → replan or continue
+reason → authorize → act or act-batch → observe → verify → replan or continue
 ```
+
+An `act-batch` still authorizes each action serially. Only authorized actions
+execute concurrently, and every result is observed and verified.
 
 The runner emits typed events throughout the cycle. Those events support audit,
 UI updates, debugging, and evaluation without changing the execution logic.
 
-When a `CheckpointStore` is configured, the runner saves tasks, observations,
-retrieved context, and iteration state after completed cycles. A resumed runner
-loads the latest checkpoint, enters `RECOVERING`, and returns to a reasoning
-boundary. It does not resume halfway through a side effect.
+When a `CheckpointStore` is configured, the runner saves tasks, actions,
+observations, context, iteration, optional reasoner state, and journal position
+after completed cycles. A resumed runner restores the original `runId` and
+event sequence, enters `RECOVERING`, and returns to a reasoning boundary. It
+does not resume halfway through a side effect.
 
-Cancellation uses `AbortSignal`, and executors should propagate that signal to
-the work they start.
+Cancellation and action deadlines use `AbortSignal`. Executors must honor or
+propagate the signal; `SandboxedExecutor` terminates its worker directly.
 
 ## Failure modes
 
