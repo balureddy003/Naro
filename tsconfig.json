@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "core" },
+    { "path": "model" },
+    { "path": "tools" },
+    { "path": "environment" },
+    { "path": "runtime" },
+    { "path": "examples/minimal-agent" }
+  ]
+}

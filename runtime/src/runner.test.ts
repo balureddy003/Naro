@@ -1,0 +1,191 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  createAgentSpec, createGoal, createObservation,
+  type ActionExecutor, type PolicyEngine, type Verifier,
+} from '@naro/core';
+import { AgentRunner } from './runner.ts';
+import { DirectReasoner } from './reasoner-direct.ts';
+import { InMemoryCheckpointStore } from './checkpoint.ts';
+
+/** A test executor: echoes the action input back as an observation. */
+const echoExecutor: ActionExecutor = {
+  execute: (action) => Promise.resolve(createObservation({
+    actionId: action.id, source: action.target, kind: 'env-change',
+    success: true, output: action.input,
+  })),
+};
+
+function wiring(overrides: Partial<Parameters<typeof AgentRunner.prototype.run>[0]> extends never ? object : object) {
+  return overrides;
+}
+
+function makeDeps(extra: Record<string, unknown> = {}) {
+  const goal = createGoal({ description: 'test goal', successCriteria: ['done'] });
+  return {
+    spec: createAgentSpec({ name: 'tester', goal }),
+    executor: echoExecutor,
+    ...extra,
+  };
+}
+
+test('full loop: reason → act → observe → complete, all events emitted', async () => {
+  const reasoner = new DirectReasoner((ctx) => {
+    const acted = ctx.observations.some((o) => o.kind === 'env-change');
+    return acted
+      ? { kind: 'complete', result: ctx.observations.at(-1)?.output }
+      : { kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 'v' } };
+  });
+  const runner = new AgentRunner({ ...makeDeps(), reasoner });
+  const result = await runner.run();
+
+  assert.equal(result.status, 'completed');
+  assert.equal(result.state, 'COMPLETED');
+  assert.equal(result.result, 'v');
+
+  const types = result.events.map((e) => e.type);
+  for (const expected of [
+    'agent.created', 'goal.started', 'reasoning.started', 'action.requested',
+    'permission.requested', 'action.permitted', 'action.started',
+    'action.completed', 'observation.created', 'agent.completed',
+  ]) {
+    assert.ok(types.includes(expected as never), `missing event ${expected}`);
+  }
+  // policy gate happened before execution
+  assert.ok(types.indexOf('permission.requested') < types.indexOf('action.started'));
+});
+
+test('policy denial becomes an observation — the reasoner sees it and adapts', async () => {
+  const denyWrites: PolicyEngine = {
+    evaluate: (a) => (a.target.includes('env://') ? 'deny' : 'allow'),
+  };
+  let sawDenial = false;
+  const reasoner = new DirectReasoner((ctx) => {
+    const denied = ctx.observations.some((o) => o.error === 'action denied by policy');
+    if (denied) { sawDenial = true; return { kind: 'complete', result: 'gave up gracefully' }; }
+    return { kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 'v' } };
+  });
+  const runner = new AgentRunner({ ...makeDeps(), reasoner, policy: denyWrites });
+  const result = await runner.run();
+
+  assert.equal(result.status, 'completed');
+  assert.ok(sawDenial);
+  assert.ok(result.events.some((e) => e.type === 'action.denied'));
+});
+
+test('require_approval routes through WAITING_FOR_HUMAN via the bridge', async () => {
+  const gated: PolicyEngine = { evaluate: () => 'require_approval' };
+  let asked = 0;
+  const human = {
+    approve: () => { asked++; return Promise.resolve({ approved: asked >= 2 }); },
+    ask: () => Promise.resolve(''),
+  };
+  const reasoner = new DirectReasoner((ctx) => {
+    if (ctx.observations.some((o) => o.kind === 'env-change')) return { kind: 'complete', result: 'ok' };
+    if (ctx.observations.some((o) => o.kind === 'human')) {
+      // first approval refused → reasoner retries once
+      return { kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 'v' } };
+    }
+    return { kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 'v' } };
+  });
+  const runner = new AgentRunner({ ...makeDeps(), reasoner, policy: gated, human });
+  const result = await runner.run();
+  assert.equal(result.status, 'completed');
+  assert.equal(asked, 2);
+  assert.ok(result.events.some((e) => e.type === 'human.approval.requested'));
+});
+
+test('tool failure surfaces as an error observation, not a crash', async () => {
+  const failing: ActionExecutor = {
+    execute: () => Promise.reject(new Error('tool exploded')),
+  };
+  const reasoner = new DirectReasoner((ctx) =>
+    ctx.observations.some((o) => o.kind === 'error')
+      ? { kind: 'complete', result: 'handled' }
+      : { kind: 'act', action: { capability: 'tool.invoke', target: 'tool://x', input: {} } });
+  const runner = new AgentRunner({ ...makeDeps(), reasoner, executor: failing });
+  const result = await runner.run();
+  assert.equal(result.status, 'completed');
+});
+
+test('failed verification triggers replan, then success completes', async () => {
+  let verifyCalls = 0;
+  const verifier: Verifier = {
+    id: 'flaky-verifier',
+    verify: () => { verifyCalls++; return Promise.resolve({ ok: verifyCalls >= 2, reason: 'not yet' }); },
+  };
+  const reasoner = new DirectReasoner((ctx) => {
+    if (verifyCalls >= 2) return { kind: 'complete', result: 'verified' };
+    return { kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 'v' } };
+  });
+  const runner = new AgentRunner({ ...makeDeps(), reasoner, verifier });
+  const result = await runner.run();
+  assert.equal(result.status, 'completed');
+  assert.ok(result.events.some((e) => e.type === 'replan.triggered'));
+});
+
+test('abort signal cancels the run at the next boundary', async () => {
+  const ac = new AbortController();
+  const reasoner = new DirectReasoner(() => {
+    ac.abort('stop');
+    return { kind: 'act', action: { capability: 'env.write', target: 'env://local/k' } };
+  });
+  const runner = new AgentRunner({ ...makeDeps(), reasoner });
+  const result = await runner.run({ signal: ac.signal });
+  assert.equal(result.status, 'cancelled');
+  assert.equal(result.state, 'CANCELLED');
+});
+
+test('pause → checkpoint → a fresh runner resumes with full history', async () => {
+  const store = new InMemoryCheckpointStore();
+  const deps = makeDeps();
+  let paused = false;
+
+  const reasoner1 = new DirectReasoner((ctx) => {
+    if (!paused && ctx.iteration >= 1) { paused = true; return { kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 'step1' } }; }
+    return { kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 'step1' } };
+  });
+
+  const runner1 = new AgentRunner({ ...deps, reasoner: reasoner1, checkpoints: store });
+  // pause after the first completed cycle
+  runner1.on('action.completed', () => runner1.pause());
+  const r1 = await runner1.run();
+  assert.equal(r1.status, 'paused');
+
+  const saved = await store.latest(deps.spec.id);
+  assert.ok(saved, 'checkpoint should exist');
+  assert.ok(saved.data.observations.length >= 1);
+
+  // simulate crash: a brand-new runner resumes from the checkpoint
+  const reasoner2 = new DirectReasoner((ctx) =>
+    ctx.observations.length >= 1
+      ? { kind: 'complete', result: 'resumed-and-done' }
+      : { kind: 'fail', reason: 'lost state' });
+  const runner2 = new AgentRunner({ ...deps, reasoner: reasoner2, checkpoints: store });
+  const r2 = await runner2.run({ resume: true });
+
+  assert.equal(r2.status, 'completed');
+  assert.equal(r2.result, 'resumed-and-done');
+  assert.ok(r2.events.some((e) => e.type === 'agent.resumed'));
+});
+
+test('iteration limit fails the run instead of looping forever', async () => {
+  const reasoner = new DirectReasoner(() =>
+    ({ kind: 'act', action: { capability: 'env.write', target: 'env://local/k' } }));
+  const runner = new AgentRunner({ ...makeDeps(), reasoner, maxIterations: 3 });
+  const result = await runner.run();
+  assert.equal(result.status, 'failed');
+  assert.match(result.error ?? '', /iteration limit/);
+});
+
+test('need-context decisions route through WAITING_FOR_CONTEXT', async () => {
+  const context = { retrieve: () => Promise.resolve([{ id: 'c1', source: 'test', content: 'fact' }]) };
+  const reasoner = new DirectReasoner((ctx) =>
+    ctx.context.length === 0
+      ? { kind: 'need-context', query: 'what is the answer' }
+      : { kind: 'complete', result: ctx.context[0]!.content });
+  const runner = new AgentRunner({ ...makeDeps(), reasoner, context });
+  const result = await runner.run();
+  assert.equal(result.result, 'fact');
+  assert.ok(result.events.some((e) => e.type === 'context.retrieved'));
+});

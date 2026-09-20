@@ -1,0 +1,26 @@
+{
+  "name": "naro",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Naro — a universal, open-source foundation for building autonomous agents.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": [
+    "core",
+    "runtime",
+    "model",
+    "tools",
+    "environment",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test \"*/src/**/*.test.ts\" \"examples/*/src/**/*.test.ts\"",
+    "clean": "tsc -b --clean",
+    "example": "node examples/minimal-agent/src/index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  }
+}

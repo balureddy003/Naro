@@ -1,0 +1,67 @@
+import type { Goal } from './goal.ts';
+import type { Task } from './task.ts';
+import type { Action } from './action.ts';
+import type { Observation } from './observation.ts';
+import type { AgentState } from './state.ts';
+
+/**
+ * Everything meaningful inside an agent execution is an event.
+ *
+ * Events are the backbone of observability: they power debugging, audit,
+ * replay, evaluation, and UI streaming. If something happened and no
+ * event was emitted — from Naro's perspective it didn't happen.
+ *
+ * Payloads are typed per event name, so `bus.on('action.denied', …)`
+ * knows `event.data.action` exists at compile time.
+ */
+export interface EventDataMap {
+  'agent.created':              { name: string };
+  'goal.started':               { goal: Goal };
+  'task.created':               { task: Task };
+  'plan.created':               { tasks: Task[] };
+  'context.retrieved':          { query: string; itemCount: number };
+  'reasoning.started':          { iteration: number };
+  'reasoning.completed':        { iteration: number; decision: DecisionKind };
+  'action.requested':           { action: Action };
+  'permission.requested':       { action: Action };
+  'action.permitted':           { action: Action };
+  'action.denied':              { action: Action; reason?: string };
+  'action.started':             { action: Action };
+  'action.completed':           { action: Action; observation: Observation };
+  'observation.created':        { observation: Observation };
+  'verification.started':       { subject: string };
+  'verification.completed':     { ok: boolean; reason?: string };
+  'replan.triggered':           { reason: string };
+  'memory.written':             { key: string };
+  'checkpoint.created':         { checkpointId: string };
+  'human.approval.requested':   { action?: Action; question?: string };
+  'human.approval.received':    { approved: boolean; note?: string };
+  'agent.state_changed':        { from: AgentState; to: AgentState };
+  'agent.paused':               { reason?: string };
+  'agent.resumed':              { checkpointId?: string };
+  'agent.completed':            { result: unknown };
+  'agent.failed':               { error: string };
+  'agent.cancelled':            { reason?: string };
+}
+
+export type EventType = keyof EventDataMap;
+export type DecisionKind = 'plan' | 'act' | 'need-context' | 'wait-for-human' | 'complete' | 'fail';
+
+/**
+ * A NaroEvent is an immutable fact: it happened, at this time, in this
+ * order (`seq` is monotonic per agent), attached to this agent and goal.
+ *
+ * Written as a distributive conditional so `NaroEvent` (no type arg) is a
+ * *union* of per-type events — meaning `if (e.type === 'action.denied')`
+ * narrows `e.data` correctly in handlers.
+ */
+export type NaroEvent<T extends EventType = EventType> = T extends T ? {
+  readonly id: string;
+  readonly type: T;
+  /** Monotonic sequence number within one agent run — the audit ordering. */
+  readonly seq: number;
+  readonly at: number;
+  readonly agentId: string;
+  readonly goalId: string;
+  readonly data: EventDataMap[T];
+} : never;
