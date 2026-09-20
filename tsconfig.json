@@ -68,6 +68,12 @@
       "path": "profiles/browser"
     },
     {
+      "path": "adapters/a2a"
+    },
+    {
+      "path": "profiles/data"
+    },
+    {
       "path": "examples/minimal-agent"
     },
     {

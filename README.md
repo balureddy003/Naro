@@ -77,10 +77,12 @@ const result = await runner.run();
 | `@naro/adapter-otel` | OTLP/HTTP `EventExporter` — events land in any OTel collector | core, observability |
 | `@naro/adapter-opa` | `PolicyEngine` over OPA/Rego HTTP — fail-closed by default | core |
 | `@naro/adapter-anthropic` | Anthropic Messages API `Model` — tool_use blocks, hoisted system, required max_tokens | core, model |
+| `@naro/adapter-a2a` | A2A transport for `AgentBus`: agent cards + JSON-RPC `tasks/send` | core, multiagent |
 | `@naro/contract-tests` | Shared suites every port implementation must pass (dev-only) | core |
 | `@naro/profile-coding` | `WorkspaceEnvironment` (jailed fs + shell) + `codingTools()` | core, environment, tools |
 | `@naro/profile-research` | `ResearchEnvironment` (allowlisted fetch + citations that require fetched evidence) + `researchTools()` | core, environment, tools |
 | `@naro/profile-browser` | `BrowserEnvironment` over a `BrowserDriver` port; `PlaywrightDriver` (optional peer dep) | core, environment, tools |
+| `@naro/profile-data` | `DataEnvironment` — parameterized SQL, read/write capability split, row caps; `NodeSqliteDriver` (node:sqlite) | core, environment, tools |
 | `@naro/cli` | `naro run` / `bench` / `replay` / `states` | core, runtime, observability, evaluation |
 | `examples/` | `minimal-agent` (scripted) · `react-agent` (model loop) · `coding-agent` (domain profile) | all |
 

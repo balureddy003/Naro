@@ -118,3 +118,47 @@ test('reflection: failures generate lessons injected into later prompts', async 
   assert.match(lastSystemOrUser, /LESSONS FROM PRIOR FAILURES/);
   await r.decide(mkCtx({ observations: [failObs] })); // same obs — reflected once only
 });
+
+// ── TreeSearchReasoner ───────────────────────────────────────────────
+import { TreeSearchReasoner } from './tree-search.ts';
+
+test('tree-search expands candidates, scores them, picks the best', async () => {
+  const model = new MockModel({
+    respond: (req) => {
+      const last = String(req.messages.at(-1)?.content ?? '');
+      if (last.startsWith('Score this candidate')) {
+        // score 'good_tool' high, 'bad_tool' low
+        return { message: { role: 'assistant', content: last.includes('good_tool') ? '0.9' : '0.1' }, finishReason: 'stop' };
+      }
+      return {
+        message: { role: 'assistant', content: JSON.stringify([
+          { kind: 'act', tool: 'bad_tool', input: {}, rationale: 'nah' },
+          { kind: 'act', tool: 'good_tool', input: { x: 1 }, rationale: 'yes' },
+        ]) },
+        finishReason: 'stop',
+      };
+    },
+  });
+  const r = new TreeSearchReasoner(model);
+  const d = await r.decide(mkCtx());
+  assert.equal(d.kind, 'act');
+  assert.equal((d as { action: { target: string } }).action.target, 'tool://good_tool');
+});
+
+test('tree-search completes when the best candidate is a completion', async () => {
+  const model = new MockModel({
+    respond: (req) => {
+      const last = String(req.messages.at(-1)?.content ?? '');
+      if (last.startsWith('Score')) return { message: { role: 'assistant', content: '0.9' }, finishReason: 'stop' };
+      return { message: { role: 'assistant', content: '[{"kind":"complete","result":"answer","rationale":"done"}]' }, finishReason: 'stop' };
+    },
+  });
+  const d = await new TreeSearchReasoner(model).decide(mkCtx());
+  assert.deepEqual(d, { kind: 'complete', result: 'answer' });
+});
+
+test('tree-search fails visibly on unparseable candidates', async () => {
+  const model = new MockModel({ responses: [{ message: { role: 'assistant', content: 'not json' }, finishReason: 'stop' }] });
+  const d = await new TreeSearchReasoner(model).decide(mkCtx());
+  assert.equal(d.kind, 'fail');
+});

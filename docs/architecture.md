@@ -131,6 +131,7 @@ flowchart TB
         coding["@naro/profile-coding\nworkspace env + coding tools"]
         research["@naro/profile-research\nfetch + citations"]
         browser["@naro/profile-browser\nBrowserDriver port + Playwright"]
+        data["@naro/profile-data\nSQL env + node:sqlite"]
     end
 
     subgraph adapters["Edge adapters"]
@@ -139,6 +140,7 @@ flowchart TB
         otel["@naro/adapter-otel"]
         opa["@naro/adapter-opa"]
         anthropic["@naro/adapter-anthropic"]
+        a2a["@naro/adapter-a2a"]
     end
 
     runtime --> core
@@ -170,6 +172,8 @@ flowchart TB
     opa --> core
     anthropic --> model
     anthropic --> core
+    a2a --> multiagent
+    a2a --> core
 
     coding --> environment
     coding --> tools
@@ -180,6 +184,9 @@ flowchart TB
     browser --> environment
     browser --> tools
     browser --> core
+    data --> environment
+    data --> tools
+    data --> core
     otel --> core
 ```
 
