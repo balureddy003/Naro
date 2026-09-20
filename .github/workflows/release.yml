@@ -1,0 +1,33 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write      # changesets release PR + tags
+  id-token: write      # npm provenance attestation
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run check   # build + tests + pack:check — publish only ever ships green
+      - uses: changesets/action@v1
+        with:
+          version: npm run version-packages
+          publish: npx changeset publish --provenance
+          commit: 'chore: version packages'
+          title: 'chore: release @naro packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

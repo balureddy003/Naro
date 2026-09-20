@@ -6,6 +6,8 @@ import { basename, resolve } from 'node:path';
 import { AGENT_STATES, TRANSITIONS, type NaroEvent } from '@naro/core';
 import { computeMetrics } from '@naro/observability';
 import { BenchmarkRunner, diffReports, formatReport, JsonlReportStore, type EvalCase } from '@naro/evaluation';
+import { SqliteApprovalBridge } from '@naro/runtime';
+import { startAgentServer, type RunnerFactory } from './serve.ts';
 
 export interface CliIO {
   out: (s: string) => void;
@@ -20,6 +22,11 @@ const HELP = `naro — universal agent foundation CLI
                            [--baseline <store.jsonl>] — gate: exit 1 on regressions
   naro replay <file.jsonl> reprint + summarize a recorded event stream
   naro init <dir>          scaffold a new agent project [--reasoner react|direct]
+  naro serve <module.ts>   expose an agent as a service [--port N] [--host h]
+                             module exports createRunner(goal): AgentRunner
+  naro approvals --db <db> list pending human-in-the-loop requests
+  naro approve <id> --db <db> [--deny] [--note 'why']
+  naro answer  <id> --db <db> --text 'response'
   naro states              print the agent lifecycle transition table
 `;
 
@@ -118,6 +125,52 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
         const child = spawn(process.execPath, [resolve(file)], { stdio: 'inherit' });
         child.on('exit', (code) => res(code ?? 1));
       });
+    }
+
+    case 'serve': {
+      const file = rest[0];
+      if (!file) { io.err('usage: naro serve <module.ts> [--port N] [--host h]'); return 2; }
+      const flag = (name: string) => rest[rest.indexOf(name) + 1];
+      const port = flag('--port') ? Number(flag('--port')) : 8080;
+      const host = flag('--host');
+      const mod = await import(pathToFileURL(resolve(file)).href) as { createRunner?: RunnerFactory };
+      if (typeof mod.createRunner !== 'function') {
+        io.err(`${file} must export createRunner(goal): AgentRunner`);
+        return 2;
+      }
+      const { url, close } = await startAgentServer(mod.createRunner, { port, ...(host !== undefined && { host }) });
+      io.out(`agent serving at ${url} — POST /goals {description}`);
+      // Serve until killed.
+      process.on('SIGINT', () => { void close().then(() => process.exit(0)); });
+      return new Promise<number>(() => {});
+    }
+
+    case 'approvals': {
+      const db = rest[rest.indexOf('--db') + 1];
+      if (!db) { io.err('usage: naro approvals --db <file.db>'); return 2; }
+      const bridge = new SqliteApprovalBridge(resolve(db));
+      const rows = bridge.pending();
+      if (!rows.length) { io.out('no pending requests'); }
+      for (const r of rows) {
+        io.out(`${r.id}  ${r.kind}  ${new Date(r.createdAt).toISOString()}  ${r.question}`);
+      }
+      bridge.close();
+      return 0;
+    }
+
+    case 'approve':
+    case 'answer': {
+      const id = rest[0];
+      const db = rest[rest.indexOf('--db') + 1];
+      if (!id || !db) { io.err(`usage: naro ${cmd} <id> --db <file.db> ${cmd === 'approve' ? '[--deny] [--note n]' : '--text t'}`); return 2; }
+      const bridge = new SqliteApprovalBridge(resolve(db));
+      const flag = (name: string) => rest.includes(name) ? rest[rest.indexOf(name) + 1] : undefined;
+      const done = cmd === 'approve'
+        ? bridge.respond(id, { approved: !rest.includes('--deny'), ...(flag('--note') !== undefined && { note: flag('--note') }) })
+        : bridge.respond(id, { text: flag('--text') });
+      io.out(done ? `${cmd}: ${id} answered` : `${cmd}: no pending request '${id}'`);
+      bridge.close();
+      return done ? 0 : 1;
     }
 
     case 'bench': {

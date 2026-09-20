@@ -46,6 +46,20 @@ it does not re-execute external side effects.
 Prints the current transition table directly from `AGENT_STATES` and
 `TRANSITIONS`.
 
+### `serve`
+
+`naro serve <module.ts> [--port N] [--host h]` exposes an agent as a service.
+The module must export a runner factory; the server accepts `POST /goals`,
+streams run events over SSE (`GET /runs/:id/events`), and supports result
+polling (`GET /runs/:id`).
+
+### `approvals` / `approve`
+
+`naro approvals --db <file.db>` lists pending human-in-the-loop requests from
+a `SqliteApprovalBridge`; `naro approve <id> --db <file.db> [--deny] [--note
+n]` resolves one. Because the queue is durable, a parked run survives process
+restarts — the operator approves later and the run resumes.
+
 ## Design
 
 `main(argv, io)` is testable without a process shell. Agent and benchmark

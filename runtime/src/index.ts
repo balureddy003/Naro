@@ -10,3 +10,4 @@ export * from './runner.ts';
 export * from './sqlite-checkpoint.ts';
 export * from './lease.ts';
 export * from './sharded-executor.ts';
+export * from './approvals.ts';

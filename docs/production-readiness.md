@@ -86,8 +86,8 @@ A second runner fails during initialization while the lease is live. If a
 running process loses its lease, the current implementation emits a
 `replan.triggered` event; it does not forcibly stop execution. Monitor that
 event and use stronger fencing in the external systems for high-impact writes.
-Multi-host deployments need Redis, etcd, Postgres, or another shared
-`LeaseStore`.
+Multi-host deployments need a shared `LeaseStore` — `@naro/adapter-pg`
+provides `PgLeaseStore` on Postgres.
 
 ## 7. Multi-agent delivery
 
@@ -134,12 +134,14 @@ export currently uses log records rather than a trace-span hierarchy.
 
 ## 10. Multi-host production gaps
 
-The repository provides a strong zero-infrastructure single-host substrate. A
-multi-host platform still needs deployment-specific implementations or
-services for:
+The repository provides a strong zero-infrastructure single-host substrate
+(SQLite) plus `@naro/adapter-pg`, which implements every durable port on
+Postgres for multi-host deployments: `PgCheckpointStore`, `PgEventStore`,
+`PgMemoryStore`, `PgLeaseStore`, `PgLimitStore`, and `PgAgentBus` (atomic
+`SKIP LOCKED` claims, single-statement upsert quotas). Its integration tests
+run against a real Postgres service container in CI. A multi-host platform
+still needs deployment-specific services for:
 
-- shared checkpoint, event, and memory stores;
-- distributed leases and durable queues;
 - container or VM isolation;
 - organization-specific service identity and tenant authorization;
 - centralized secret management;

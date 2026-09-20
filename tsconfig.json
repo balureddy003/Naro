@@ -93,6 +93,9 @@
     },
     {
       "path": "./adapters/gemini"
+    },
+    {
+      "path": "./adapters/postgres"
     }
   ],
   "extends": "./tsconfig.base.json",

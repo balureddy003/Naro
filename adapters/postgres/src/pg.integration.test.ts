@@ -1,0 +1,66 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createGoal } from '@naro/core';
+import { pgPool, PgCheckpointStore, PgAgentBus, PgLeaseStore, PgLimitStore, PgMemoryStore, PgEventStore } from './index.ts';
+import { checkpointStoreContract, memoryStoreContract, eventExporterContract } from '@naro/contract-tests';
+
+const url = process.env['NARO_PG_URL'];
+const describePg = url ? test : test.skip;
+
+// Shared port contracts — same suites the SQLite stores pass. Registered only
+// when a real Postgres is reachable.
+if (url) {
+  checkpointStoreContract('PgCheckpointStore', async () => PgCheckpointStore.create(await pgPool(url)));
+  memoryStoreContract('PgMemoryStore', async () => PgMemoryStore.create(await pgPool(url)));
+  eventExporterContract('PgEventStore', async () => PgEventStore.create(await pgPool(url)));
+}
+
+describePg('pg integration (requires NARO_PG_URL)', async () => {
+  const pool = await pgPool(url!);
+
+  test('checkpoints: save → latest → agent isolation', async () => {
+    const s = await PgCheckpointStore.create(pool);
+    await s.save({ id: 'c1', agentId: 'a1', state: 'REASONING', at: 1, data: { iteration: 1 } } as never);
+    await s.save({ id: 'c2', agentId: 'a1', state: 'REASONING', at: 2, data: { iteration: 2 } } as never);
+    const got = await s.latest('a1');
+    assert.equal((got?.data as { iteration: number }).iteration, 2);
+    assert.equal(await s.latest('a2'), undefined);
+  });
+
+  test('leases: one holder, expiry, release', async () => {
+    const l = await PgLeaseStore.create(pool);
+    assert.equal(await l.acquire('k1', 'h1', 5000), true);
+    assert.equal(await l.acquire('k1', 'h2', 5000), false); // held
+    assert.equal(await l.heartbeat('k1', 'h1', 5000), true);
+    await l.release('k1', 'h1');
+    assert.equal(await l.acquire('k1', 'h2', 5000), true);
+  });
+
+  test('limits: shared counter across "hosts" (two stores, one pool)', async () => {
+    const a = await PgLimitStore.create(pool);
+    const b = await PgLimitStore.create(pool);
+    assert.equal(await a.record('r1', 60_000, Date.now()), 1);
+    assert.equal(await b.record('r1', 60_000, Date.now()), 2); // shared truth
+  });
+
+  test('bus: request → claimed → completed over SQL', async () => {
+    const bus = await PgAgentBus.create(pool, { pollMs: 25 });
+    bus.serve('pg-worker', async (m) => `done:${m.goal.description}`);
+    const res = await bus.request('pg-worker', createGoal({ description: 'multi-host' }), 'tester', 10_000);
+    assert.equal(res, 'done:multi-host');
+    bus.close();
+  });
+
+  test('memory + events round-trip', async () => {
+    const mem = await PgMemoryStore.create(pool);
+    await mem.write({ key: 'k', content: { v: 1 }, tier: 'semantic', tags: ['t'] });
+    assert.deepEqual((await mem.read('k'))?.content, { v: 1 });
+    assert.ok((await mem.search('t', 5)).length >= 0);
+    assert.equal(await mem.forget('k'), true);
+
+    const ev = await PgEventStore.create(pool);
+    await ev.export([{ id: 'e1', type: 'agent.created', seq: 1, at: 1, agentId: 'a', goalId: 'g', runId: 'r', data: { name: 'x' } }]);
+    const hist = await ev.history({ runId: 'r' });
+    assert.equal(hist.length, 1);
+  });
+});

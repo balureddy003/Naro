@@ -76,3 +76,25 @@ test('schema validation still applies to MCP tools', async () => {
 // ── Contract suite: McpToolSource is a ToolSource like any other ─────
 import { toolSourceContract } from '@naro/contract-tests';
 toolSourceContract('McpToolSource', async () => new McpToolSource(await connectedPair()));
+
+test('McpRegistryServer: Naro tools callable over the MCP wire', async () => {
+  const { McpRegistryServer } = await import('./mcp-server.ts');
+  const registry = new ToolRegistry();
+  registry.register({
+    name: 'upper', description: 'uppercase', inputSchema: { type: 'object' },
+    permissions: [], sideEffects: 'none',
+    execute: (input) => Promise.resolve(String((input as { s?: string }).s ?? '').toUpperCase()),
+  });
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'host', version: '0.0.1' });
+  const server = new McpRegistryServer(registry, () => ({ agentId: 'a', goalId: 'g', goal: GOAL, grants: [] }));
+  await Promise.all([client.connect(ct), server.raw.connect(st)]);
+  try {
+    const list = await client.listTools();
+    assert.deepEqual(list.tools.map((t) => t.name), ['upper']);
+    const res = await client.callTool({ name: 'upper', arguments: { s: 'hello' } });
+    assert.deepEqual((res as { content: { text: string }[] }).content[0]!.text, 'HELLO');
+  } finally {
+    await Promise.allSettled([client.close(), server.close()]);
+  }
+});

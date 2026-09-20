@@ -32,3 +32,23 @@ jobs:
       # To bless an intentional change: rerun with --save and commit the
       # updated benchmarks/baseline.jsonl.
       - run: node cli/src/bin.ts bench benchmarks/smoke.ts --baseline benchmarks/baseline.jsonl --save .naro/bench.jsonl --label "${{ github.sha }}"
+
+  pg:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: naro_test }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      NARO_PG_URL: postgres://postgres:postgres@localhost:5432/naro_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: npm run build
+      - run: node --test "adapters/postgres/src/**/*.test.ts"

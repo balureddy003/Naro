@@ -79,6 +79,7 @@ const result = await runner.run();
 | `@naro/adapter-anthropic` | Anthropic Messages API, streaming, tools, forced-tool structured output | core, model |
 | `@naro/adapter-gemini` | Gemini generateContent, tools, vision, native structured output | core, model |
 | `@naro/adapter-a2a` | A2A transport for `AgentBus`: agent cards + JSON-RPC `tasks/send` | core, multiagent |
+| `@naro/adapter-pg` | Postgres `CheckpointStore`, `EventStore`, `MemoryStore`, `LeaseStore`, `LimitStore`, `AgentBus` — the multi-host durability tier | core, runtime, memory, observability, policy, multiagent |
 | `@naro/contract-tests` | Shared suites every port implementation must pass (dev-only) | core |
 | `@naro/profile-coding` | `WorkspaceEnvironment` (jailed fs + shell) + `codingTools()` | core, environment, tools |
 | `@naro/profile-research` | `ResearchEnvironment` (allowlisted fetch + citations that require fetched evidence) + `researchTools()` | core, environment, tools |
