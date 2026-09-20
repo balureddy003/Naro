@@ -74,6 +74,15 @@
       "path": "profiles/data"
     },
     {
+      "path": "profiles/devops"
+    },
+    {
+      "path": "profiles/workflow"
+    },
+    {
+      "path": "profiles/robotics"
+    },
+    {
       "path": "examples/minimal-agent"
     },
     {

@@ -83,6 +83,9 @@ const result = await runner.run();
 | `@naro/profile-research` | `ResearchEnvironment` (allowlisted fetch + citations that require fetched evidence) + `researchTools()` | core, environment, tools |
 | `@naro/profile-browser` | `BrowserEnvironment` over a `BrowserDriver` port; `PlaywrightDriver` (optional peer dep) | core, environment, tools |
 | `@naro/profile-data` | `DataEnvironment` — parameterized SQL, read/write capability split, row caps; `NodeSqliteDriver` (node:sqlite) | core, environment, tools |
+| `@naro/profile-devops` | `DevOpsEnvironment` — runbook registry (declared argv tasks, no arbitrary shell), HTTP probes | core, environment, tools |
+| `@naro/profile-workflow` | `WorkflowEnvironment` — DAG execution through a nested executor, `$step` refs, retries | core, environment, tools |
+| `@naro/profile-robotics` | `RoboticsEnvironment` over a `RobotDriver` port; `GridSimDriver` world-model sim; latched estop | core, environment, tools |
 | `@naro/cli` | `naro run` / `bench` / `replay` / `states` | core, runtime, observability, evaluation |
 | `examples/` | `minimal-agent` (scripted) · `react-agent` (model loop) · `coding-agent` (domain profile) | all |
 

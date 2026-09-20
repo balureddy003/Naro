@@ -132,6 +132,9 @@ flowchart TB
         research["@naro/profile-research\nfetch + citations"]
         browser["@naro/profile-browser\nBrowserDriver port + Playwright"]
         data["@naro/profile-data\nSQL env + node:sqlite"]
+        devops["@naro/profile-devops\nrunbook registry + probes"]
+        workflow["@naro/profile-workflow\nDAG runner"]
+        robotics["@naro/profile-robotics\nRobotDriver port + estop latch"]
     end
 
     subgraph adapters["Edge adapters"]
@@ -187,6 +190,15 @@ flowchart TB
     data --> environment
     data --> tools
     data --> core
+    devops --> environment
+    devops --> tools
+    devops --> core
+    workflow --> environment
+    workflow --> tools
+    workflow --> core
+    robotics --> environment
+    robotics --> tools
+    robotics --> core
     otel --> core
 ```
 

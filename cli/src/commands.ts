@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { AGENT_STATES, TRANSITIONS, type NaroEvent } from '@naro/core';
 import { computeMetrics } from '@naro/observability';
-import { BenchmarkRunner, formatReport, type EvalCase } from '@naro/evaluation';
+import { BenchmarkRunner, diffReports, formatReport, JsonlReportStore, type EvalCase } from '@naro/evaluation';
 
 export interface CliIO {
   out: (s: string) => void;
@@ -15,6 +15,8 @@ const HELP = `naro — universal agent foundation CLI
 
   naro run <agent.ts>      run an agent module (Node 26 native TS)
   naro bench <bench.ts>    run a benchmark module exporting EvalCase[]
+                           [--save <store.jsonl>] [--label <name>]
+                           [--baseline <store.jsonl>] — gate: exit 1 on regressions
   naro replay <file.jsonl> reprint + summarize a recorded event stream
   naro states              print the agent lifecycle transition table
 `;
@@ -60,7 +62,8 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
 
     case 'bench': {
       const file = rest[0];
-      if (!file) { io.err('usage: naro bench <bench.ts>'); return 2; }
+      if (!file) { io.err('usage: naro bench <bench.ts> [--save f] [--label l] [--baseline f]'); return 2; }
+      const flag = (name: string) => rest[rest.indexOf(name) + 1];
       const mod = await import(pathToFileURL(resolve(file)).href) as {
         cases?: EvalCase[]; default?: EvalCase[];
       };
@@ -68,6 +71,26 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
       if (!cases?.length) { io.err(`${file} must export EvalCase[] (named 'cases' or default)`); return 2; }
       const report = await new BenchmarkRunner().run(cases);
       io.out(formatReport(report));
+
+      const savePath = rest.includes('--save') ? flag('--save') : undefined;
+      if (savePath) {
+        const label = rest.includes('--label') ? flag('--label') : undefined;
+        await new JsonlReportStore(resolve(savePath)).save(report, label);
+        io.out(`saved report to ${savePath}`);
+      }
+
+      const basePath = rest.includes('--baseline') ? flag('--baseline') : undefined;
+      if (basePath) {
+        const stored = await new JsonlReportStore(resolve(basePath)).list();
+        const baseline = stored.at(-1)?.report;
+        if (!baseline) { io.err(`no reports in ${basePath} to diff against`); return 2; }
+        const diff = diffReports(baseline, report);
+        io.out(`baseline diff: ${diff.regressions.length} regressions, ` +
+          `${diff.improvements.length} improvements, pass-rate Δ ${(diff.passRateDelta * 100).toFixed(1)}%`);
+        for (const r of diff.regressions) io.out(`  REGRESSED ${r.caseId}: ${r.before.status} → ${r.after.status}`);
+        for (const r of diff.improvements) io.out(`  improved  ${r.caseId}: ${r.before.status} → ${r.after.status}`);
+        if (diff.regressions.length) return 1; // the release gate
+      }
       return report.failed === 0 ? 0 : 1;
     }
 

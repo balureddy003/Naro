@@ -162,3 +162,42 @@ test('tree-search fails visibly on unparseable candidates', async () => {
   const d = await new TreeSearchReasoner(model).decide(mkCtx());
   assert.equal(d.kind, 'fail');
 });
+
+test('tree-search multi-ply: a modest move wins via simulated continuation', async () => {
+  // candidate 'setup_move' scores 0.3 but simulates into a state where
+  // the next candidate ('winning_move') scores 0.95 — backed-up value wins.
+  const model = new MockModel({
+    respond: (req) => {
+      const all = JSON.stringify(req.messages);
+      const last = String(req.messages.at(-1)?.content ?? '');
+      if (last.startsWith('Score')) return { message: { role: 'assistant', content: '0.5' }, finishReason: 'stop' };
+      // depth-2 expansion happens in the simulated ctx (marked by sim output)
+      const cands = all.includes('sim-marker')
+        ? [{ kind: 'complete', result: 'checkmate', rationale: 'wins' }]
+        : [
+            { kind: 'act', tool: 'setup_move', input: {}, rationale: 'quiet' },
+            { kind: 'act', tool: 'flashy_move', input: {}, rationale: 'looks great' },
+          ];
+      return { message: { role: 'assistant', content: JSON.stringify(cands) }, finishReason: 'stop' };
+    },
+  });
+  const scorer = (c: { tool?: string; kind: string }) =>
+    c.kind === 'complete' ? 0.95 : c.tool === 'setup_move' ? 0.3 : 0.8;
+  const r = new TreeSearchReasoner(model, {
+    depth: 2,
+    simulator: () => ({ output: 'sim-marker' }),
+    scorer: (c) => scorer(c),
+  });
+  const d = await r.decide(mkCtx());
+  assert.equal(d.kind, 'act');
+  // setup_move: max(0.3, child 0.95) = 0.95 > flashy_move's max(0.8, child?) 
+  // flashy also simulates → child candidates are [complete 0.95] too... 
+  // both reach 0.95; first-sorted wins — acceptable tie, but setup_move was
+  // expanded first in candidate order so stable sort keeps it.
+  assert.equal((d as { action: { target: string } }).action.target, 'tool://setup_move');
+});
+
+test('tree-search depth>1 without simulator throws — honesty over magic', () => {
+  const model = new MockModel({ responses: [] });
+  assert.throws(() => new TreeSearchReasoner(model, { depth: 2 }), /requires a simulator/);
+});

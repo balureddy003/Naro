@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from './commands.ts';
@@ -42,6 +42,36 @@ test('bench runs a module exporting EvalCase[]', async () => {
   const code = await main(['bench', join(import.meta.dirname, '../fixtures/sample-bench.ts')], io);
   assert.equal(code, 0);
   assert.match(out.join('\n'), /trivial/);
+});
+
+test('bench --baseline gates on regressions, --save persists', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'naro-cli-'));
+  try {
+    const store = join(dir, 'base.jsonl');
+    const baseline = {
+      at: 0, label: 'v1',
+      report: { total: 1, passed: 1, failed: 0, passRate: 1,
+        results: [{ caseId: 'trivial', ok: true, status: 'completed',
+          metrics: { totalEvents: 0, iterations: 0, actionsRequested: 0, actionsDenied: 0,
+            approvalsRequested: 0, observations: 0, verifications: { total: 0, passed: 0, failed: 0 },
+            replans: 0, checkpoints: 0, durationMs: 0 } }],
+        totals: { iterations: 0, actionsRequested: 0, actionsDenied: 0, replans: 0, durationMs: 0 } },
+    };
+    await writeFile(store, JSON.stringify(baseline) + '\n');
+
+    // same caseId now fails → regression → exit 1
+    const { io, out } = capture();
+    const code = await main(['bench', join(import.meta.dirname, '../fixtures/failing-bench.ts'), '--baseline', store], io);
+    assert.equal(code, 1);
+    assert.match(out.join('\n'), /REGRESSED trivial/);
+
+    // --save appends a stored report
+    const code2 = await main(['bench', join(import.meta.dirname, '../fixtures/sample-bench.ts'), '--save', store, '--label', 'v2'], io);
+    assert.equal(code2, 0);
+    const lines = (await readFile(store, 'utf8')).trim().split('\n');
+    assert.equal(lines.length, 2);
+    assert.equal(JSON.parse(lines[1]!).label, 'v2');
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test('unknown command exits 2 with help', async () => {

@@ -12,6 +12,11 @@ import { buildMessages } from './transcript.ts';
  * real multi-ply search can replace the scorer without touching the
  * runtime.
  *
+ * Multi-ply: with `depth` and a `simulator` (the domain's world model),
+ * candidate values back up over lookahead — a modest move that unlocks
+ * a strong continuation wins. Cost is K^depth model calls, so keep
+ * depth at 2-3; without a simulator it stays honest one-ply ranking.
+ *
  * Cost note: this is the expensive pattern. K candidates × scoring =
  * more model calls per step — justified only when the task rewards
  * deliberation over speed.
@@ -28,6 +33,18 @@ export interface Candidate {
 
 export type CandidateScorer = (candidate: Candidate, ctx: ReasoningContext) => Promise<number> | number;
 
+/**
+ * A world model: predicts an action's outcome WITHOUT executing it.
+ * Domains with exact simulators (grid robots, game rules, dry-run
+ * pipelines) get true multi-ply search; domains without one get the
+ * honest one-ply fallback. The simulator's prediction is marked
+ * untrusted — it shapes WHICH action to take, never IS the evidence.
+ */
+export type Simulator = (
+  candidate: Candidate,
+  ctx: ReasoningContext,
+) => Promise<{ output: unknown }> | { output: unknown };
+
 export interface TreeSearchOptions {
   readonly tools?: readonly ToolSpec[];
   readonly instructions?: string;
@@ -35,19 +52,50 @@ export interface TreeSearchOptions {
   readonly branchingFactor?: number;
   /** Scores candidates; default asks the model to score 0-1. */
   readonly scorer?: CandidateScorer;
+  /**
+   * Lookahead plies. Default 1 (expand + score only). >1 requires a
+   * `simulator`; each level multiplies model calls by branchingFactor,
+   * so keep depth small (2-3).
+   */
+  readonly depth?: number;
+  readonly simulator?: Simulator;
 }
 
 export class TreeSearchReasoner implements Reasoner {
   readonly strategy = 'tree-search';
   private readonly model: Model;
-  private readonly opts: Required<Pick<TreeSearchOptions, 'branchingFactor'>> & TreeSearchOptions;
+  private readonly opts: Required<Pick<TreeSearchOptions, 'branchingFactor' | 'depth'>> & TreeSearchOptions;
 
   constructor(model: Model, opts: TreeSearchOptions = {}) {
     this.model = model;
-    this.opts = { branchingFactor: 3, ...opts };
+    this.opts = { branchingFactor: 3, depth: 1, ...opts };
+    if (this.opts.depth > 1 && !this.opts.simulator) {
+      throw new Error('TreeSearchReasoner: depth>1 requires a simulator — a domain world model that predicts action outcomes');
+    }
   }
 
   async decide(ctx: ReasoningContext): Promise<Decision> {
+    const best = await this.expand(ctx, this.opts.depth);
+    if (!best) {
+      return { kind: 'fail', reason: 'tree-search: model produced no parseable candidates' };
+    }
+    if (best.candidate.kind === 'complete') return { kind: 'complete', result: best.candidate.result };
+    return {
+      kind: 'act',
+      action: {
+        capability: 'tool.invoke',
+        target: `tool://${best.candidate.tool}`,
+        input: best.candidate.input,
+      },
+    };
+  }
+
+  /**
+   * Expand K candidates and return the best by backed-up value:
+   * a candidate's value is max(own score, best continuation value) —
+   * a modest first move that unlocks a strong follow-up wins.
+   */
+  private async expand(ctx: ReasoningContext, depth: number): Promise<{ candidate: Candidate; value: number } | undefined> {
     const k = this.opts.branchingFactor;
     const toolNames = this.opts.tools?.map((t) => t.name) ?? [];
     const res = await chat(this.model, {
@@ -69,24 +117,29 @@ export class TreeSearchReasoner implements Reasoner {
     });
 
     const candidates = this.parseCandidates(res.message.content);
-    if (candidates.length === 0) {
-      return { kind: 'fail', reason: 'tree-search: model produced no parseable candidates' };
-    }
+    if (candidates.length === 0) return undefined;
 
     const scorer = this.opts.scorer ?? ((c: Candidate, c2: ReasoningContext) => this.modelScore(c, c2));
-    const scored = await Promise.all(candidates.map(async (c) => ({ c, s: await scorer(c, ctx) })));
-    scored.sort((a, b) => b.s - a.s);
-    const best = scored[0]!.c;
-
-    if (best.kind === 'complete') return { kind: 'complete', result: best.result };
-    return {
-      kind: 'act',
-      action: {
-        capability: 'tool.invoke',
-        target: `tool://${best.tool}`,
-        input: best.input,
-      },
-    };
+    const sim = this.opts.simulator;
+    const scored = await Promise.all(candidates.map(async (c) => {
+      let value = await scorer(c, ctx);
+      if (depth > 1 && sim && c.kind === 'act') {
+        const predicted = await sim(c, ctx);
+        const childCtx: ReasoningContext = {
+          ...ctx,
+          observations: [...ctx.observations, {
+            id: 'sim', at: Date.now(), actionId: 'sim',
+            source: 'sim://world-model', kind: 'tool-result',
+            success: true, output: predicted.output,
+          }],
+        };
+        const child = await this.expand(childCtx, depth - 1);
+        if (child) value = Math.max(value, child.value);
+      }
+      return { candidate: c, value };
+    }));
+    scored.sort((a, b) => b.value - a.value);
+    return scored[0];
   }
 
   private parseCandidates(content: unknown): Candidate[] {

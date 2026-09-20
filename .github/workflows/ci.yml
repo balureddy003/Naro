@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # node:sqlite + native TS type-stripping
+          cache: npm
+      - run: npm ci
+      - run: npm run check # tsc -b (incl. tests) + node --test
+
+  bench-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # Regression gate pattern — point --baseline at a committed/report-artifact store:
+      - run: node cli/src/bin.ts bench cli/fixtures/sample-bench.ts --save .naro/bench.jsonl --label "${{ github.sha }}"
