@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createGoal } from '@naro/core';
+const GOAL = createGoal({ description: 'test goal' });
 import { AgentDirectory, InMemoryAgentBus, delegationTool } from './index.ts';
 
 test('directory registers agents and finds exact capabilities', () => {
@@ -37,7 +38,7 @@ test('delegation tool requires a grant and rejects agents outside the directory'
   assert.deepEqual(tool.permissions, ['agent.delegate']);
   assert.equal(tool.sideEffects, 'write');
   await assert.rejects(
-    tool.execute({ agent: 'unknown', goal: 'work' }, { agentId: 'lead', goalId: 'goal' }),
+    tool.execute({ agent: 'unknown', goal: 'work' }, { agentId: 'lead', goalId: 'goal' , goal: GOAL, grants: []}),
     /unknown agent/,
   );
 });

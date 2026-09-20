@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { resolve, sep } from 'node:path';
+import { mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { dirname, resolve, sep } from 'node:path';
 import { createObservation, type Action, type ExecContext, type Observation } from '@naro/core';
 import type { Environment, EnvironmentState } from '@naro/environment';
 
@@ -72,7 +72,7 @@ export class WorkspaceEnvironment implements Environment {
   // ── capabilities ────────────────────────────────────────────────
 
   private async read(action: Action, rel: string): Promise<Observation> {
-    const path = this.jail(rel);
+    const path = await this.jail(rel);
     const max = this.opts.maxReadBytes ?? 64_000;
     const buf = await readFile(path);
     const truncated = buf.length > max;
@@ -84,7 +84,7 @@ export class WorkspaceEnvironment implements Environment {
   }
 
   private async write(action: Action, rel: string): Promise<Observation> {
-    const path = this.jail(rel);
+    const path = await this.jail(rel);
     const content = String((action.input as { content?: unknown })?.content ?? '');
     await mkdir(resolve(path, '..'), { recursive: true });
     await writeFile(path, content);
@@ -92,13 +92,13 @@ export class WorkspaceEnvironment implements Environment {
   }
 
   private async list(action: Action, rel: string): Promise<Observation> {
-    const path = this.jail(rel === '' ? '.' : rel);
+    const path = await this.jail(rel === '' ? '.' : rel);
     const entries = await readdir(path, { withFileTypes: true });
     return this.obs(action, true, entries.map((e) => `${e.name}${e.isDirectory() ? '/' : ''}`));
   }
 
   private async delete(action: Action, rel: string): Promise<Observation> {
-    await rm(this.jail(rel));
+    await rm(await this.jail(rel));
     return this.obs(action, true, { path: rel, deleted: true });
   }
 
@@ -124,13 +124,31 @@ export class WorkspaceEnvironment implements Environment {
 
   // ── safety ──────────────────────────────────────────────────────
 
-  /** Resolve a relative path and verify it stays inside root. */
-  private jail(rel: string): string {
+  /**
+   * Resolve a relative path and verify it stays inside root — for real.
+   * Lexical resolution catches '..'; realpath() catches symlink escapes:
+   * the deepest existing ancestor must resolve inside the real root, so
+   * `workspace/link -> /etc` cannot be read, written, or deleted through.
+   */
+  private async jail(rel: string): Promise<string> {
     const path = resolve(this.root, rel);
     if (path !== this.root && !path.startsWith(this.root + sep)) {
       throw new Error(`path escapes workspace: '${rel}'`);
     }
-    return path;
+    const realRoot = await realpath(this.root).catch(() => this.root);
+    let cursor = path;
+    for (;;) {
+      const real = await realpath(cursor).catch(() => undefined);
+      if (real !== undefined) {
+        if (real !== realRoot && !real.startsWith(realRoot + sep)) {
+          throw new Error(`path escapes workspace via symlink: '${rel}'`);
+        }
+        return path;
+      }
+      const parent = dirname(cursor);
+      if (parent === cursor) throw new Error(`path escapes workspace: '${rel}'`);
+      cursor = parent; // walk up to the nearest existing ancestor
+    }
   }
 
   private targetPath(action: Action): string {

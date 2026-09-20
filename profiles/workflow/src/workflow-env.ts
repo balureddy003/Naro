@@ -1,4 +1,4 @@
-import { createAction, createObservation, type Action, type ActionExecutor, type ExecContext, type Observation } from '@naro/core';
+import { createAction, createObservation, type Action, type ActionExecutor, type ExecContext, type Observation, type PolicyEngine } from '@naro/core';
 import type { Environment, EnvironmentState } from '@naro/environment';
 
 /**
@@ -68,15 +68,24 @@ export function validateWorkflow(spec: WorkflowSpec): string[] {
 export interface WorkflowEnvOptions {
   /** Where steps execute — another environment, a tool executor, anything. */
   readonly executor: ActionExecutor;
+  /**
+   * REQUIRED: every step is evaluated against this policy before running.
+   * Without it, `workflow.run` would be a policy bypass — the outer engine
+   * sees one benign capability while nested steps run ungated.
+   * `require_approval` inside a workflow resolves as deny (no human here).
+   */
+  readonly policy: PolicyEngine;
 }
 
 export class WorkflowEnvironment implements Environment {
   readonly id: string;
   readonly capabilities = ['workflow.validate', 'workflow.run'];
   private readonly executor: ActionExecutor;
+  private readonly policy: PolicyEngine;
 
   constructor(opts: WorkflowEnvOptions, id = 'wf') {
     this.executor = opts.executor;
+    this.policy = opts.policy;
     this.id = id;
   }
 
@@ -122,12 +131,21 @@ export class WorkflowEnvironment implements Environment {
       let lastErr = 'unknown';
       const attempts = 1 + (step.retries ?? 0);
       for (let i = 0; i < attempts; i++) {
-        const obs = await this.executor.execute(
-          createAction(ctx.agentId, {
-            capability: step.capability,
-            target: step.target ?? `workflow://${this.id}/${step.id}`,
-            input: this.resolve(step.input, outputs),
-          }), ctx);
+        const stepAction = createAction(ctx.agentId, {
+          capability: step.capability,
+          target: step.target ?? `workflow://${this.id}/${step.id}`,
+          input: this.resolve(step.input, outputs),
+        });
+        // Nested steps face the same gate as top-level actions — a workflow
+        // is a way to authorize a batch, not a way to sneak one through.
+        const verdict = await this.policy.evaluate(stepAction, {
+          agentId: ctx.agentId, goal: ctx.goal, grants: ctx.grants,
+        });
+        if (verdict === 'deny' || verdict === 'require_approval') {
+          lastErr = `step denied by policy (${verdict})`;
+          continue; // retrying a denial won't help, but the shape stays uniform
+        }
+        const obs = await this.executor.execute(stepAction, ctx);
         if (obs.success) { outputs[step.id] = obs.output; completed.push(step.id); lastErr = ''; break; }
         lastErr = obs.error ?? 'step failed';
       }

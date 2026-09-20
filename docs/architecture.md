@@ -54,7 +54,7 @@ flowchart LR
     sources["Knowledge Sources\ndocuments, SQL, vectors, memory"]
     humans["Human Bridge\nquestions and approvals"]
     telemetry["Operations\nJSONL, console, OTLP collectors"]
-    agents["Other Agents\nlocal bus or future distributed transport"]
+    agents["Other Agents\nin-process, HTTP, or A2A transport"]
 
     person --> app
     app -->|goal + composition| naro
@@ -95,7 +95,9 @@ boundary. Permission comes from runtime configuration and `PolicyEngine`.
 
 Packages are grouped by responsibility rather than deployment process. `core`
 is the stable center; orchestration and integrations depend inward on its
-contracts.
+contracts. Domain profiles are reusable applications of the contracts, while
+adapters translate external wire protocols. See [End-to-end use cases](use-cases.md)
+for complete compositions.
 
 ```mermaid
 flowchart TB
@@ -111,7 +113,7 @@ flowchart TB
 
     subgraph intelligence["Intelligence and knowledge"]
         model["@naro/model\nprovider-neutral model contract"]
-        reasoning["@naro/reasoning\nReAct, Plan-Execute, Reflection"]
+        reasoning["@naro/reasoning\nReAct, Plan-Execute, Reflection, Tree Search"]
         context["@naro/context\nretrieve, rank, select, budget"]
         memory["@naro/memory\ntiered stores and recall"]
     end
@@ -124,7 +126,12 @@ flowchart TB
     end
 
     subgraph coordination["Coordination"]
-        multiagent["@naro/multiagent\ndirectory, bus, delegation tool"]
+        multiagent["@naro/multiagent\ndirectory, local/HTTP bus, delegation tool"]
+    end
+
+    subgraph developer["Developer tooling"]
+        cli["@naro/cli\nrun, bench, replay, states"]
+        contracts["@naro/contract-tests\nport conformance suites"]
     end
 
     subgraph profiles["Domain profiles"]
@@ -165,6 +172,11 @@ flowchart TB
     evaluation --> observability
     multiagent --> core
     multiagent --> tools
+    cli --> core
+    cli --> runtime
+    cli --> observability
+    cli --> evaluation
+    contracts --> core
 
     openai --> model
     openai --> core
@@ -199,7 +211,6 @@ flowchart TB
     robotics --> environment
     robotics --> tools
     robotics --> core
-    otel --> core
 ```
 
 ### Package responsibilities
@@ -218,8 +229,11 @@ flowchart TB
 | `@naro/verification` | concrete evidence checks | declaring its own completion |
 | `@naro/observability` | event-derived metrics and export contracts | a second execution state |
 | `@naro/evaluation` | repeatable cases over the real runtime | an evaluation-only runtime fork |
-| `@naro/multiagent` | addressing and delegation at the edge | multi-agent types in the kernel |
-| adapters | translation to external protocols | provider-specific types in public core contracts |
+| `@naro/multiagent` | agent directory, local/HTTP transport, policy-gated delegation | multi-agent types in the kernel |
+| `@naro/contract-tests` | reusable behavioral suites for replaceable ports | production runtime behavior |
+| `@naro/cli` | run, benchmark, baseline diff, replay, and state inspection commands | hidden agent composition |
+| `@naro/profile-*` | domain environments, tools, drivers, and safety constraints | domain concepts in core |
+| adapters | translation to model, tool, policy, telemetry, and agent protocols | vendor-specific types in public core contracts |
 
 ---
 
@@ -246,7 +260,7 @@ flowchart LR
     runner --> events["EventBus"]
     events --> exporter["EventExporter"]
     events --> metrics["computeMetrics"]
-    events --> ui["UI / audit subscribers"]
+    events --> ui["callbacks / runner.events() async stream"]
 ```
 
 ### Runtime-owned state
@@ -262,7 +276,9 @@ A runner owns these values for one agent run:
 - ordered event history.
 
 The reasoner receives a read-only `ReasoningContext`. It returns a `Decision`;
-it does not mutate runner state.
+it does not mutate runner state. Consumers may subscribe with `runner.on()` or
+iterate `runner.events()`. The async iterable starts with existing history,
+continues live, and closes after completion, failure, cancellation, or pause.
 
 ---
 
@@ -540,6 +556,9 @@ contains ordered facts but does not yet carry honest parent/child span timing.
 
 `BenchmarkRunner` executes real `AgentRunner` instances. Evaluation therefore
 uses the same state machine, policies, tools, and events as production code.
+`JsonlReportStore` persists reports and `diffReports()` identifies case-level
+regressions and improvements. `naro bench --baseline` turns that comparison
+into a CI exit code.
 
 ---
 
@@ -600,9 +619,12 @@ sequenceDiagram
 ```
 
 `AgentDirectory` advertises agent capabilities. `AgentBus` defines request and
-serve operations. `InMemoryAgentBus` is process-local and non-durable; a timed
-out handler may continue running. A persistent queue, HTTP, gRPC, or A2A adapter
-can implement the same contract.
+serve operations. `InMemoryAgentBus` stays within one process.
+`HttpAgentBus` sends tasks to resolved agent endpoints, while
+`@naro/adapter-a2a` adds agent cards and JSON-RPC `tasks/send`. These network
+transports are synchronous and non-durable; the A2A adapter does not yet
+implement streaming, push notifications, or multi-turn task graphs. A timed-out
+worker may continue running unless its implementation supports cancellation.
 
 Delegation requires the `agent.delegate` permission and remains visible to
 policy and audit. Returned agent output is still untrusted and should be
@@ -660,15 +682,18 @@ Use this table before adding a type or package.
 | provider-neutral model vocabulary | `model` |
 | reasoning strategy or prompt assembly | `reasoning` |
 | local/remote capability contract | `tools` or an adapter |
-| domain world implementation | `environment` or application package |
+| reusable domain world, tools, and drivers | `profiles/<domain>` |
+| application-specific domain behavior | application package |
 | retrieval orchestration | `context` |
 | persistence and recall | `memory` |
 | authorization rule implementation | `policy` or policy adapter |
 | evidence check | `verification` |
 | metrics or event sink | `observability` or exporter adapter |
 | benchmark orchestration | `evaluation` |
-| cross-agent transport | `multiagent` adapter |
-| vendor protocol translation | `adapters/*` |
+| protocol-neutral cross-agent transport | `multiagent` |
+| vendor or wire-protocol translation | `adapters/*` |
+| reusable port conformance suite | `contract-tests` |
+| developer command | `cli` |
 
 ### Review invariants
 
@@ -700,7 +725,8 @@ These are deliberate implementation boundaries, not hidden guarantees:
   executor also honors an `AbortSignal`.
 - file checkpoints and memory stores are reference implementations, not
   transactional multi-process stores.
-- in-process policy limits and the agent bus are not distributed.
+- in-process policy limits are not distributed; HTTP and A2A agent transports
+  are networked but not durable queues.
 - event history supports audit and derived metrics; deterministic replay of
   external side effects requires application-level fixtures or adapters.
 - OTLP export currently emits logs rather than a parented span graph.
@@ -714,6 +740,8 @@ where they can rely on Naro and where production infrastructure must take over.
 
 ## Related reading
 
+- [Documentation map](README.md)
+- [End-to-end use cases](use-cases.md)
 - [Design principles](principles.md)
 - [How LLMs work](learn/00-how-llms-work.md)
 - [Agent loops and state machines](learn/08-agent-loops.md)

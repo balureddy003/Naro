@@ -111,26 +111,41 @@ section, trace the same concept through `examples/minimal-agent` and
 11 [security & policy](docs/learn/11-security-and-policy.md) ·
 12 [scale & reliability](docs/learn/12-scale-and-reliability.md)
 
-Practice in two passes:
+Practice in three passes:
 
-1. Run `npm run example` and read
-   [`examples/minimal-agent`](examples/minimal-agent/README.md) to see the
-   complete loop without a model dependency.
-2. Run `npm run example:react` and read
-   [`examples/react-agent`](examples/react-agent/README.md) to connect model
-   tool calls, context, memory, policy, and verification.
+1. Run `npm run example` and read the
+   [minimal agent](examples/minimal-agent/README.md) for the complete loop.
+2. Run `npm run example:react` and read the
+   [ReAct agent](examples/react-agent/README.md) for model-driven tool use.
+3. Run `npm run example:coding` and read the
+   [coding agent](examples/coding-agent/README.md) for a real domain profile.
 
-Architecture deep-dive: [docs/architecture.md](docs/architecture.md) (C4 diagrams).
-Design rules: [docs/principles.md](docs/principles.md).
+Documentation paths:
+
+- [Documentation map](docs/README.md)
+- [Architecture](docs/architecture.md)
+- [End-to-end use cases](docs/use-cases.md)
+- [Design principles](docs/principles.md)
 
 ## Status
 
-`v0.2` worktree — kernel, runtime, model, tools, environment, memory, context,
-three reasoning strategies, concrete verifiers, declarative policy,
-event-derived observability, a benchmark harness, and in-process multi-agent
-delegation—plus OpenAI-compatible and MCP adapters. Proven by two runnable
-reference agents. Next: durable distributed coordination, OPA policy and
-OpenTelemetry adapters, domain profiles, and release automation.
+`v0.2` worktree — universal kernel, four reasoning strategies, verification,
+policy, observability, persisted benchmark comparison, local/HTTP/A2A
+coordination, OpenAI-compatible and Anthropic models, MCP/OPA/OTLP adapters,
+seven domain profiles, shared contract suites, a CLI, and three runnable
+examples.
+
+Hardening guarantees: events are immutable snapshots; checkpoints carry
+actions, reasoner state, and journal position (at-least-once execution with
+deterministic idempotency keys); action timeouts abort the executor; the
+policy gate is required, covers nested workflow steps, and denies unknown
+tools; workspaces jail via `realpath`; fetch allowlists revalidate every
+redirect hop; `sql.query` is read-only at the database layer; robotics estop
+has an out-of-band channel; `naro bench --baseline` gates CI on regressions
+and removed cases.
+
+Remaining production work: durable distributed queues, transactional stores,
+stronger OS-level sandboxing, hosted operations, and release automation.
 
 ## License
 

@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAction } from '@naro/core';
+import { createGoal, createAction } from '@naro/core';
+const GOAL = createGoal({ description: 'test goal' });
 import { ToolExecutor, ToolRegistry } from '@naro/tools';
 import { ResearchEnvironment } from './research-env.ts';
 import { researchTools } from './tools.ts';
 
-const ctx = { agentId: 'a1', goalId: 'g1' };
+const ctx = { agentId: 'a1', goalId: 'g1' , goal: GOAL, grants: []};
 const act = (cap: string, input?: unknown) =>
   createAction('a1', { capability: cap, target: 'env://r/x', ...(input !== undefined && { input }) });
 
@@ -54,4 +55,18 @@ test('research tools run through the standard pipeline', async () => {
   );
   assert.equal(obs.success, true);
   assert.equal(reg.get('web_fetch')?.sideEffects, 'read');
+});
+
+test('redirects to non-allowlisted domains are refused at every hop', async () => {
+  const fakeFetch: typeof fetch = (async (u: string | URL | Request) => {
+    const url = String(u);
+    if (url.includes('allowed.example')) {
+      return new Response('', { status: 302, headers: { location: 'https://evil.example/x' } });
+    }
+    return new Response('should never be fetched', { status: 200 });
+  }) as typeof fetch;
+  const env = new ResearchEnvironment({ allowedDomains: ['allowed.example'], fetchImpl: fakeFetch, allowPrivateHosts: true });
+  const o = await env.execute(act('net.fetch', { url: 'https://allowed.example/start' }), ctx);
+  assert.equal(o.success, false);
+  assert.match(o.error ?? '', /not in allowlist/);
 });

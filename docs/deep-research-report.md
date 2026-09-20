@@ -1,4 +1,12 @@
-# Executive Summary
+# Deep Research Report
+
+> **Historical design input.** This report predates the current implementation
+> and preserves the research, alternatives, and phased roadmap that informed
+> Naro. For current APIs and implemented capabilities, use
+> [Architecture](architecture.md), [Use cases](use-cases.md), and package
+> READMEs.
+
+## Executive Summary
 
 **Naro** is envisioned as a *universal, open-source agent framework* – a minimal core of abstractions and protocols for autonomous agents that can operate in **any environment**.  Unlike narrow “coding agent” libraries, Naro generalizes the architecture underlying systems like Claude Code or GPT-based coders into domain-agnostic primitives.  It composes **models, reasoning engines, context/memory systems, tools, and environments** via standard interfaces and event flows.  The core is intentionally **small and pluggable**: specialized domains (coding, research, browser, enterprise, robotics, etc.) are built as *profiles* atop this kernel, much like Spring Boot applications on a shared Java runtime. Naro itself would rely on proven OSS components (LLM inference servers, sandboxes, DBs, orchestration tools, etc.) via adaptors, avoiding reinventing wheels.  
 

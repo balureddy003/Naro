@@ -38,6 +38,7 @@ export class A2aAgentBus implements AgentBus {
   private readonly token?: string;
   private readonly handlers = new Map<string, (msg: Extract<AgentMessage, { kind: 'task-request' }>) => Promise<unknown>>();
   private card?: Omit<AgentCard, 'url'>;
+  private readonly tasks = new Map<string, unknown>();
   private server?: Server;
 
   constructor(opts: {
@@ -70,9 +71,11 @@ export class A2aAgentBus implements AgentBus {
   async request(to: string, goal: Goal, from: string, timeoutMs = 30_000): Promise<unknown> {
     const card = await this.resolveCard(to);
     if (!card) throw new Error(`no A2A endpoint for agent '${to}'`);
+    // Current-spec binding: message/send with kind-tagged parts.
+    // tasks/send (deprecated in A2A v1) is still accepted server-side.
     const rpc: JsonRpcRequest = {
-      jsonrpc: '2.0', id: newId('rpc'), method: 'tasks/send',
-      params: { id: newId('task'), message: { role: 'user', parts: [{ type: 'text', text: goal.description }] }, metadata: { from } },
+      jsonrpc: '2.0', id: newId('rpc'), method: 'message/send',
+      params: { id: newId('task'), message: { role: 'user', parts: [{ kind: 'text', text: goal.description }] }, metadata: { from } },
     };
     const res = await this.fetchImpl(card.url.replace(/\/$/, '') + '/', {
       method: 'POST', ...this.headers(), body: JSON.stringify(rpc),
@@ -80,7 +83,7 @@ export class A2aAgentBus implements AgentBus {
     });
     if (!res.ok) throw new Error(`A2A '${to}' HTTP ${res.status}`);
     const body = await res.json() as {
-      result?: { status: { state: string }; artifacts?: { parts: { type: string; text?: string }[] }[] };
+      result?: { status: { state: string }; artifacts?: { parts: { kind?: string; type?: string; text?: string }[] }[] };
       error?: { message: string };
     };
     if (body.error) throw new Error(`A2A error: ${body.error.message}`);
@@ -89,7 +92,7 @@ export class A2aAgentBus implements AgentBus {
       throw new Error(`A2A task ended '${task?.status.state ?? 'unknown'}'`);
     }
     const text = task.artifacts?.flatMap((a) => a.parts)
-      .filter((p) => p.type === 'text').map((p) => p.text ?? '').join('\n');
+      .filter((p) => (p.kind ?? p.type) === 'text').map((p) => p.text ?? '').join('\n');
     return text ?? task;
   }
 
@@ -131,11 +134,23 @@ export class A2aAgentBus implements AgentBus {
       rpc = JSON.parse(await readBody(req)) as JsonRpcRequest;
     } catch { respond({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); return; }
 
-    if (rpc.method !== 'tasks/send') {
+    if (rpc.method === 'tasks/get') {
+      const p = rpc.params as { id?: string };
+      const task = p?.id ? this.tasks.get(p.id) : undefined;
+      respond(task
+        ? { jsonrpc: '2.0', id: rpc.id, result: task }
+        : { jsonrpc: '2.0', id: rpc.id, error: { code: -32602, message: `unknown task '${p?.id}'` } });
+      return;
+    }
+    if (rpc.method !== 'message/send' && rpc.method !== 'tasks/send') {
       respond({ jsonrpc: '2.0', id: rpc.id, error: { code: -32601, message: `unknown method ${rpc.method}` } });
       return;
     }
-    const params = rpc.params as { id?: string; message?: { parts?: { text?: string }[] }; metadata?: { from?: string } };
+    const params = rpc.params as {
+      id?: string;
+      message?: { parts?: { kind?: string; type?: string; text?: string }[] };
+      metadata?: { from?: string };
+    };
     const text = params?.message?.parts?.map((p) => p.text ?? '').join('') ?? '';
     const agentId = this.card?.name ?? 'agent';
     const handler = this.handlers.get(agentId) ?? this.handlers.values().next().value;
@@ -150,18 +165,20 @@ export class A2aAgentBus implements AgentBus {
         goal: createGoal({ description: text }),
         at: Date.now(),
       });
-      respond({
-        jsonrpc: '2.0', id: rpc.id,
-        result: {
-          id: params?.id, status: { state: 'completed', timestamp: new Date().toISOString() },
-          artifacts: [{ parts: [{ type: 'text', text: typeof result === 'string' ? result : JSON.stringify(result) }] }],
-        },
-      });
+      const task = {
+        id: params?.id ?? newId('task'),
+        status: { state: 'completed', timestamp: new Date().toISOString() },
+        artifacts: [{ parts: [{ kind: 'text', text: typeof result === 'string' ? result : JSON.stringify(result) }] }],
+      };
+      this.tasks.set(task.id, task);
+      respond({ jsonrpc: '2.0', id: rpc.id, result: task });
     } catch (e) {
-      respond({
-        jsonrpc: '2.0', id: rpc.id,
-        result: { id: params?.id, status: { state: 'failed', timestamp: new Date().toISOString(), message: e instanceof Error ? e.message : String(e) } },
-      });
+      const task = {
+        id: params?.id ?? newId('task'),
+        status: { state: 'failed', timestamp: new Date().toISOString(), message: e instanceof Error ? e.message : String(e) },
+      };
+      this.tasks.set(task.id, task);
+      respond({ jsonrpc: '2.0', id: rpc.id, result: task });
     }
   }
 

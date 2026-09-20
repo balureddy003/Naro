@@ -1,8 +1,8 @@
 import {
   type ActionInput,
   type Decision,
-  type Reasoner,
   type ReasoningContext,
+  type StatefulReasoner,
 } from '@naro/core';
 import { chat, type ChatMessage, type Model, type ToolSpec } from '@naro/model';
 import { buildMessages, toolCallToAction } from './transcript.ts';
@@ -15,17 +15,33 @@ import { buildMessages, toolCallToAction } from './transcript.ts';
  * the agent claims completion. Queued tool calls drain one per cycle —
  * the runtime owns pacing, permissions, and observation.
  */
-export class ReActReasoner implements Reasoner {
+export class ReActReasoner implements StatefulReasoner {
   readonly strategy: string = 'react';
   protected readonly model: Model;
   protected readonly tools: readonly ToolSpec[];
   private readonly instructions?: string;
+  private readonly maxObservations?: number;
   private pending: ActionInput[] = [];
 
-  constructor(model: Model, options: { tools?: readonly ToolSpec[]; instructions?: string } = {}) {
+  constructor(model: Model, options: {
+    tools?: readonly ToolSpec[];
+    instructions?: string;
+    /** Evidence window cap — keeps transcripts inside provider context limits. */
+    maxObservations?: number;
+  } = {}) {
     this.model = model;
     this.tools = options.tools ?? [];
     this.instructions = options.instructions;
+    this.maxObservations = options.maxObservations;
+  }
+
+  /** Pending provider tool calls — checkpointed so resume doesn't drop them. */
+  captureState(): unknown {
+    return { pending: this.pending };
+  }
+  restoreState(state: unknown): void {
+    const s = state as { pending?: ActionInput[] };
+    this.pending = s.pending ?? [];
   }
 
   async decide(ctx: ReasoningContext): Promise<Decision> {
@@ -51,6 +67,9 @@ export class ReActReasoner implements Reasoner {
 
   /** Overridable: reflection and other strategies extend the transcript here. */
   protected messages(ctx: ReasoningContext): ChatMessage[] {
-    return buildMessages(ctx, { ...(this.instructions !== undefined && { instructions: this.instructions }) });
+    return buildMessages(ctx, {
+      ...(this.instructions !== undefined && { instructions: this.instructions }),
+      ...(this.maxObservations !== undefined && { maxObservations: this.maxObservations }),
+    });
   }
 }

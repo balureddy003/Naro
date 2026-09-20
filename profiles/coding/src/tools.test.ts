@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAction } from '@naro/core';
+import { createGoal, createAction } from '@naro/core';
+const GOAL = createGoal({ description: 'test goal' });
 import { ToolExecutor, ToolRegistry } from '@naro/tools';
 import { WorkspaceEnvironment } from './workspace.ts';
 import { codingTools } from './tools.ts';
 
-const ctx = { agentId: 'a1', goalId: 'g1', permissions: ['fs.read', 'fs.write', 'shell.exec'] };
+const ctx = { agentId: 'a1', goalId: 'g1', goal: GOAL, grants: [], permissions: ['fs.read', 'fs.write', 'shell.exec'] };
 
 async function setup() {
   const dir = await mkdtemp(join(tmpdir(), 'naro-tools-'));

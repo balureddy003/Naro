@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGoal, createObservation, type ActionExecutor } from '@naro/core';
+import { allowAllPolicy, createGoal, createObservation, type ActionExecutor } from '@naro/core';
 import { DirectReasoner } from '@naro/runtime';
 import { BenchmarkRunner, formatReport } from './benchmark.ts';
 
@@ -14,11 +14,13 @@ const succeed = (answer: string) => ({
       ? { kind: 'act', action: { capability: 'env.set', target: 'env://local/k', input: answer } } as never
       : { kind: 'complete', result: answer }),
   executor: echo,
+  policy: allowAllPolicy,
 });
 
 const failer = {
   reasoner: new DirectReasoner(() => ({ kind: 'fail', reason: 'cannot' })),
   executor: echo,
+  policy: allowAllPolicy,
 };
 
 test('benchmark runs cases, scores outcomes, aggregates metrics', async () => {

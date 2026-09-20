@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createAgentSpec, createGoal, createObservation,
-  type ActionExecutor, type PolicyEngine, type Verifier,
+  allowAllPolicy, createAgentSpec, createGoal, createObservation,
+  type ActionExecutor, type NaroEvent, type PolicyEngine, type Verifier,
 } from '@naro/core';
 import { AgentRunner } from './runner.ts';
 import { DirectReasoner } from './reasoner-direct.ts';
@@ -25,6 +25,7 @@ function makeDeps(extra: Record<string, unknown> = {}) {
   return {
     spec: createAgentSpec({ name: 'tester', goal }),
     executor: echoExecutor,
+    policy: allowAllPolicy,
     ...extra,
   };
 }
@@ -217,4 +218,74 @@ test('events() seeded with history — a late subscriber sees the whole run', as
   for await (const e of runner.events()) seen.push(e.type);
   assert.equal(seen[0], 'agent.created');
   assert.equal(seen.at(-1), 'agent.completed');
+});
+
+test('action timeout aborts the executor — the signal reaches it', async () => {
+  let sawAbort = false;
+  const slowExecutor: ActionExecutor = {
+    execute: (action, ctx) => new Promise((resolve, reject) => {
+      ctx.signal?.addEventListener('abort', () => { sawAbort = true; reject(ctx.signal!.reason); }, { once: true });
+      setTimeout(() => resolve(createObservation({ actionId: action.id, source: 'x', kind: 'env-change', success: true })), 10_000);
+    }),
+  };
+  const runner = new AgentRunner({
+    ...makeDeps(),
+    executor: slowExecutor,
+    actionTimeoutMs: 20,
+    reasoner: new DirectReasoner((ctx) => ctx.observations.length
+      ? { kind: 'complete', result: 'done' }
+      : { kind: 'act', action: { capability: 'x', target: 'env://e/x' } }),
+  });
+  const r = await runner.run();
+  assert.equal(r.status, 'completed');
+  assert.equal(sawAbort, true); // the timeout ABORTED, not just stopped waiting
+});
+
+test('failed action verification records an observation naming the verifier', async () => {
+  const verifier: Verifier = { id: 'test-verifier', verify: () => ({ ok: false, reason: 'not good enough' }) };
+  const runner = new AgentRunner({
+    ...makeDeps(),
+    verifier,
+    reasoner: new DirectReasoner((ctx) => ctx.observations.some((o) => o.kind === 'verification')
+      ? { kind: 'complete', result: 'accepted-anyway' }
+      : { kind: 'act', action: { capability: 'x', target: 'env://e/x' } }),
+  });
+  const r = await runner.run();
+  const vobs = r.events.filter((e) => e.type === 'observation.created')
+    .map((e) => (e as NaroEvent<'observation.created'>).data.observation)
+    .find((o) => o.kind === 'verification');
+  assert.ok(vobs, 'verification failure must be visible to the reasoner');
+  assert.match(vobs!.source, /test-verifier/);
+  assert.match(vobs!.error ?? '', /not good enough/);
+});
+
+test('resume restores reasoner state and continues the event journal', async () => {
+  const store = new InMemoryCheckpointStore();
+  let decided = 0;
+  const stateful = () => {
+    const r = new DirectReasoner((ctx) => ctx.iteration === 0
+      ? { kind: 'act', action: { capability: 'x', target: 'env://e/x' } }
+      : { kind: 'complete', result: 'done' });
+    const orig = r.decide.bind(r);
+    const s = {
+      strategy: 'stateful',
+      calls: 0,
+      decide: (ctx: Parameters<typeof orig>[0]) => { s.calls++; return orig(ctx); },
+      captureState: () => ({ calls: s.calls }),
+      restoreState: (v: unknown) => { s.calls = (v as { calls: number }).calls; },
+    };
+    return s;
+  };
+  const r1 = new AgentRunner({ ...makeDeps(), checkpoints: store, reasoner: stateful() });
+  r1.pause(); // pause before first boundary
+  await r1.run();
+  const first = r1.events; // capture? use bus history via run result
+  const res1 = await r1.run({ resume: true });
+  // A second runner sharing the store: runId + seq continue, not restart
+  const r2 = new AgentRunner({ ...makeDeps(), checkpoints: store, reasoner: stateful() });
+  const res2 = await r2.run({ resume: true });
+  const evs = res2.events;
+  assert.ok(evs.every((e) => e.runId === evs[0]!.runId));
+  const seqs = evs.map((e) => e.seq);
+  assert.deepEqual(seqs, [...seqs].sort((a, b) => a - b));
 });

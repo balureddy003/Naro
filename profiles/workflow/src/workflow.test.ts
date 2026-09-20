@@ -1,15 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAction, type ExecContext } from '@naro/core';
+import { allowAllPolicy, createGoal, createAction, type ExecContext } from '@naro/core';
+const GOAL = createGoal({ description: 'test goal' });
 import { InMemoryEnvironment } from '@naro/environment';
 import { WorkflowEnvironment, validateWorkflow } from './index.ts';
 
-const ctx: ExecContext = { agentId: 'a', goalId: 'g' };
+const ctx: ExecContext = { agentId: 'a', goalId: 'g' , goal: GOAL, grants: []};
 const act = (cap: string, input: unknown) =>
   createAction('a', { capability: cap, target: `env://wf/${cap}`, input });
 
 const kv = () => new InMemoryEnvironment(); // env.get / env.set capabilities — key comes from target
-const wf = () => new WorkflowEnvironment({ executor: kv() });
+const wf = () => new WorkflowEnvironment({ executor: kv(), policy: allowAllPolicy });
 
 test('validate catches cycles, unknown deps, dup ids', () => {
   assert.deepEqual(validateWorkflow({ steps: [
@@ -53,10 +54,22 @@ test('retries give flaky steps their attempts', async () => {
       ? { id: 'o', at: 0, actionId: 'a', source: 'x', kind: 'env-change' as const, success: false, error: 'flaky' }
       : { id: 'o', at: 0, actionId: 'a', source: 'x', kind: 'env-change' as const, success: true, output: 'done' };
   } };
-  const env = new WorkflowEnvironment({ executor: flaky });
+  const env = new WorkflowEnvironment({ executor: flaky, policy: allowAllPolicy });
   const o = await env.execute(act('workflow.run', { spec: { steps: [
     { id: 's', capability: 'anything', retries: 2 },
   ] } }), ctx);
   assert.equal(calls, 3);
   assert.deepEqual((o.output as { completed: string[] }).completed, ['s']);
+});
+
+test('nested steps face the policy gate — workflow.run is not a bypass', async () => {
+  const denyExec: import('@naro/core').PolicyEngine = {
+    evaluate: (a) => a.capability === 'env.set' ? 'deny' : 'allow',
+  };
+  const env = new WorkflowEnvironment({ executor: kv(), policy: denyExec });
+  const o = await env.execute(act('workflow.run', { spec: { steps: [
+    { id: 's', capability: 'env.set', target: 'env://local/k', input: { value: 'v' } },
+  ] } }), ctx);
+  const out = o.output as { failed?: { error: string } };
+  assert.match(out.failed?.error ?? '', /denied by policy/);
 });

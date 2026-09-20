@@ -52,14 +52,25 @@ export class BrowserEnvironment implements Environment {
           const deny = this.checkUrl(url);
           if (deny) return this.obs(action, false, undefined, deny);
           const landed = await this.driver.goto(url);
+          // The page may have redirected — the LANDED url must pass too.
+          const landedUrl = (landed as { url?: string } | undefined)?.url;
+          const post = landedUrl ? this.checkUrl(landedUrl) : undefined;
+          if (post) return this.obs(action, false, undefined, `redirect blocked: ${post}`);
           return this.obs(action, true, landed);
         }
-        case 'browser.click':
+        case 'browser.click': {
           await this.driver.click(String(input['selector'] ?? ''));
+          // Clicks can navigate — re-validate where we ended up.
+          const post = await this.checkCurrentPage();
+          if (post) return this.obs(action, false, undefined, post);
           return this.obs(action, true, { clicked: input['selector'] });
-        case 'browser.type':
+        }
+        case 'browser.type': {
           await this.driver.type(String(input['selector'] ?? ''), String(input['text'] ?? ''));
+          const post = await this.checkCurrentPage();
+          if (post) return this.obs(action, false, undefined, post);
           return this.obs(action, true, { typed: input['selector'] });
+        }
         case 'browser.extract': {
           const vals = await this.driver.extract(
             String(input['selector'] ?? ''),
@@ -80,6 +91,14 @@ export class BrowserEnvironment implements Environment {
     } catch (e) {
       return this.obs(action, false, undefined, e instanceof Error ? e.message : String(e));
     }
+  }
+
+  /** Where are we NOW? Any client-side navigation must stay allowlisted. */
+  private async checkCurrentPage(): Promise<string | undefined> {
+    const p = await this.driver.pageState().catch(() => undefined);
+    if (!p?.url || !['http:', 'https:'].some((s) => p.url.startsWith(s))) return undefined;
+    const deny = this.checkUrl(p.url);
+    return deny ? `navigation left the allowlist: ${deny}` : undefined;
   }
 
   private checkUrl(url: string): string | undefined {

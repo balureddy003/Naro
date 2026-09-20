@@ -30,6 +30,12 @@ export class PlanExecuteReasoner implements Reasoner {
     this.model = model;
   }
 
+  /** Whether the plan was issued — without it, resume re-plans on top of tasks. */
+  captureState(): unknown { return { planned: this.planned }; }
+  restoreState(state: unknown): void {
+    this.planned = (state as { planned?: boolean }).planned ?? false;
+  }
+
   async decide(ctx: ReasoningContext): Promise<Decision> {
     if (!this.planned) {
       this.planned = true;

@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAction } from '@naro/core';
+import { createGoal, createAction } from '@naro/core';
+const GOAL = createGoal({ description: 'test goal' });
 import { WorkspaceEnvironment } from './workspace.ts';
 
-const ctx = { agentId: 'a1', goalId: 'g1' };
+const ctx = { agentId: 'a1', goalId: 'g1' , goal: GOAL, grants: []};
 const act = (capability: string, rel: string, input?: unknown) =>
   createAction('a1', { capability, target: `env://ws/${rel}`, ...(input !== undefined && { input }) });
 
@@ -72,4 +73,20 @@ test('unsupported capability fails visibly', async () => {
     assert.equal(obs.success, false);
     assert.match(obs.error ?? '', /does not support/);
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('symlink escapes are refused — the jail is real, not lexical', async () => {
+  const { symlink } = await import('node:fs/promises');
+  const { env, dir: root } = await workspace();
+  const outside = await mkdtemp(join(tmpdir(), 'naro-out-'));
+  await writeFile(join(outside, 'secret.txt'), 'TOP SECRET');
+  await symlink(outside, join(root, 'link'), 'dir');
+  const o = await env.execute(act('fs.read', 'link/secret.txt'), ctx);
+  assert.equal(o.success, false);
+  assert.match(o.error ?? '', /symlink|escapes/);
+  // and a write through a symlinked parent is refused too
+  const o2 = await env.execute(createAction('a', {
+    capability: 'fs.write', target: 'env://ws/link/evil.txt', input: { content: 'x' },
+  }), ctx);
+  assert.equal(o2.success, false);
 });

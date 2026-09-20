@@ -83,9 +83,12 @@ Naro provides both evaluation primitives and a small benchmark harness:
 - `@naro/evaluation` runs `EvalCase` values through real `AgentRunner` instances,
   applies outcome checks, and returns per-case results with aggregate metrics.
 
-`BenchmarkRunner` executes each case once and sequentially. Applications still
-own repeated sampling, parallel execution, persistence, model-judge
-calibration, release thresholds, and dashboards.
+`BenchmarkRunner` executes each case once and sequentially. `JsonlReportStore`
+persists reports, while `diffReports()` compares a current report with a
+baseline by case. `naro bench --save` records a run and
+`naro bench --baseline` exits non-zero on regressions for CI. Applications still
+own repeated sampling, parallel execution, model-judge calibration, and
+statistical thresholds.
 
 ## A minimal release gate
 

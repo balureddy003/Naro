@@ -41,4 +41,18 @@ export class ReflectionReasoner extends ReActReasoner {
   protected override messages(ctx: ReasoningContext): ChatMessage[] {
     return buildMessages(ctx, { reflections: this.critiques });
   }
+
+  override captureState(): unknown {
+    return {
+      ...(super.captureState() as object),
+      critiques: this.critiques,
+      reflected: [...this.reflected],
+    };
+  }
+  override restoreState(state: unknown): void {
+    const s = state as { critiques?: string[]; reflected?: string[] };
+    super.restoreState(state);
+    this.critiques.push(...(s.critiques ?? []));
+    for (const id of s.reflected ?? []) this.reflected.add(id);
+  }
 }

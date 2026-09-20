@@ -59,6 +59,8 @@ request it can make.
 - `PlanExecuteReasoner`, which creates a structured plan and dispatches
   task-bound actions;
 - `ReflectionReasoner`, which adds lessons from failed observations;
+- `TreeSearchReasoner`, which explores a bounded world-model tree and returns
+  the best first decision;
 - `DirectReasoner` in `@naro/runtime`, for scripted decisions without a model.
 
 ## Pick a pattern from the failure, not the fashion

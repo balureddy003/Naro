@@ -1,5 +1,4 @@
 import {
-  allowAllPolicy,
   assertTransition,
   createAction,
   createTask,
@@ -19,12 +18,13 @@ import {
   type PolicyEngine,
   type Reasoner,
   type ReasoningContext,
+  type StatefulReasoner,
   type Task,
   type Verifier,
 } from '@naro/core';
 import { EventBus } from './event-bus.ts';
+import { TimeoutError } from './timeout.ts';
 import { retry, type RetryPolicy } from './retry.ts';
-import { withTimeout } from './timeout.ts';
 import { createCheckpoint, type CheckpointStore } from './checkpoint.ts';
 import { noHumanBridge, type HumanBridge } from './human.ts';
 
@@ -34,8 +34,13 @@ export interface AgentDeps {
   readonly reasoner: Reasoner;
   /** Routes actions to tools, environments, … (see CompositeExecutor). */
   readonly executor: ActionExecutor;
-  /** Gate every action passes through. Default: allow-all (dev only!). */
-  readonly policy?: PolicyEngine;
+  /**
+   * Gate every action passes through — REQUIRED, no implicit default.
+   * Pass `allowAllPolicy` from @naro/core for tests/dev, or a real engine.
+   * A missing policy would silently authorize everything, so we refuse
+   * to guess.
+   */
+  readonly policy: PolicyEngine;
   /** Checks outcomes with evidence. Without one, completion is unverified. */
   readonly verifier?: Verifier;
   /** Answers approvals and questions in WAITING_FOR_HUMAN. */
@@ -87,6 +92,7 @@ export class AgentRunner {
   private state: AgentState = 'CREATED';
   private readonly tasks = new Map<string, Task>();
   private readonly observations: Observation[] = [];
+  private readonly actions: Action[] = [];
   private readonly contextItems: ContextItem[] = [];
   private iteration = 0;
   private pauseRequested = false;
@@ -248,13 +254,19 @@ export class AgentRunner {
   // --- the act → observe → verify pipeline ---
 
   private async act(input: ActionInput, signal?: AbortSignal): Promise<RunResult | 'continue'> {
-    const action = createAction(this.deps.spec.id, input);
+    const action = createAction(this.deps.spec.id, {
+      ...input,
+      // Replay-safe identity: a crash between side effect and checkpoint
+      // reissues the same logical action at the same iteration — same key.
+      idempotencyKey: input.idempotencyKey ?? `${this.bus.runId}:iter-${this.iteration}`,
+    });
+    this.actions.push(action);
     this.bus.emit('action.requested', { action });
 
     // 1. Policy — every action, every time. The model can never self-authorize.
     this.transition('WAITING_FOR_PERMISSION');
     this.bus.emit('permission.requested', { action });
-    const verdict = await (this.deps.policy ?? allowAllPolicy).evaluate(action, {
+    const verdict = await this.deps.policy.evaluate(action, {
       agentId: this.deps.spec.id,
       goal: this.deps.spec.goal,
       grants: this.deps.grants ?? [],
@@ -299,18 +311,27 @@ export class AgentRunner {
     action.state = 'running';
     this.bus.emit('action.started', { action });
     let observation: Observation;
+    // A child controller per action: timeouts ABORT the executor (the
+    // signal flows to envs/tools that honor it) instead of merely
+    // abandoning the promise while the side effect continues.
+    const ctrl = new AbortController();
+    const onAbort = () => ctrl.abort(signal?.reason);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    const timer = this.deps.actionTimeoutMs
+      ? setTimeout(() => ctrl.abort(new TimeoutError(this.deps.actionTimeoutMs!)), this.deps.actionTimeoutMs)
+      : undefined;
     try {
-      const work = () => this.deps.executor.execute(action, {
+      const ctx = {
         agentId: this.deps.spec.id,
         goalId: this.deps.spec.goal.id,
-        ...(signal !== undefined && { signal }),
-      });
-      const executed = this.deps.retry
-        ? retry(() => work(), this.deps.retry, signal)
-        : work();
-      observation = this.deps.actionTimeoutMs
-        ? await withTimeout(executed, this.deps.actionTimeoutMs)
-        : await executed;
+        goal: this.deps.spec.goal,
+        grants: this.deps.grants ?? [],
+        signal: ctrl.signal,
+      };
+      const work = () => this.deps.executor.execute(action, ctx);
+      observation = this.deps.retry
+        ? await retry(() => work(), this.deps.retry, ctrl.signal)
+        : await work();
       action.state = 'completed';
     } catch (error) {
       action.state = 'failed';
@@ -318,6 +339,9 @@ export class AgentRunner {
         actionId: action.id, source: 'executor', kind: 'error',
         success: false, error: errorMessage(error),
       });
+    } finally {
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
     }
     this.bus.emit('action.completed', { action, observation });
     if (action.taskId) {
@@ -332,10 +356,20 @@ export class AgentRunner {
       this.transition('VERIFYING');
       this.bus.emit('verification.started', { subject: action.id });
       const v = await this.deps.verifier.verify({ goal: this.deps.spec.goal, observation });
-      this.bus.emit('verification.completed', { ok: v.ok, ...(v.reason !== undefined && { reason: v.reason }) });
+      this.bus.emit('verification.completed', {
+        ok: v.ok, verifier: this.deps.verifier.id,
+        ...(v.reason !== undefined && { reason: v.reason }),
+      });
       if (!v.ok) {
         this.transition('REPLANNING');
         this.bus.emit('replan.triggered', { reason: v.reason ?? 'verification failed' });
+        // The reasoner sees observations, not events — make the failure
+        // (and which verifier produced it) part of its evidence trail.
+        this.record(createObservation({
+          actionId: action.id, source: `verifier:${this.deps.verifier.id}`,
+          kind: 'verification', success: false,
+          error: v.reason ?? 'verification failed', output: v.evidence,
+        }));
       }
     }
     return 'continue'; // → REASONING at loop top
@@ -350,6 +384,7 @@ export class AgentRunner {
       state: this.state,
       tasks: [...this.tasks.values()],
       observations: this.observations,
+      actions: this.actions,
       iteration: this.iteration,
       context: this.contextItems,
       ...(this.deps.memory !== undefined && { memory: this.deps.memory }),
@@ -382,8 +417,14 @@ export class AgentRunner {
     const cp = createCheckpoint(this.deps.spec.id, this.state, {
       iteration: this.iteration,
       tasks: [...this.tasks.values()],
+      actions: this.actions,
       observations: this.observations,
       context: this.contextItems,
+      ...((this.deps.reasoner as StatefulReasoner).captureState !== undefined && {
+        reasonerState: (this.deps.reasoner as StatefulReasoner).captureState(),
+      }),
+      runId: this.bus.runId,
+      seq: this.bus.nextSeq(),
     });
     await store.save(cp);
     this.bus.emit('checkpoint.created', { checkpointId: cp.id });
@@ -402,9 +443,15 @@ export class AgentRunner {
     // INITIALIZING). Loop-top moves RECOVERING → REASONING: checkpoints
     // are only taken at reasoning boundaries, so we always resume there.
     for (const task of cp.data.tasks) this.tasks.set(task.id, task);
+    this.actions.push(...cp.data.actions);
     this.observations.push(...cp.data.observations);
     this.contextItems.push(...cp.data.context);
     this.iteration = cp.data.iteration;
+    // Reasoner state (pending tool calls, plan flags) survives resume.
+    const sr = this.deps.reasoner as StatefulReasoner;
+    if (cp.data.reasonerState !== undefined && sr.restoreState) sr.restoreState(cp.data.reasonerState);
+    // One continuous journal: same runId, sequence continues.
+    if (cp.data.runId) this.bus.resumeJournal(cp.data.runId, cp.data.seq ?? 0);
     this.transition('RECOVERING');
     this.bus.emit('agent.resumed', { checkpointId: cp.id });
   }

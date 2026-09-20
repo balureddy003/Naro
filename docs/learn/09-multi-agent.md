@@ -51,22 +51,18 @@ split.
 ## What Naro supports today
 
 Naro's core primitives express task ownership and dependency, while
-`@naro/multiagent` adds three coordination building blocks:
+`@naro/multiagent` adds coordination at the edge:
 
-- `AgentDirectory` registers agents and their advertised capabilities;
-- `InMemoryAgentBus` routes request/response delegation in one process;
-- `delegationTool()` turns delegation into a normal tool call, so permissions,
-  policy, validation, observations, and audit still apply.
+- `AgentDirectory` registers agents and advertised capabilities;
+- `InMemoryAgentBus` handles request/response delegation in one process;
+- `HttpAgentBus` delegates across processes through resolved base URLs;
+- `delegationTool()` keeps delegation inside schema, grants, policy,
+  observations, and audit.
 
-This is intentionally not a distributed orchestrator. The caller still owns
-agent lifecycle, selected context, budgets, and result verification. The
-in-memory bus has no persistence and a timed-out handler may continue running.
-A durable or A2A transport should implement the same `AgentBus` contract.
-
-A2A protocols aim to standardize agent-to-agent discovery and messaging, much
-as MCP standardizes tool-facing integration. In Naro, such a protocol should be
-an adapter around tasks, observations, and events rather than a second agent
-model hidden inside the kernel.
+`@naro/adapter-a2a` implements agent cards and the synchronous JSON-RPC
+`tasks/send` subset. The caller still owns agent lifecycle, selected context,
+budgets, authentication, and result verification. Current network transports
+are not durable queues, and timed-out work may continue remotely.
 
 ## Why context should not be copied wholesale
 

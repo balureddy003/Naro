@@ -9,7 +9,8 @@ export interface EventExporterLike {
 
 const ev = (seq: number): NaroEvent => ({
   id: `e${seq}`, type: 'agent.created', seq, at: Date.now(),
-  agentId: 'a1', goalId: 'g1', data: { name: 't' },
+  agentId: 'a1', goalId: 'g1',
+    runId: 'r1', data: { name: 't' },
 });
 
 /** Exporters must accept batches, preserve order, and flush durably. */

@@ -5,7 +5,8 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ToolExecutor, ToolRegistry } from '@naro/tools';
-import { createAction } from '@naro/core';
+import { createGoal, createAction } from '@naro/core';
+const GOAL = createGoal({ description: 'test goal' });
 import { McpToolSource } from './mcp-source.ts';
 
 /** In-process MCP server exposing one 'echo' tool — real protocol, no sockets. */
@@ -53,7 +54,7 @@ test('discovered MCP tools execute through the standard pipeline', async () => {
   const executor = new ToolExecutor(registry);
   const obs = await executor.execute(
     createAction('a1', { capability: 'tool.invoke', target: 'tool://echo', input: { text: 'hi' } }),
-    { agentId: 'a1', goalId: 'g1' },
+    { agentId: 'a1', goalId: 'g1' , goal: GOAL, grants: []},
   );
   assert.equal(obs.success, true);
   assert.equal(obs.output, 'echo:hi');
@@ -66,7 +67,7 @@ test('schema validation still applies to MCP tools', async () => {
   await registry.refresh();
   const obs = await new ToolExecutor(registry).execute(
     createAction('a1', { capability: 'tool.invoke', target: 'tool://echo', input: {} }),
-    { agentId: 'a1', goalId: 'g1' },
+    { agentId: 'a1', goalId: 'g1' , goal: GOAL, grants: []},
   );
   assert.equal(obs.success, false);
   assert.match(obs.error ?? '', /invalid input/);

@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAction, type ExecContext } from '@naro/core';
+import { createGoal, createAction, type ExecContext } from '@naro/core';
+const GOAL = createGoal({ description: 'test goal' });
 import { DevOpsEnvironment, probeServer } from './index.ts';
 
-const ctx: ExecContext = { agentId: 'a', goalId: 'g' };
+const ctx: ExecContext = { agentId: 'a', goalId: 'g' , goal: GOAL, grants: []};
 const act = (cap: string, input: unknown) =>
   createAction('a', { capability: cap, target: `env://ops/${cap}`, input });
 

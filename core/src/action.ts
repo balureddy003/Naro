@@ -29,6 +29,18 @@ export interface Action {
   readonly permissions: readonly string[];
   /** The task this action serves, when it was dispatched for one. */
   readonly taskId?: string;
+  /**
+   * The provider's tool-call identifier, when this action came from a
+   * model tool call. Protocols (OpenAI/Anthropic) require results to
+   * reference the original call id — losing it breaks the transcript.
+   */
+  readonly toolCallId?: string;
+  /**
+   * Deduplication key for retry/resume safety. The runtime derives a
+   * stable key per action so idempotent executors can recognize a
+   * repeated write after a crash instead of applying it twice.
+   */
+  readonly idempotencyKey?: string;
   state: ActionState;
   result?: unknown;
   /** Free-form note of what changed, for audit ("wrote 3 files"). */
@@ -42,6 +54,8 @@ export interface ActionInput {
   input?: unknown;
   permissions?: readonly string[];
   taskId?: string;
+  toolCallId?: string;
+  idempotencyKey?: string;
 }
 
 export function createAction(actor: string, input: ActionInput): Action {
@@ -53,6 +67,8 @@ export function createAction(actor: string, input: ActionInput): Action {
     input: input.input,
     permissions: input.permissions ?? [],
     ...(input.taskId !== undefined && { taskId: input.taskId }),
+    ...(input.toolCallId !== undefined && { toolCallId: input.toolCallId }),
+    ...(input.idempotencyKey !== undefined && { idempotencyKey: input.idempotencyKey }),
     state: 'requested',
     createdAt: Date.now(),
   };

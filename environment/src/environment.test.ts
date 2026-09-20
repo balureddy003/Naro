@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAction } from '@naro/core';
+import { createGoal, createAction } from '@naro/core';
+const GOAL = createGoal({ description: 'test goal' });
 import { InMemoryEnvironment } from './in-memory.ts';
 
-const ctx = { agentId: 'a1', goalId: 'g1' };
+const ctx = { agentId: 'a1', goalId: 'g1' , goal: GOAL, grants: []};
 const act = (capability: string, target: string, input?: unknown) =>
   createAction('a1', { capability, target, input });
 

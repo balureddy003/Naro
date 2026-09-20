@@ -1,9 +1,14 @@
+import type { Goal } from './goal.ts';
 import type { Action } from './action.ts';
 import type { Observation } from './observation.ts';
 
 export interface ExecContext {
   readonly agentId: string;
   readonly goalId: string;
+  /** The goal being served — nested executors (e.g. workflows) need it for policy. */
+  readonly goal: Goal;
+  /** Permissions granted to this agent — nested policy evaluation needs them. */
+  readonly grants: readonly string[];
   readonly signal?: AbortSignal;
 }
 

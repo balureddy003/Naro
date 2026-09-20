@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAction } from '@naro/core';
+import { createGoal, createAction } from '@naro/core';
+const GOAL = createGoal({ description: 'test goal' });
 import { ToolExecutor, ToolRegistry } from '@naro/tools';
 import { DataEnvironment } from './data-env.ts';
 import { NodeSqliteDriver } from './driver.ts';
 import { dataTools } from './tools.ts';
 
-const ctx = { agentId: 'a1', goalId: 'g1' };
+const ctx = { agentId: 'a1', goalId: 'g1' , goal: GOAL, grants: []};
 const act = (cap: string, input?: unknown) =>
   createAction('a1', { capability: cap, target: 'env://db/x', ...(input !== undefined && { input }) });
 
@@ -74,4 +75,16 @@ test('dataTools run through the standard pipeline', async () => {
   assert.equal(obs.success, true);
   assert.equal((obs.output as { rows: { name: string }[] }).rows[0]!.name, 'ada');
   assert.equal(reg.get('sql_exec')?.sideEffects, 'write');
+});
+
+test('sql.query is DB-enforced read-only — mutating PRAGMAs are refused', async () => {
+  const env = new DataEnvironment({ driver: new NodeSqliteDriver() });
+  await env.execute(act('sql.exec', 'CREATE TABLE t (x)'), ctx);
+  // PRAGMA user_version=N is a WRITE that passes the prefix check —
+  // query_only must reject it at the database layer.
+  const o = await env.execute(act('sql.query', 'PRAGMA user_version = 7'), ctx);
+  assert.equal(o.success, false);
+  // multi-statement smuggling is refused too
+  const o2 = await env.execute(act('sql.query', 'SELECT 1; DROP TABLE t'), ctx);
+  assert.equal(o2.success, false);
 });

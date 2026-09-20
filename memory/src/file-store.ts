@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { MemoryHit } from '@naro/core';
 import {
@@ -66,9 +66,16 @@ export class FileMemoryStore implements MemoryStore {
   }
 
   async forget(key: string): Promise<boolean> {
-    // Tombstoning on a JSONL store = rewrite on next load; keep it simple:
-    // drop from cache; a compacting adapter handles durable deletes.
-    return (await this.load()).delete(key);
+    // Deletion must be durable — a 'forgotten' entry that reloads after
+    // restart is a correctness and privacy bug. Compact: remove from the
+    // cache, then rewrite whichever tier file held it.
+    const cache = await this.load();
+    const entry = cache.get(key);
+    if (!entry) return false;
+    cache.delete(key);
+    const remaining = [...cache.values()].filter((e) => e.tier === entry.tier);
+    await writeFile(this.fileFor(entry.tier), remaining.map((e) => JSON.stringify(e)).join('\n') + (remaining.length ? '\n' : ''));
+    return true;
   }
 
   private rank(entries: MemoryEntry[], query: string, limit: number): MemoryHit[] {

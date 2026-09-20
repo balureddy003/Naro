@@ -69,8 +69,10 @@ The policy interface can return `allow`, `deny`, `require_approval`, `limit`, or
 `audit`. The baseline `createToolPolicy()` uses tool metadata to enforce missing
 permissions and require approval for configured side-effect levels.
 `@naro/policy` adds a first-match rule engine with builders for denials,
-approvals, grant checks, call limits, and audited actions. Richer engines, such
-as an OPA/Rego adapter, can implement the same `PolicyEngine` contract.
+approvals, grant checks, call limits, and audited actions.
+`@naro/adapter-opa` implements the same contract over OPA's HTTP API. It sends
+an action, agent grants, and goal to a configured Rego decision path and fails
+closed by default on timeout, HTTP failure, or an invalid result.
 
 Be precise about the defaults:
 

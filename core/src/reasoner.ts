@@ -1,6 +1,6 @@
 import type { Goal } from './goal.ts';
 import type { Task, TaskInput } from './task.ts';
-import type { ActionInput } from './action.ts';
+import type { Action, ActionInput } from './action.ts';
 import type { Observation } from './observation.ts';
 import type { AgentState } from './state.ts';
 import type { ContextItem } from './context.ts';
@@ -30,6 +30,8 @@ export interface ReasoningContext {
   readonly tasks: readonly Task[];
   /** Every observation so far, in order — the agent's evidence trail. */
   readonly observations: readonly Observation[];
+  /** Every action taken so far — lets strategies rebuild faithful transcripts. */
+  readonly actions: readonly Action[];
   /** How many reasoning cycles have run. Backed by `maxIterations`. */
   readonly iteration: number;
   /** Context retrieved so far this run (see 'need-context' decisions). */
@@ -47,4 +49,15 @@ export interface ReasoningContext {
 export interface Reasoner {
   readonly strategy: string;
   decide(ctx: ReasoningContext): Promise<Decision> | Decision;
+}
+
+/**
+ * A reasoner with internal state that must survive checkpoints —
+ * pending tool calls, plan flags, accumulated lessons. The runner calls
+ * `captureState` before saving a checkpoint and `restoreState` on resume.
+ * Reasoners without it resume stateless — document that or implement it.
+ */
+export interface StatefulReasoner extends Reasoner {
+  captureState(): unknown;
+  restoreState(state: unknown): void;
 }

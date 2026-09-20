@@ -1,3 +1,5 @@
+import { TimeoutError } from './timeout.ts';
+
 /**
  * Retry policy for flaky operations (model calls, tool executions).
  * Exponential backoff: delay grows by `backoffFactor` each attempt;
@@ -12,7 +14,12 @@ export interface RetryPolicy {
   readonly backoffFactor?: number;
   /** Randomize delay in [delay/2, delay] to avoid thundering herds. */
   readonly jitter?: boolean;
-  /** Decide whether an error is worth retrying. Default: retry everything. */
+  /**
+   * Decide whether an error is worth retrying. Default: everything EXCEPT
+   * TimeoutError — a timed-out action may already have committed its side
+   * effect, so blind retry can double-apply it. Retry timeouts only via an
+   * explicit `shouldRetry`, and prefer tools marked `idempotent`.
+   */
   readonly shouldRetry?: (error: unknown) => boolean;
 }
 
@@ -44,7 +51,7 @@ export async function retry<T>(
     } catch (error) {
       lastError = error;
       const willRetry = attempt < policy.attempts
-        && (policy.shouldRetry?.(error) ?? true);
+        && (policy.shouldRetry?.(error) ?? !(error instanceof TimeoutError));
       if (!willRetry) break;
       const jittered = policy.jitter ? delay / 2 + Math.random() * (delay / 2) : delay;
       await sleep(jittered, signal);

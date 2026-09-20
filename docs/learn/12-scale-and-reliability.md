@@ -70,17 +70,21 @@ completed just before the process failed to record its observation.
 
 - `retry()` with attempt limits, exponential backoff, optional jitter, and a
   `shouldRetry` predicate;
-- `withTimeout()` and `AbortSignal` propagation for action execution;
+- per-action deadlines that ABORT the executor through a child
+  `AbortSignal` (a timed-out action is cancelled, not abandoned);
+  timed-out actions are not auto-retried — their result is indeterminate;
 - `maxIterations`, defaulting to 64;
 - `InMemoryCheckpointStore` and append-only `FileCheckpointStore`;
-- ordered runtime events;
+- ordered runtime events through callbacks and `runner.events()` async
+  iteration;
 - `@naro/observability` metrics plus JSONL and console event exporters;
+- `@naro/adapter-otel` for ordered OTLP/HTTP log export with `flush()`;
 - optional token and cost fields in model `Usage`.
 
 `AgentRunner.retry` applies to action execution. Model-call retry behavior
-belongs in the reasoner or model adapter today. Naro does not yet include a
-distributed queue, circuit breaker, OpenTelemetry exporter, hosted metrics
-backend, or provider failover policy.
+belongs in the reasoner or model adapter today. Naro does not include a durable
+distributed queue, circuit breaker, hosted metrics backend, or provider
+failover policy.
 
 ## Scaling dimensions
 
@@ -94,7 +98,8 @@ thousands of sleeping retries.
 growth are separate problems.
 
 **Events:** preserve ordering per run and choose a retention policy. Exporters
-can subscribe to Naro's event bus without changing the runner.
+can subscribe without changing the runner; application code can consume the
+same history-plus-live stream with `for await (const event of runner.events())`.
 
 **Provider fallback:** test it as a behavior change. A cheaper or available
 model may support different capabilities and produce different decisions.

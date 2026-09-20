@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAgentSpec, createGoal, createObservation, type ActionExecutor } from '@naro/core';
+import { allowAllPolicy, createAgentSpec, createGoal, createObservation, type ActionExecutor } from '@naro/core';
 import { AgentRunner, DirectReasoner } from '@naro/runtime';
 import { JsonlExporter, pipeTo } from './exporter.ts';
 import { computeMetrics } from './metrics.ts';
@@ -20,6 +20,7 @@ async function realRun() {
   const runner = new AgentRunner({
     spec: createAgentSpec({ goal: createGoal({ description: 'm' }) }),
     reasoner, executor: echo,
+  policy: allowAllPolicy,
   });
   const live: string[] = [];
   const dir = await mkdtemp(join(tmpdir(), 'naro-obs-'));

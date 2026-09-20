@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { newId, type AgentState, type ContextItem, type Observation, type Task } from '@naro/core';
+import { newId, type Action, type AgentState, type ContextItem, type Observation, type Task } from '@naro/core';
 
 /**
  * A Checkpoint is enough state to resume an agent run after a crash.
@@ -17,8 +17,15 @@ export interface Checkpoint {
   readonly data: {
     readonly iteration: number;
     readonly tasks: readonly Task[];
+    readonly actions: readonly Action[];
     readonly observations: readonly Observation[];
     readonly context: readonly ContextItem[];
+    /** Reasoner-internal state from `StatefulReasoner.captureState()`, if any. */
+    readonly reasonerState?: unknown;
+    /** Run identifier — event ordering and runId continue across resumes. */
+    readonly runId?: string;
+    /** Last event sequence number — the resumed run's journal continues it. */
+    readonly seq?: number;
   };
 }
 

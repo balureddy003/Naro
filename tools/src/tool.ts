@@ -24,6 +24,12 @@ export interface Tool {
   /** Permissions the agent must hold to use this tool. */
   readonly permissions: readonly string[];
   readonly sideEffects: SideEffect;
+  /**
+   * True when repeating this tool with the same input is safe —
+   * retry policies and resumption may auto-retry only when this is set.
+   * Default: treated as non-idempotent (never blindly retried).
+   */
+  readonly idempotent?: boolean;
   readonly metadata?: Readonly<Record<string, unknown>>;
   execute(input: unknown, ctx: ExecContext): Promise<unknown>;
 }

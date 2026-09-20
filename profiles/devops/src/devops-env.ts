@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { createObservation, type Action, type ExecContext, type Observation } from '@naro/core';
+import { fetchAllowlisted } from '@naro/environment';
 import type { Environment, EnvironmentState } from '@naro/environment';
 import { spawn } from 'node:child_process';
 
@@ -79,7 +80,15 @@ export class DevOpsEnvironment implements Environment {
         }
         const t0 = Date.now();
         try {
-          const res = await fetch(url, { signal: AbortSignal.timeout(input.timeoutMs ? Number(input.timeoutMs) : 5_000) });
+          // Redirects re-enter the allowlist check every hop — an allowed
+          // host redirecting elsewhere is refused, not followed. Probes
+          // legitimately target internal hosts, so private IPs are allowed
+          // here (the operator-declared allowlist is the boundary).
+          const res = await fetchAllowlisted(url, {
+            allowedDomains: this.probeAllowlist.map((h) => h.split(':')[0]!),
+            timeoutMs: input.timeoutMs ? Number(input.timeoutMs) : 5_000,
+            allowPrivateHosts: true,
+          });
           return this.obs(action, true, { status: res.status, ok: res.ok, latencyMs: Date.now() - t0 });
         } catch (e) {
           return this.obs(action, true, { status: 0, ok: false, latencyMs: Date.now() - t0, error: e instanceof Error ? e.message : String(e) });

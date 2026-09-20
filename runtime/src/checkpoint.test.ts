@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCheckpoint, FileCheckpointStore, InMemoryCheckpointStore } from './checkpoint.ts';
 
-const data = { iteration: 3, tasks: [], observations: [], context: [] };
+const data = { iteration: 3, tasks: [], actions: [], observations: [], context: [] };
 
 test('in-memory store keeps history and returns latest', async () => {
   const s = new InMemoryCheckpointStore();

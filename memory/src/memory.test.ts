@@ -42,3 +42,13 @@ test('search returns ranked hits only (no zero-score noise)', async () => {
   await mem.write({ key: 'x', content: 'nothing relevant' });
   assert.equal((await mem.search('completely different words')).length, 0);
 });
+
+test('forget is durable — a fresh store does not resurrect deleted entries', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'naro-mem-'));
+  const s1 = new FileMemoryStore(dir);
+  await s1.write({ tier: 'semantic', key: 'k1', content: 'secret' });
+  assert.equal(await s1.forget('k1'), true);
+  // New instance = cold load from disk — the entry must stay gone.
+  const s2 = new FileMemoryStore(dir);
+  assert.equal(await s2.read('k1'), undefined);
+});

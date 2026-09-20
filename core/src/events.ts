@@ -30,7 +30,7 @@ export interface EventDataMap {
   'action.completed':           { action: Action; observation: Observation };
   'observation.created':        { observation: Observation };
   'verification.started':       { subject: string };
-  'verification.completed':     { ok: boolean; reason?: string };
+  'verification.completed':     { ok: boolean; verifier?: string; reason?: string };
   'replan.triggered':           { reason: string };
   'memory.written':             { key: string };
   'checkpoint.created':         { checkpointId: string };
@@ -63,5 +63,7 @@ export type NaroEvent<T extends EventType = EventType> = T extends T ? {
   readonly at: number;
   readonly agentId: string;
   readonly goalId: string;
+  /** Which execution of this agent produced it — a fresh run gets a fresh runId. */
+  readonly runId: string;
   readonly data: EventDataMap[T];
 } : never;

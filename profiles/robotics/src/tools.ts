@@ -38,7 +38,10 @@ export function roboticsTools(env: RoboticsEnvironment): Tool[] {
       name: 'robot_estop',
       description: 'Emergency stop — latches all motion off. Always callable; use robot.reset to re-arm.',
       inputSchema: { type: 'object', properties: {} },
-      permissions: ['robot.estop'],
+      // No permission required: a safety stop must never be deniable.
+      // (The unbypassable channel is env.emergencyStop() — this tool is
+      // the agent-facing convenience, still logged and observed.)
+      permissions: [],
       sideEffects: 'read', // deliberately ungateable: a safety stop is never deniable
       execute: (_i, ctx) => call('robot.estop', {}, ctx),
     },

@@ -27,5 +27,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      # Regression gate pattern — point --baseline at a committed/report-artifact store:
-      - run: node cli/src/bin.ts bench cli/fixtures/sample-bench.ts --save .naro/bench.jsonl --label "${{ github.sha }}"
+      # Real regression gate: diff against the committed baseline. A case
+      # that regresses — or one that was silently dropped — exits 1.
+      # To bless an intentional change: rerun with --save and commit the
+      # updated benchmarks/baseline.jsonl.
+      - run: node cli/src/bin.ts bench benchmarks/smoke.ts --baseline benchmarks/baseline.jsonl --save .naro/bench.jsonl --label "${{ github.sha }}"

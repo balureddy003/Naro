@@ -136,3 +136,28 @@ function glob(pattern: string): RegExp {
     .replace(//g, '.*');
   return new RegExp(`^${escaped}$`);
 }
+
+/**
+ * Compose engines conjunctively: every engine evaluates; the strictest
+ * verdict wins (deny > require_approval > limit > audit > allow).
+ *
+ * Use it to layer jurisdictions — e.g. a tool policy for `tool://`,
+ * a rule engine for `env://`, an OPA adapter for org-wide rules —
+ * without any engine needing to know the others exist.
+ */
+export function allOf(...engines: readonly PolicyEngine[]): PolicyEngine {
+  const strictness: Record<PolicyDecision, number> = {
+    deny: 4, require_approval: 3, limit: 2, audit: 1, allow: 0,
+  };
+  return {
+    async evaluate(action: Action, ctx: PolicyContext): Promise<PolicyDecision> {
+      let verdict: PolicyDecision = 'allow';
+      for (const engine of engines) {
+        const d = await engine.evaluate(action, ctx);
+        if (strictness[d] > strictness[verdict]) verdict = d;
+        if (verdict === 'deny') break; // nothing is stricter — short-circuit
+      }
+      return verdict;
+    },
+  };
+}

@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAction } from '@naro/core';
+import { createGoal, createAction } from '@naro/core';
+const GOAL = createGoal({ description: 'test goal' });
 import { BrowserEnvironment } from './browser-env.ts';
 import type { BrowserDriver, PageState } from './driver.ts';
 
-const ctx = { agentId: 'a1', goalId: 'g1' };
+const ctx = { agentId: 'a1', goalId: 'g1' , goal: GOAL, grants: []};
 const act = (cap: string, input?: unknown) =>
   createAction('a1', { capability: cap, target: 'env://b/x', ...(input !== undefined && { input }) });
 

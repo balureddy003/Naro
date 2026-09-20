@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventBus } from './event-bus.ts';
-import { createGoal } from '@naro/core';
+import { createGoal, createAction, type NaroEvent } from '@naro/core';
+const GOAL = createGoal({ description: 'test goal' });
 
 test('emits typed events to per-type and wildcard listeners in order', () => {
   const bus = new EventBus({ agentId: 'a1', goalId: 'g1' });
@@ -40,4 +41,21 @@ test('goal ids ride on every event for traceability', () => {
   const bus = new EventBus({ agentId: 'a1', goalId: goal.id });
   const e = bus.emit('agent.created', { name: 'x' });
   assert.equal(e.goalId, goal.id);
+});
+
+test('emitted payloads are snapshots — later mutation cannot rewrite history', () => {
+  const bus = new EventBus({ agentId: 'a1', goalId: 'g1' });
+  const action = createAction('a1', { capability: 'x', target: 'tool://x' });
+  bus.emit('action.requested', { action });
+  action.state = 'completed'; // mutate after emit
+  const stored = (bus.history()[0] as NaroEvent<'action.requested'>).data.action;
+  assert.equal(stored.state, 'requested'); // still the emitted fact
+});
+
+test('a throwing subscriber is isolated and lands in deliveryErrors', () => {
+  const bus = new EventBus({ agentId: 'a1', goalId: 'g1' });
+  bus.on('agent.created', () => { throw new Error('subscriber boom'); });
+  bus.emit('agent.created', { name: 'x' }); // does not throw
+  assert.equal(bus.deliveryErrors.length, 1);
+  assert.equal(bus.deliveryErrors[0]!.type, 'agent.created');
 });

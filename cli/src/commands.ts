@@ -86,10 +86,14 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
         if (!baseline) { io.err(`no reports in ${basePath} to diff against`); return 2; }
         const diff = diffReports(baseline, report);
         io.out(`baseline diff: ${diff.regressions.length} regressions, ` +
-          `${diff.improvements.length} improvements, pass-rate Δ ${(diff.passRateDelta * 100).toFixed(1)}%`);
+          `${diff.improvements.length} improvements, ${diff.onlyInBaseline.length} removed, ` +
+          `pass-rate Δ ${(diff.passRateDelta * 100).toFixed(1)}%`);
         for (const r of diff.regressions) io.out(`  REGRESSED ${r.caseId}: ${r.before.status} → ${r.after.status}`);
+        for (const c of diff.onlyInBaseline) io.out(`  REMOVED   ${c} — was in the baseline; deleting a case is not fixing it`);
         for (const r of diff.improvements) io.out(`  improved  ${r.caseId}: ${r.before.status} → ${r.after.status}`);
-        if (diff.regressions.length) return 1; // the release gate
+        // The release gate: a passing case that now fails, OR a baseline
+        // case that vanished from the run entirely — both are regressions.
+        if (diff.regressions.length || diff.onlyInBaseline.length) return 1;
       }
       return report.failed === 0 ? 0 : 1;
     }

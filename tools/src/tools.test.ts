@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAction } from '@naro/core';
+import { createGoal, createAction } from '@naro/core';
+const GOAL = createGoal({ description: 'test goal' });
 import { ToolRegistry } from './registry.ts';
 import { ToolExecutor } from './executor.ts';
 import { createToolPolicy } from './policy.ts';
@@ -35,7 +36,7 @@ const rmrf: Tool = {
 
 const exec = (t: ToolExecutor, target: string, input: unknown) =>
   t.execute(createAction('agent_1', { capability: 'tool.invoke', target, input }), {
-    agentId: 'agent_1', goalId: 'goal_1',
+    agentId: 'agent_1', goalId: 'goal_1', goal: GOAL, grants: [],
   });
 
 test('happy path: resolve → validate → execute → observe', async () => {

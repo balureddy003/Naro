@@ -1,5 +1,5 @@
 import { createObservation, type Action, type ExecContext, type Observation } from '@naro/core';
-import type { Environment, EnvironmentState } from '@naro/environment';
+import { boundedText, fetchAllowlisted, type Environment, type EnvironmentState } from '@naro/environment';
 
 /**
  * A researcher's world: fetched pages and citations.
@@ -23,6 +23,11 @@ export interface ResearchOptions {
   readonly fetchImpl?: typeof fetch;
   readonly maxBytes?: number;
   readonly timeoutMs?: number;
+  /**
+   * Allow fetching private/loopback addresses (dev only). Default false —
+   * an allowlisted host that resolves to 169.254.169.254 is refused.
+   */
+  readonly allowPrivateHosts?: boolean;
 }
 
 export interface Citation {
@@ -87,17 +92,22 @@ export class ResearchEnvironment implements Environment {
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       return this.obs(action, false, undefined, `protocol '${parsed.protocol}' not allowed`);
     }
-    if (!this.opts.allowedDomains.some((d) => parsed.hostname === d || parsed.hostname.endsWith(`.${d}`))) {
-      return this.obs(action, false, undefined,
-        `domain '${parsed.hostname}' not in allowlist (${this.opts.allowedDomains.join(', ') || 'empty'})`);
-    }
-    const res = await this.fetchImpl(url, { signal: AbortSignal.timeout(this.opts.timeoutMs) });
-    const text = (await res.text()).slice(0, this.opts.maxBytes);
+    // Every redirect hop is revalidated by fetchAllowlisted — an allowed
+    // domain redirecting to a private address is refused, not followed.
+    const res = await fetchAllowlisted(url, {
+      allowedDomains: this.opts.allowedDomains,
+      fetchImpl: this.fetchImpl,
+      timeoutMs: this.opts.timeoutMs,
+      allowPrivateHosts: this.opts.allowPrivateHosts ?? false,
+    });
+    const { text, truncated } = await boundedText(res, this.opts.maxBytes);
+    const landed = res.url || url;
     const page: Page = {
-      url, status: res.status, bytes: text.length,
-      truncated: text.length >= this.opts.maxBytes, content: text,
+      url: landed, status: res.status, bytes: text.length,
+      truncated, content: text,
     };
     this.pages.set(url, page);
+    this.pages.set(landed, page);
     return this.obs(action, res.ok, {
       url, status: res.status, bytes: page.bytes,
       ...(page.truncated && { truncated: true }),

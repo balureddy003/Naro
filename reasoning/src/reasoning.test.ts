@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createGoal, createObservation, createTask,
+  createAction, createGoal, createObservation, createTask,
   type ReasoningContext, type Task,
 } from '@naro/core';
 import { MockModel, textResponse, type ChatResponse } from '@naro/model';
@@ -16,6 +16,7 @@ function mkCtx(partial: Partial<ReasoningContext> = {}): ReasoningContext {
     state: 'REASONING',
     tasks: [],
     observations: [],
+    actions: [],
     context: [],
     iteration: 0,
     ...partial,
@@ -45,9 +46,13 @@ test('react: plain text answer completes with the result', async () => {
       : toolCallingResponse,
   });
   const r = new ReActReasoner(model);
-  await r.decide(mkCtx());
-  const obs = createObservation({ actionId: 'c1', source: 'tool://calculator', kind: 'tool-result', success: true, output: 42 });
-  const d = await r.decide(mkCtx({ observations: [obs] }));
+  const d1 = await r.decide(mkCtx());
+  if (d1.kind !== 'act') throw new Error('expected act');
+  // The runtime records the action (with its provider toolCallId), then
+  // the observation links back by actionId — the transcript pairs them.
+  const action = createAction('a1', d1.action);
+  const obs = createObservation({ actionId: action.id, source: 'tool://calculator', kind: 'tool-result', success: true, output: 42 });
+  const d = await r.decide(mkCtx({ actions: [action], observations: [obs] }));
   assert.deepEqual(d, { kind: 'complete', result: 'The answer is 42' });
 });
 
