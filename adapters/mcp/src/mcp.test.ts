@@ -71,3 +71,7 @@ test('schema validation still applies to MCP tools', async () => {
   assert.equal(obs.success, false);
   assert.match(obs.error ?? '', /invalid input/);
 });
+
+// ── Contract suite: McpToolSource is a ToolSource like any other ─────
+import { toolSourceContract } from '@naro/contract-tests';
+toolSourceContract('McpToolSource', async () => new McpToolSource(await connectedPair()));

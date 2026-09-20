@@ -19,6 +19,7 @@
     "@naro/core": "0.1.0"
   },
   "devDependencies": {
-    "@naro/runtime": "0.1.0"
+    "@naro/runtime": "0.1.0",
+    "@naro/contract-tests": "0.1.0"
   }
 }

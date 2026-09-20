@@ -135,6 +135,7 @@ flowchart TB
         openai["@naro/adapter-openai"]
         mcp["@naro/adapter-mcp"]
         otel["@naro/adapter-otel"]
+        opa["@naro/adapter-opa"]
     end
 
     runtime --> core
@@ -162,6 +163,8 @@ flowchart TB
     mcp --> tools
     mcp --> core
     otel --> observability
+    otel --> core
+    opa --> core
 
     coding --> environment
     coding --> tools

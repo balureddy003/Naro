@@ -20,7 +20,7 @@ registry.register(delegationTool(bus, 'parent', dir));
 
 ## Components
 
-- **`AgentBus`** — `serve(agentId, handler)` + `request(to, goal)` request/reply. `InMemoryAgentBus` for in-process; an A2A/HTTP adapter implements the same two methods.
+- **`AgentBus`** — `serve(agentId, handler)` + `request(to, goal)` request/reply. Two transports: `InMemoryAgentBus` (same process) and `HttpAgentBus` (`POST /agents/{id}/task` — real cross-process delegation, `resolve(agentId) → base URL`).
 - **`AgentDirectory`** — capability-indexed registry so a reasoner (or the delegation tool) can find who can do what.
 - **`AgentMessage`** — `task-request` / `task-result` / `status` union, extensible toward full A2A semantics.
 

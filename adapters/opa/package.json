@@ -1,0 +1,17 @@
+{
+  "name": "@naro/adapter-opa",
+  "version": "0.1.0",
+  "description": "OPA (Open Policy Agent) adapter — evaluate Naro actions against Rego policy over HTTP.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": { ".": "./dist/index.js" },
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@naro/core": "0.1.0"
+  }
+}

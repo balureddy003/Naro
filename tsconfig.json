@@ -53,6 +53,9 @@
       "path": "profiles/coding"
     },
     {
+      "path": "contract-tests"
+    },
+    {
       "path": "examples/minimal-agent"
     },
     {

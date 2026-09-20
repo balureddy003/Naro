@@ -1,0 +1,13 @@
+{
+  "name": "@naro/contract-tests",
+  "version": "0.1.0",
+  "description": "Shared contract test suites — any implementation of a Naro port must pass these. Dev-only; structural types, no runtime deps on the packages under test.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "private": true,
+  "scripts": { "test": "echo 'contract-tests is a library — consumed by other packages'" },
+  "dependencies": {
+    "@naro/core": "0.1.0"
+  }
+}

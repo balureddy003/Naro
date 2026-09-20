@@ -20,6 +20,7 @@
     "verification",
     "multiagent",
     "adapters/*",
+    "contract-tests",
     "profiles/*",
     "examples/*"
   ],
