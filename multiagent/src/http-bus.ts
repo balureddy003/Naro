@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import { newId, type Goal } from '@naro/core';
 import type { AgentBus, AgentMessage } from './bus.ts';
+import { sharedTokenVerifier, type TokenVerifier } from './auth.ts';
 
 /**
  * HTTP transport for AgentBus — the same two-method contract, now across
@@ -18,21 +19,31 @@ import type { AgentBus, AgentMessage } from './bus.ts';
 export interface HttpBusOptions {
   /** agentId → base URL, e.g. { worker: 'http://localhost:9100' } */
   readonly resolve: (agentId: string) => string | undefined;
-  /** Shared bearer token sent on every request. If set, the listener requires it. */
+  /** Bearer token sent on every request. If set, the listener requires it. */
   readonly token?: string;
+  /**
+   * Request authentication — when set, the listener rejects requests whose
+   * bearer token fails verification (fail-closed). Overrides `token` on the
+   * serving side; the client still sends `token`/`tokenProvider`.
+   */
+  readonly authenticate?: TokenVerifier;
+  /** Client-side token source — for rotating credentials; overrides `token`. */
+  readonly tokenProvider?: () => string | Promise<string>;
   readonly fetchImpl?: typeof fetch;
 }
 
 export class HttpAgentBus implements AgentBus {
   private readonly resolve: (id: string) => string | undefined;
-  private readonly token?: string;
+  private readonly authenticate?: TokenVerifier;
+  private readonly tokenProvider?: () => string | Promise<string>;
   private readonly fetchImpl: typeof fetch;
   private readonly handlers = new Map<string, (msg: Extract<AgentMessage, { kind: 'task-request' }>) => Promise<unknown>>();
   private server?: Server;
 
   constructor(opts: HttpBusOptions) {
     this.resolve = opts.resolve;
-    this.token = opts.token;
+    this.authenticate = opts.authenticate ?? (opts.token !== undefined ? sharedTokenVerifier(opts.token) : undefined);
+    this.tokenProvider = opts.tokenProvider ?? (opts.token !== undefined ? () => opts.token! : undefined);
     this.fetchImpl = opts.fetchImpl ?? fetch;
   }
 
@@ -48,9 +59,12 @@ export class HttpAgentBus implements AgentBus {
         res.writeHead(404).end('not found');
         return;
       }
-      if (this.token !== undefined && req.headers['authorization'] !== `Bearer ${this.token}`) {
-        res.writeHead(401).end('unauthorized');
-        return;
+      if (this.authenticate) {
+        const bearer = /^Bearer (.+)$/.exec(req.headers['authorization'] ?? '')?.[1];
+        if (!(await this.authenticate(bearer))) {
+          res.writeHead(401).end('unauthorized');
+          return;
+        }
       }
       const handler = this.handlers.get(decodeURIComponent(m[1]!));
       if (!handler) { res.writeHead(404).end('no such agent'); return; }
@@ -86,7 +100,7 @@ export class HttpAgentBus implements AgentBus {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        ...(this.token !== undefined && { authorization: `Bearer ${this.token}` }),
+        ...(this.tokenProvider && { authorization: `Bearer ${await this.tokenProvider()}` }),
       },
       body: JSON.stringify({ goal, from, messageId: newId('msg') }),
       signal: AbortSignal.timeout(timeoutMs),

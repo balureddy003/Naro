@@ -150,8 +150,13 @@ queue) give real durability on zero-infrastructure SQLite; `naro init`
 scaffolds projects; `act-batch` decisions run gated tools in parallel;
 `ReActReasoner` streams tokens via `onChunk`; Gemini is a third provider.
 
-Remaining: Postgres/Redis stores for multi-host scale, tool sandboxing
-(worker-process isolation), OIDC on the HTTP bus, and release automation.
+Track C landed too: `SandboxedExecutor` (worker-thread isolation with
+heap caps and kill-on-timeout), `SecretProvider` ports (references, never
+values), HS256 JWT auth on the HTTP bus behind a `TokenVerifier` hook,
+and `npm run pack:check` gating publishability in CI.
+
+Remaining: Postgres/Redis stores for multi-host scale, container-level
+sandboxing, OIDC/JWKS verifier adapters, and changeset release automation.
 
 ## License
 

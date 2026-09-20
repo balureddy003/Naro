@@ -47,6 +47,8 @@ export interface AgentDeps {
   readonly human?: HumanBridge;
   /** Permissions granted to this agent; checked by the policy engine. */
   readonly grants?: readonly string[];
+  /** Resolves secret references for tools at exec time — never observed. */
+  readonly secrets?: { resolve(ref: string): Promise<string | undefined> };
   /** Retrieves context for 'need-context' decisions. */
   readonly context?: ContextProvider;
   /** Long-term recall available to reasoners. */
@@ -368,6 +370,7 @@ export class AgentRunner {
         goalId: this.deps.spec.goal.id,
         goal: this.deps.spec.goal,
         grants: this.deps.grants ?? [],
+        ...(this.deps.secrets !== undefined && { secrets: this.deps.secrets }),
         signal: ctrl.signal,
       };
       const work = () => this.deps.executor.execute(action, ctx);

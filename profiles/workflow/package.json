@@ -2,11 +2,20 @@
   "name": "@naro/profile-workflow",
   "version": "0.1.0",
   "type": "module",
-  "exports": { ".": "./dist/index.js" },
+  "exports": {
+    ".": "./dist/index.js"
+  },
   "types": "./dist/index.d.ts",
   "dependencies": {
-    "@naro/core": "*",
-    "@naro/environment": "*",
-    "@naro/tools": "*"
+    "@naro/core": "0.1.0"
+  },
+  "description": "Naro profile \u2014 workflow: policy-gated DAG execution through a nested executor.",
+  "license": "Apache-2.0",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test \"src/**/*.test.ts\""
   }
 }

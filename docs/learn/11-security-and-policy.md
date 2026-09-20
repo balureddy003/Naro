@@ -120,3 +120,24 @@ If the answer depends on “the model should know better,” the control is in t
 wrong place.
 
 Next: [Scale and reliability](12-scale-and-reliability.md).
+
+## Execution isolation and secrets
+
+`SandboxedExecutor` runs each action in a fresh worker thread — its own
+V8 heap (capped by `resourceLimits`), terminated on timeout or abort.
+This is thread isolation, not OS sandboxing: a worker shares the
+process's syscall surface. Fully untrusted code needs a container
+adapter behind the same `ActionExecutor` port.
+
+Secrets never travel in actions: they are references (`env:NAME`,
+`vault:path#key`) resolved inside the executor via `ctx.secrets`
+(`EnvSecretProvider`, `MapSecretProvider`, `chainSecrets`). Transcripts
+and observations only ever hold the reference.
+
+## Bus authentication
+
+`HttpAgentBus` accepts a `TokenVerifier` hook — `sharedTokenVerifier`
+(constant-time shared secret) for dev, `hmacTokenVerifier` for real
+HS256 JWTs with `exp`/`iss`/`aud` checks, and any OIDC/JWKS verifier
+behind the same hook for production. Serving is fail-closed: set
+`authenticate` and unverified requests get 401.
