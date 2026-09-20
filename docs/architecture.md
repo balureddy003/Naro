@@ -130,6 +130,7 @@ flowchart TB
     subgraph profiles["Domain profiles"]
         coding["@naro/profile-coding\nworkspace env + coding tools"]
         research["@naro/profile-research\nfetch + citations"]
+        browser["@naro/profile-browser\nBrowserDriver port + Playwright"]
     end
 
     subgraph adapters["Edge adapters"]
@@ -173,6 +174,9 @@ flowchart TB
     research --> environment
     research --> tools
     research --> core
+    browser --> environment
+    browser --> tools
+    browser --> core
     otel --> core
 ```
 

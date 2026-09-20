@@ -62,6 +62,9 @@
       "path": "profiles/research"
     },
     {
+      "path": "profiles/browser"
+    },
+    {
       "path": "examples/minimal-agent"
     },
     {

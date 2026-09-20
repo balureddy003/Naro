@@ -18,17 +18,21 @@ import type { AgentBus } from './bus.ts';
 export interface HttpBusOptions {
   /** agentId → base URL, e.g. { worker: 'http://localhost:9100' } */
   readonly resolve: (agentId: string) => string | undefined;
+  /** Shared bearer token sent on every request. If set, the listener requires it. */
+  readonly token?: string;
   readonly fetchImpl?: typeof fetch;
 }
 
 export class HttpAgentBus implements AgentBus {
   private readonly resolve: (id: string) => string | undefined;
+  private readonly token?: string;
   private readonly fetchImpl: typeof fetch;
   private readonly handlers = new Map<string, (msg: { kind: 'task-request'; id: string; from: string; goal: Goal; at: number }) => Promise<unknown>>();
   private server?: Server;
 
   constructor(opts: HttpBusOptions) {
     this.resolve = opts.resolve;
+    this.token = opts.token;
     this.fetchImpl = opts.fetchImpl ?? fetch;
   }
 
@@ -42,6 +46,10 @@ export class HttpAgentBus implements AgentBus {
       const m = /^\/agents\/([^/]+)\/task$/.exec(req?.url ?? '');
       if (req?.method !== 'POST' || !m) {
         res.writeHead(404).end('not found');
+        return;
+      }
+      if (this.token !== undefined && req.headers['authorization'] !== `Bearer ${this.token}`) {
+        res.writeHead(401).end('unauthorized');
         return;
       }
       const handler = this.handlers.get(decodeURIComponent(m[1]!));
@@ -76,7 +84,10 @@ export class HttpAgentBus implements AgentBus {
     if (!base) throw new Error(`no endpoint registered for agent '${to}'`);
     const res = await this.fetchImpl(`${base}/agents/${encodeURIComponent(to)}/task`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(this.token !== undefined && { authorization: `Bearer ${this.token}` }),
+      },
       body: JSON.stringify({ goal, from, messageId: newId('msg') }),
       signal: AbortSignal.timeout(timeoutMs),
     });

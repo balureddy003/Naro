@@ -36,3 +36,22 @@ test('unknown endpoint and worker errors surface distinctly', async () => {
     await listener.close();
   }
 });
+
+test('bearer token auth: missing/wrong tokens get 401', async () => {
+  const endpoints = new Map<string, string>();
+  const token = 'shared-secret';
+  const worker = new HttpAgentBus({ resolve: (id) => endpoints.get(id), token });
+  worker.serve('w', async () => 'ok');
+  const listener = await worker.listen(0);
+  endpoints.set('w', listener.url);
+  try {
+    const authed = new HttpAgentBus({ resolve: (id) => endpoints.get(id), token });
+    assert.equal(await authed.request('w', createGoal({ description: 'x' }), 'p'), 'ok');
+    const anon = new HttpAgentBus({ resolve: (id) => endpoints.get(id) });
+    await assert.rejects(anon.request('w', createGoal({ description: 'x' }), 'p'), /401/);
+    const wrong = new HttpAgentBus({ resolve: (id) => endpoints.get(id), token: 'nope' });
+    await assert.rejects(wrong.request('w', createGoal({ description: 'x' }), 'p'), /401/);
+  } finally {
+    await listener.close();
+  }
+});

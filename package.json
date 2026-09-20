@@ -27,7 +27,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "test": "node --test \"*/src/**/*.test.ts\" \"adapters/*/src/**/*.test.ts\" \"examples/*/src/**/*.test.ts\"",
+    "test": "node --test \"*/src/**/*.test.ts\" \"adapters/*/src/**/*.test.ts\" \"profiles/*/src/**/*.test.ts\" \"examples/*/src/**/*.test.ts\"",
     "check": "npm run build && npm test",
     "clean": "tsc -b --clean",
     "example": "node examples/minimal-agent/src/index.ts",

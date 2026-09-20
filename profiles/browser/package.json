@@ -1,0 +1,25 @@
+{
+  "name": "@naro/profile-browser",
+  "version": "0.1.0",
+  "description": "Browser domain profile — BrowserEnvironment over a BrowserDriver port; Playwright driver lazy-imported (optional dep).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": { ".": "./dist/index.js" },
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@naro/core": "0.1.0",
+    "@naro/environment": "0.1.0",
+    "@naro/tools": "0.1.0"
+  },
+  "peerDependencies": {
+    "playwright-core": ">=1.40.0"
+  },
+  "peerDependenciesMeta": {
+    "playwright-core": { "optional": true }
+  }
+}

@@ -79,6 +79,7 @@ const result = await runner.run();
 | `@naro/contract-tests` | Shared suites every port implementation must pass (dev-only) | core |
 | `@naro/profile-coding` | `WorkspaceEnvironment` (jailed fs + shell) + `codingTools()` | core, environment, tools |
 | `@naro/profile-research` | `ResearchEnvironment` (allowlisted fetch + citations that require fetched evidence) + `researchTools()` | core, environment, tools |
+| `@naro/profile-browser` | `BrowserEnvironment` over a `BrowserDriver` port; `PlaywrightDriver` (optional peer dep) | core, environment, tools |
 | `@naro/cli` | `naro run` / `bench` / `replay` / `states` | core, runtime, observability, evaluation |
 | `examples/` | `minimal-agent` (scripted) · `react-agent` (model loop) · `coding-agent` (domain profile) | all |
 
