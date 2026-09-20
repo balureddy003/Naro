@@ -12,4 +12,5 @@ export * from './policy.ts';
 export * from './executor.ts';
 export * from './verifier.ts';
 export * from './context.ts';
+export * from './memory.ts';
 export * from './agent.ts';

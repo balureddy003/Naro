@@ -27,6 +27,8 @@ export interface Action {
   readonly input: unknown;
   /** Permissions the action requests; the policy engine evaluates them. */
   readonly permissions: readonly string[];
+  /** The task this action serves, when it was dispatched for one. */
+  readonly taskId?: string;
   state: ActionState;
   result?: unknown;
   /** Free-form note of what changed, for audit ("wrote 3 files"). */
@@ -39,6 +41,7 @@ export interface ActionInput {
   target: string;
   input?: unknown;
   permissions?: readonly string[];
+  taskId?: string;
 }
 
 export function createAction(actor: string, input: ActionInput): Action {
@@ -49,6 +52,7 @@ export function createAction(actor: string, input: ActionInput): Action {
     target: input.target,
     input: input.input,
     permissions: input.permissions ?? [],
+    ...(input.taskId !== undefined && { taskId: input.taskId }),
     state: 'requested',
     createdAt: Date.now(),
   };

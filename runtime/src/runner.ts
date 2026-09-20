@@ -14,6 +14,7 @@ import {
   type ContextProvider,
   type Decision,
   type Observation,
+  type MemoryReader,
   type PolicyEngine,
   type Reasoner,
   type ReasoningContext,
@@ -42,6 +43,8 @@ export interface AgentDeps {
   readonly grants?: readonly string[];
   /** Retrieves context for 'need-context' decisions. Phase-6 seam. */
   readonly context?: ContextProvider;
+  /** Long-term recall available to reasoners. Phase-6 seam. */
+  readonly memory?: MemoryReader;
   /** Enables pause/crash recovery when provided. */
   readonly checkpoints?: CheckpointStore;
   /** Runaway protection — max reasoning cycles before FAILED. */
@@ -253,6 +256,7 @@ export class AgentRunner {
 
     action.state = 'authorized';
     this.bus.emit('action.permitted', { action });
+    if (action.taskId) this.setTaskStatus(action.taskId, 'running');
 
     // 2. Execute — tool/env errors become observations, not crashes.
     this.transition('ACTING');
@@ -280,6 +284,10 @@ export class AgentRunner {
       });
     }
     this.bus.emit('action.completed', { action, observation });
+    if (action.taskId) {
+      this.setTaskStatus(action.taskId, observation.success ? 'completed' : 'failed',
+        observation.success ? { result: observation.output } : { error: observation.error });
+    }
     this.transition('OBSERVING');
     this.record(observation);
 
@@ -308,7 +316,16 @@ export class AgentRunner {
       observations: this.observations,
       iteration: this.iteration,
       context: this.contextItems,
+      ...(this.deps.memory !== undefined && { memory: this.deps.memory }),
     };
+  }
+
+  private setTaskStatus(taskId: string, status: Task['status'], extra?: { result?: unknown; error?: string }): void {
+    const task = this.tasks.get(taskId);
+    if (!task) return;
+    task.status = status;
+    if (extra?.result !== undefined) task.result = extra.result;
+    if (extra?.error !== undefined) task.error = extra.error;
   }
 
   private record(observation: Observation): void {

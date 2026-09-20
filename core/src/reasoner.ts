@@ -4,6 +4,7 @@ import type { ActionInput } from './action.ts';
 import type { Observation } from './observation.ts';
 import type { AgentState } from './state.ts';
 import type { ContextItem } from './context.ts';
+import type { MemoryReader } from './memory.ts';
 
 /**
  * A Decision is the only thing a reasoner can produce.
@@ -33,6 +34,8 @@ export interface ReasoningContext {
   readonly iteration: number;
   /** Context retrieved so far this run (see 'need-context' decisions). */
   readonly context: readonly ContextItem[];
+  /** Long-term recall seam (Phase 6) — absent if no memory is attached. */
+  readonly memory?: MemoryReader;
 }
 
 /**
