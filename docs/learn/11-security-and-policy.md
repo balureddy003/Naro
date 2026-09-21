@@ -37,6 +37,7 @@ Naro enforces this: every `Observation` carries a `trust` level (`system`,
 strongest banner, and the gate sees `ctx.provenance` — the lowest trust of
 the evidence the reasoner just read — so `createToolPolicy({denyExternalTriggered})`
 can refuse side effects that outside content talked the model into.
+`npm run example:research` is the runnable demonstration.
 
 ### 2. Privilege escalation
 

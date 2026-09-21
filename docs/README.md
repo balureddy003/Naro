@@ -18,6 +18,8 @@ Runnable examples:
 | 1 | [Minimal agent](../examples/minimal-agent/README.md) | `npm run example` |
 | 2 | [ReAct agent](../examples/react-agent/README.md) | `npm run example:react` |
 | 3 | [Coding agent](../examples/coding-agent/README.md) | `npm run example:coding` |
+| 4 | [Governed agent](../examples/governed-agent/README.md) | `npm run example:governed` |
+| 5 | [Research agent](../examples/research-agent/README.md) | `npm run example:research` |
 
 ## Tutorials and use cases
 

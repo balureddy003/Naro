@@ -95,6 +95,9 @@
       "path": "examples/governed-agent"
     },
     {
+      "path": "examples/research-agent"
+    },
+    {
       "path": "./adapters/gemini"
     },
     {

@@ -15,6 +15,7 @@ The universal kernel. **Zero dependencies, zero domain knowledge.**
 | `Reasoner`, `StatefulReasoner`, `Decision`, `ReasoningContext` | closed decisions, action/evidence history, checkpointable strategy state |
 | `ModelUsage` | optional token and cost accounting carried by decisions and events |
 | `PolicyEngine`, `PolicyDecision` | `allow \| deny \| require_approval \| limit \| audit` |
+| `PolicyVerdict`, `toVerdict` | a decision plus an evidence reason; normalizes bare decisions |
 | `ActionExecutor`, `ExecContext` | action → observation with goal, grants, cancellation, and secret resolution |
 | `Verifier`, `Verification` | evidence-based success checks |
 | `ContextProvider`, `ContextItem` | retrieval seam with provenance |

@@ -12,6 +12,18 @@ Concrete `Verifier` implementations — "the model said it's done" becomes "here
 | `HumanVerifier` | a person accepts the claim | irreversible or subjective outcomes |
 | `LlmJudgeVerifier` | a model scores against a rubric | open-ended quality; calibrate, never sole-gate safety |
 | `allOf` / `anyOf` | composition | layered evidence requirements |
+| `atCompletion` / `perAction` | scope a verifier to one phase | keep each predicate honest about what it checks |
+
+## Two phases
+
+The runner calls the same verifier twice over: after each action batch with
+`VerifyInput.observation` (action-level — a failure records a `verification`
+observation and triggers REPLANNING) and on the completion claim with
+`VerifyInput.result` (goal-level — a failure sends the reasoner back to
+REPLANNING instead of COMPLETED). Verifiers must handle both inputs, or be
+scoped: `atCompletion(v)` passes action-level calls untouched, `perAction(v)`
+passes the completion claim. A goal-level predicate left unscoped fails every
+action and pollutes the evidence record.
 
 ## Design
 

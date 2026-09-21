@@ -22,6 +22,7 @@ import {
   type StatefulReasoner,
   type Task,
   type TrustLevel,
+  toVerdict,
   type Verifier,
 } from '@naro/core';
 import { EventBus } from './event-bus.ts';
@@ -462,27 +463,29 @@ export class AgentRunner {
     // (Re-entrant: a batch gates several actions without leaving the gate.)
     if (this.state !== 'WAITING_FOR_PERMISSION') this.transition('WAITING_FOR_PERMISSION');
     this.bus.emit('permission.requested', { action });
-    const verdict = await this.deps.policy.evaluate(action, {
+    const { decision, reason } = toVerdict(await this.deps.policy.evaluate(action, {
       agentId: this.deps.spec.id,
       goal: this.deps.spec.goal,
       grants: this.deps.grants ?? [],
       provenance: this.provenance(),
-    });
+    }));
 
-    if (verdict === 'deny') {
+    if (decision === 'deny') {
       action.state = 'denied';
-      this.bus.emit('action.denied', { action });
+      this.bus.emit('action.denied', { action, ...(reason !== undefined && { reason }) });
       this.record(createObservation({
         actionId: action.id, source: 'policy', kind: 'error',
-        success: false, error: 'action denied by policy',
+        success: false, error: reason ? `denied by policy: ${reason}` : 'action denied by policy',
       }));
       return undefined; // WAITING_FOR_PERMISSION → REASONING
     }
 
     // 'limit' and 'audit' are allow-variants: limit is enforced by the
     // engine's counters (deny once exhausted); audit just marks the record.
-    if (verdict === 'require_approval') {
-      this.bus.emit('human.approval.requested', { action });
+    if (decision === 'require_approval') {
+      this.bus.emit('human.approval.requested', {
+        action, ...(reason !== undefined && { question: reason }),
+      });
       this.transition('WAITING_FOR_HUMAN');
       const res = await (this.deps.human ?? noHumanBridge).approve(action);
       this.bus.emit('human.approval.received', { approved: res.approved, ...(res.note !== undefined && { note: res.note }) });

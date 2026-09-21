@@ -60,11 +60,13 @@ test('full loop: reason → act → observe → complete, all events emitted', a
 
 test('policy denial becomes an observation — the reasoner sees it and adapts', async () => {
   const denyWrites: PolicyEngine = {
-    evaluate: (a) => (a.target.includes('env://') ? 'deny' : 'allow'),
+    evaluate: (a) => (a.target.includes('env://')
+      ? { decision: 'deny' as const, reason: 'env writes are forbidden' }
+      : 'allow'),
   };
   let sawDenial = false;
   const reasoner = new DirectReasoner((ctx) => {
-    const denied = ctx.observations.some((o) => o.error === 'action denied by policy');
+    const denied = ctx.observations.some((o) => o.error === 'denied by policy: env writes are forbidden');
     if (denied) { sawDenial = true; return { kind: 'complete', result: 'gave up gracefully' }; }
     return { kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 'v' } };
   });
@@ -73,7 +75,8 @@ test('policy denial becomes an observation — the reasoner sees it and adapts',
 
   assert.equal(result.status, 'completed');
   assert.ok(sawDenial);
-  assert.ok(result.events.some((e) => e.type === 'action.denied'));
+  const denied = result.events.find((e) => e.type === 'action.denied');
+  assert.equal(denied?.data.reason, 'env writes are forbidden');
 });
 
 test('require_approval routes through WAITING_FOR_HUMAN via the bridge', async () => {

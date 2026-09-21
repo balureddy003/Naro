@@ -124,7 +124,7 @@ const result = await runner.run();
 | `@naro/profile-workflow` | `WorkflowEnvironment` — DAG execution through a nested executor, `$step` refs, retries | core, environment, tools |
 | `@naro/profile-robotics` | `RoboticsEnvironment` over a `RobotDriver` port; `GridSimDriver` world-model sim; latched estop | core, environment, tools |
 | `@naro/cli` | `naro run` / `bench` / `replay` / `states` | core, runtime, observability, evaluation |
-| `examples/` | `minimal-agent` (scripted) · `react-agent` (model loop) · `coding-agent` (domain profile) | all |
+| `examples/` | `minimal-agent` (scripted) · `react-agent` (model loop) · `coding-agent` (domain profile) · `governed-agent` (gates + sealed journal) · `research-agent` (provenance gate) | all |
 
 ## Learn the stack
 

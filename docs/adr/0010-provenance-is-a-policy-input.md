@@ -53,3 +53,7 @@ none for system.
   producers at `tool`.
 - The window is the *previous* iteration's observations; evidence older
   than one decision cycle no longer constrains the gate.
+- Tool wrappers that adapt an environment must declare `Tool.trust`
+  themselves — `ToolExecutor` rebuilds the observation, so the
+  environment's own tag does not propagate (found and fixed in the
+  research profile; covered by a composed test).
