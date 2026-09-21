@@ -49,3 +49,8 @@ OPA/Rego remains the adapter for centrally managed policy decisions.
 
 The engine defaults to `allow` for convenience. Production configurations
 should normally set `{ default: 'deny' }` and add explicit allow rules.
+
+Verdicts carry reasons: a matching rule returns `{ decision, reason: 'rule <id>' }`,
+an exhausted limit says `limit <id> exhausted`, and `allOf` propagates the
+strictest engine's reason. The runner puts the reason on `action.denied`
+and the denial observation — the *why* is part of the evidence record.

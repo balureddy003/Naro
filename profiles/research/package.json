@@ -15,5 +15,11 @@
     "@naro/core": "0.1.0",
     "@naro/environment": "0.1.0",
     "@naro/tools": "0.1.0"
+  },
+  "devDependencies": {
+    "@naro/contract-tests": "0.1.0",
+    "@naro/model": "0.1.0",
+    "@naro/reasoning": "0.1.0",
+    "@naro/runtime": "0.1.0"
   }
 }

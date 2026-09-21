@@ -33,6 +33,26 @@ Unknown `tool://` names are denied by `createToolPolicy()` by default. Non-tool
 targets return `otherwise`—`allow` by default—because another policy engine is
 expected to own those schemes. Compose policies so every target is covered.
 
+`createToolPolicy(registry, options)` options:
+
+| Option | Default | Effect |
+|---|---|---|
+| `approvalFor` | `['destructive']` | side effects that require human approval |
+| `unknownTool` | `'deny'` | verdict for `tool://` names not in the registry |
+| `otherwise` | `'allow'` | verdict for non-tool targets (abstain — another engine owns them) |
+| `denyExternalTriggered` | `[]` | side effects denied when `ctx.provenance.lowest === 'external'` |
+
+Every branch returns a `PolicyVerdict` with a `reason` (`missing grants:
+…`, `… side effect triggered by external evidence (…)`, `no registered
+tool '…'`) — the reason lands on `action.denied` and the denial
+observation, so the audit record distinguishes *why* a call was refused.
+
+`Tool.trust` declares the trust of the tool's output — set `'external'` when
+the output is authored outside the system (web pages, emails, untrusted
+files). `ToolExecutor` stamps it on the observation; wrappers over
+environments must declare it themselves — the environment's own tag does
+not flow through.
+
 ## Writing a tool
 
 ```ts

@@ -127,7 +127,9 @@ records source, success, output or error, and an optional originating action.
 ## PolicyEngine
 
 The required authorization port called before every action. It returns
-`allow`, `deny`, `require_approval`, `limit`, or `audit`.
+`allow`, `deny`, `require_approval`, `limit`, or `audit` — bare or wrapped
+in a `PolicyVerdict` whose `reason` lands on the denial event and
+observation as evidence.
 
 ## Profile
 
@@ -186,4 +188,6 @@ available to policy as `ctx.provenance`.
 ## Verification
 
 An evidence check returning `ok`, optional evidence, and a failure reason. A
-model completion is a claim until verification establishes success.
+model completion is a claim until verification establishes success. The same
+verifier is called per action (with `observation`) and on the completion claim
+(with `result`); `atCompletion` / `perAction` scope a check to one phase.

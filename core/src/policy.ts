@@ -14,6 +14,22 @@ import type { TrustLevel } from './observation.ts';
  */
 export type PolicyDecision = 'allow' | 'deny' | 'require_approval' | 'limit' | 'audit';
 
+/**
+ * A decision plus *why*. Reasons are evidence: they land on
+ * `action.denied.reason`, the denial observation's `error`, and the
+ * harness's `permissionDecisionReason` — so "denied" distinguishes
+ * missing grant from external-triggered from unknown tool.
+ */
+export interface PolicyVerdict { readonly decision: PolicyDecision; readonly reason?: string }
+
+/** Engines may return a bare decision or a reasoned verdict. */
+export type PolicyResult = PolicyDecision | PolicyVerdict;
+
+/** Accept either form; engines may return a bare decision. */
+export function toVerdict(r: PolicyResult): PolicyVerdict {
+  return typeof r === 'string' ? { decision: r } : r;
+}
+
 export interface PolicyContext {
   readonly agentId: string;
   readonly goal: Goal;
@@ -33,7 +49,7 @@ export interface PolicyContext {
  * in @naro/tools; an OPA/Rego adapter can implement this same interface.
  */
 export interface PolicyEngine {
-  evaluate(action: Action, ctx: PolicyContext): Promise<PolicyDecision> | PolicyDecision;
+  evaluate(action: Action, ctx: PolicyContext): Promise<PolicyResult> | PolicyResult;
 }
 
 /** Permissive default so a minimal agent needs zero config. See docs/policy. */

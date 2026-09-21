@@ -109,16 +109,26 @@ const env = new ResearchEnvironment({
   allowedDomains: ['docs.example.com', 'standards.example.org'],
   maxBytes: 250_000,
 });
-const tools = researchTools(env);
+const registry = new ToolRegistry();
+for (const tool of researchTools(env)) registry.register(tool);
+const policy = createToolPolicy(registry, { denyExternalTriggered: ['destructive'] });
 ```
 
 The profile separates three operations: fetch a page, add a citation, and list
 citations. A citation is refused when its URL was never fetched.
 
+Run the offline reference:
+
+```bash
+npm run example:research
+```
+
 **Required controls**
 
 - enforce domain allowlists in policy and in the environment;
-- treat fetched text as untrusted prompt data;
+- fetched text is enforced as untrusted: `web_fetch` observations carry
+  `trust: 'external'`, the transcript delimits them, and
+  `denyExternalTriggered` denies side effects the content triggered;
 - reject or re-check redirects according to the threat model;
 - cap bytes, pages, tool calls, and run duration;
 - verify that important claims map to fetched evidence.

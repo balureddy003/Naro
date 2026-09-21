@@ -20,6 +20,9 @@ export interface VerifyInput {
  * A Verifier gives the environment — not the model — the last word on
  * success. A code agent's verifier runs tests; a data agent's checks
  * schema; an enterprise agent's may be a human approver.
+ *
+ * Called per action (with `observation`) and on the completion claim
+ * (with `result`); see @naro/verification `atCompletion`/`perAction` to scope.
  */
 export interface Verifier {
   readonly id: string;
