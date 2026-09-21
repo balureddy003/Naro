@@ -27,9 +27,10 @@ export interface EventDataMap {
   /** Token/cost accounting for one model call, plus running totals. */
   'model.usage':                { iteration: number; usage: ModelUsage; totals: ModelUsage };
   'action.requested':           { action: Action };
-  'permission.requested':       { action: Action };
-  'action.permitted':           { action: Action };
-  'action.denied':              { action: Action; reason?: string };
+  /** `policy` names the engine that produced the verdict (PolicyEngine.id). */
+  'permission.requested':       { action: Action; policy?: string };
+  'action.permitted':           { action: Action; policy?: string };
+  'action.denied':              { action: Action; reason?: string; policy?: string };
   'action.started':             { action: Action };
   'action.completed':           { action: Action; observation: Observation };
   'observation.created':        { observation: Observation };
@@ -48,8 +49,9 @@ export interface EventDataMap {
    *  equals this event's `prev`, making the seal self-verifying — rewrite
    *  or extend the chain and the signature fails. */
   'journal.sealed':             { head: string; signature: string; publicKey: string; algorithm: 'ed25519' };
-  'human.approval.requested':   { action?: Action; question?: string };
-  'human.approval.received':    { approved: boolean; note?: string };
+  'human.approval.requested':   { action?: Action; question?: string; policy?: string };
+  /** `by` is the approver's control-plane identity, when the bridge knows it. */
+  'human.approval.received':    { approved: boolean; note?: string; by?: string };
   'agent.state_changed':        { from: AgentState; to: AgentState };
   'agent.paused':               { reason?: string };
   'agent.resumed':              { checkpointId?: string };

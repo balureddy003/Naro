@@ -134,6 +134,22 @@ export class PgCheckpointStore implements CheckpointStore {
       at: Number(r['at']), data: r['data'] as Checkpoint['data'],
     };
   }
+
+  /** Keep the newest `keepPerAgent` checkpoints per agent — same semantics
+   *  as SqliteCheckpointStore.prune. Checkpoints are recovery state, not
+   *  evidence; the journal is export-and-seal, never pruned. */
+  async prune(keepPerAgent = 1): Promise<number> {
+    const { rows } = await this.q.query(
+      `DELETE FROM naro_checkpoints WHERE seq IN (
+         SELECT seq FROM (
+           SELECT seq, ROW_NUMBER() OVER (PARTITION BY agent_id ORDER BY at DESC, seq DESC) AS rn
+           FROM naro_checkpoints
+         ) WHERE rn > $1
+       ) RETURNING seq`,
+      [keepPerAgent],
+    );
+    return rows.length;
+  }
 }
 
 // --- events ----------------------------------------------------------------

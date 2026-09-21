@@ -75,7 +75,8 @@ export class HarnessKernel {
       ...(call.callId !== undefined && { toolCallId: call.callId }),
     });
     this.bus.emit('action.requested', { action });
-    this.bus.emit('permission.requested', { action });
+    const policy = this.deps.policy.id;
+    this.bus.emit('permission.requested', { action, ...(policy !== undefined && { policy }) });
     const { decision, reason } = toVerdict(await this.deps.policy.evaluate(action, {
       agentId: this.deps.agentId,
       goal: this.deps.goal,
@@ -84,7 +85,7 @@ export class HarnessKernel {
 
     if (decision === 'deny') {
       action.state = 'denied';
-      this.bus.emit('action.denied', { action, ...(reason !== undefined && { reason }) });
+      this.bus.emit('action.denied', { action, ...(reason !== undefined && { reason }), ...(policy !== undefined && { policy }) });
       this.bus.emit('observation.created', { observation: createObservation({
         actionId: action.id, source: 'policy', kind: 'error',
         success: false, error: reason ?? 'action denied by policy',
@@ -94,13 +95,13 @@ export class HarnessKernel {
     if (decision === 'require_approval') {
       // The harness owns its approval UI; we record the requirement and
       // hand the decision back as 'ask'.
-      this.bus.emit('human.approval.requested', { action });
+      this.bus.emit('human.approval.requested', { action, ...(policy !== undefined && { policy }) });
       this.pending.set(call.callId ?? `seq-${this.seq++}`, action);
       return { decision: 'ask', reason: reason ?? 'requires approval' };
     }
     // 'allow', 'limit', 'audit' — proceed; audit is already in the journal.
     action.state = 'authorized';
-    this.bus.emit('action.permitted', { action });
+    this.bus.emit('action.permitted', { action, ...(policy !== undefined && { policy }) });
     this.pending.set(call.callId ?? `seq-${this.seq++}`, action);
     return { decision: 'allow' };
   }

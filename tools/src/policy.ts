@@ -3,6 +3,8 @@ import type { ToolRegistry } from './registry.ts';
 import type { SideEffect } from './tool.ts';
 
 export interface ToolPolicyOptions {
+  /** Engine identity stamped on gate events. Default 'tool-policy'. */
+  readonly id?: string;
   /** Side effects that require human approval before running. */
   readonly approvalFor?: readonly SideEffect[]; // default ['destructive']
   /**
@@ -48,6 +50,7 @@ export function createToolPolicy(
   const denyExternal = new Set(options.denyExternalTriggered ?? []);
 
   return {
+    id: options.id ?? 'tool-policy',
     evaluate(action: Action, ctx: PolicyContext): PolicyVerdict {
       if (!action.target.startsWith('tool://')) return { decision: otherwise };
       const name = action.target.slice('tool://'.length);

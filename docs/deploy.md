@@ -59,7 +59,7 @@ gate + journal run underneath. Export the journal to SQLite/Postgres and
 
 | Surface | Transport | Auth |
 |---|---|---|
-| `naro serve` control plane | HTTP | `NARO_SERVE_TOKEN` bearer (optional); TLS at the LB/ingress |
+| `naro serve` control plane | HTTP | `--principals` file (token→`{id,roles}`) or `NARO_SERVE_TOKEN` bearer; TLS at the LB/ingress |
 | `serveEnvironment` | HTTP | shared bearer token; put it behind mTLS or a private subnet |
 | `HttpAgentBus` | HTTP | HS256 JWT or JWKS/OIDC (`multiagent/auth.ts`) |
 | Outbound fetches (tools) | HTTPS | `safe-fetch`: domain allowlist, SSRF/private-IP blocking, redirect revalidation |
@@ -84,6 +84,37 @@ for every run, and approvals are shared. **Metrics** are OTel push
 Internal rule: **never expose a Naro port without something in front of it.**
 The built-in bearer checks are a minimal gate, not an authz model — tenant
 identity is deployment-owned (ADR 0008, production-readiness §10).
+
+### Principals and roles
+
+`--principals <file.json>` upgrades the single bearer gate to named
+identities with roles:
+
+```json
+{
+  "s3cr3t-viewer":   { "id": "bob",   "roles": ["viewer"] },
+  "s3cr3t-ops":      { "id": "carol", "roles": ["operator"] },
+  "s3cr3t-approver": { "id": "alice", "roles": ["operator", "approver"] }
+}
+```
+
+| Endpoint | Required role |
+|---|---|
+| `GET /runs`, `GET /runs/:id`, `GET /runs/:id/events`, `GET /approvals` | `viewer` |
+| `POST /goals` | `operator` |
+| `POST /approvals/:id` | `approver` |
+| `GET /health`, `GET /ready` | none (probes are unauthenticated) |
+
+`operator` and `approver` each imply `viewer`. Bad or missing credentials
+get `401`; insufficient role gets `403 {error: 'forbidden', required:
+<role>}`. `--token`/`NARO_SERVE_TOKEN` remains as shorthand for one admin
+principal; `--principals` supersedes it when both are set. Neither flag →
+the control plane is open (the dev default).
+
+Attribution flows end-to-end: the principal id is written to the approval
+row (`answered_by`) and the runner stamps it on `human.approval.received.by`
+— so the bridge *and* the journal together answer "who approved this and
+under which policy" (gate events carry `policy: <engine id>`).
 
 ## Scaling dimensions
 

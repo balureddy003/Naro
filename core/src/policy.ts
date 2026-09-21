@@ -49,6 +49,13 @@ export interface PolicyContext {
  * in @naro/tools; an OPA/Rego adapter can implement this same interface.
  */
 export interface PolicyEngine {
+  /**
+   * Engine identity, stamped on gate events (`permission.requested`,
+   * `action.permitted`, `action.denied`, `human.approval.requested`) so the
+   * journal records *which* policy decided — the evidence record reads it
+   * back as `ActionEvidence.policyEngine`.
+   */
+  readonly id?: string;
   evaluate(action: Action, ctx: PolicyContext): Promise<PolicyResult> | PolicyResult;
 }
 

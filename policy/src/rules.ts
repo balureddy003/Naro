@@ -33,12 +33,15 @@ export interface AuditEntry {
  *   "allowed, but on the record."
  */
 export class RulePolicyEngine implements PolicyEngine {
+  /** Engine identity stamped on gate events (default 'rules'). */
+  readonly id: string;
   private readonly rules: readonly PolicyRule[];
   private readonly defaultDecision: PolicyDecision;
   private readonly limits: LimitStore;
   private readonly log: AuditEntry[] = [];
 
-  constructor(rules: readonly PolicyRule[], options: { default?: PolicyDecision; limits?: LimitStore } = {}) {
+  constructor(rules: readonly PolicyRule[], options: { id?: string; default?: PolicyDecision; limits?: LimitStore } = {}) {
+    this.id = options.id ?? 'rules';
     this.rules = rules;
     this.defaultDecision = options.default ?? 'allow';
     this.limits = options.limits ?? new InMemoryLimitStore();
@@ -153,6 +156,9 @@ export function allOf(...engines: readonly PolicyEngine[]): PolicyEngine {
     deny: 4, require_approval: 3, limit: 2, audit: 1, allow: 0,
   };
   return {
+    // Composite id names the member engines — 'allOf(tool-policy,rules)' —
+    // so the journal still says which composition decided.
+    id: `allOf(${engines.map((e) => e.id ?? 'anonymous').join(',')})`,
     async evaluate(action: Action, ctx: PolicyContext): Promise<PolicyVerdict> {
       let verdict: PolicyVerdict = { decision: 'allow' };
       for (const engine of engines) {
