@@ -2,10 +2,17 @@
   "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
   "changelog": false,
   "commit": false,
-  "fixed": [["@naro/*"]],
+  "fixed": [
+    [
+      "@naro/*"
+    ]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["naro", "@naro/example-*", "@naro/contract-tests"]
+  "ignore": [
+    "@naro/example-*",
+    "@naro/contract-tests"
+  ]
 }
