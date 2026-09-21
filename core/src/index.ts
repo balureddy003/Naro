@@ -6,6 +6,8 @@ export * from './task.ts';
 export * from './action.ts';
 export * from './observation.ts';
 export * from './events.ts';
+export * from './chain.ts';
+export * from './sign.ts';
 export * from './state.ts';
 export * from './reasoner.ts';
 export * from './policy.ts';

@@ -67,6 +67,12 @@ This avoids pretending that an in-flight side effect can be resumed from local
 memory. It does not remove the need for idempotency: an external action may have
 completed just before the process failed to record its observation.
 
+The deeper point: the journal itself is sufficient. `AgentRunner.wake()`
+rebuilds the session by replaying events — checkpoints only make hydrate
+faster. That is the property that lets the session outlive any single
+process: store the journal durably (SQLite, Postgres) and a new runner on a
+new host can continue the run, hash chain intact.
+
 ## What Naro provides today
 
 - `retry()` with attempt limits, exponential backoff, optional jitter, and a
@@ -76,6 +82,10 @@ completed just before the process failed to record its observation.
   timed-out actions are not auto-retried — their result is indeterminate;
 - `maxIterations`, defaulting to 64;
 - in-memory, JSONL, and transactional SQLite checkpoint stores;
+- journal-native resume via `wake()` plus kernel-level `session.compacted`
+  events for long-running sessions;
+- `serveEnvironment`/`HttpEnvironment` for environments in a separate
+  process or host;
 - in-memory and SQLite runner leases for single-agent mutual exclusion;
 - ordered runtime events through callbacks and `runner.events()` async
   iteration;

@@ -1,5 +1,6 @@
 import type { Action } from './action.ts';
 import type { Goal } from './goal.ts';
+import type { TrustLevel } from './observation.ts';
 
 /**
  * What the policy engine can say about an action.
@@ -18,6 +19,10 @@ export interface PolicyContext {
   readonly goal: Goal;
   /** Permissions this agent has been granted (e.g. 'fs.read', 'net.http'). */
   readonly grants: readonly string[];
+  /** Trust of the evidence the reasoner saw before requesting this action —
+   *  the lowest trust level among recent observations. Lets a rule deny
+   *  side effects when the triggering evidence came from outside. */
+  readonly provenance?: { readonly lowest: TrustLevel; readonly externalSources: readonly string[] };
 }
 
 /**

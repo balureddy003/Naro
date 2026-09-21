@@ -56,7 +56,7 @@ export class BrowserEnvironment implements Environment {
           const landedUrl = (landed as { url?: string } | undefined)?.url;
           const post = landedUrl ? this.checkUrl(landedUrl) : undefined;
           if (post) return this.obs(action, false, undefined, `redirect blocked: ${post}`);
-          return this.obs(action, true, landed);
+          return this.obs(action, true, landed, undefined, 'external');
         }
         case 'browser.click': {
           await this.driver.click(String(input['selector'] ?? ''));
@@ -76,13 +76,13 @@ export class BrowserEnvironment implements Environment {
             String(input['selector'] ?? ''),
             input['attr'] === undefined ? undefined : String(input['attr']),
           );
-          return this.obs(action, true, vals);
+          return this.obs(action, true, vals, undefined, 'external');
         }
         case 'browser.read':
-          return this.obs(action, true, await this.driver.pageState());
+          return this.obs(action, true, await this.driver.pageState(), undefined, 'external');
         case 'browser.screenshot': {
           const png = await this.driver.screenshot();
-          return this.obs(action, true, { pngBase64: Buffer.from(png).toString('base64') });
+          return this.obs(action, true, { pngBase64: Buffer.from(png).toString('base64') }, undefined, 'external');
         }
         default:
           return this.obs(action, false, undefined,
@@ -111,10 +111,12 @@ export class BrowserEnvironment implements Environment {
     return undefined;
   }
 
-  private obs(action: Action, success: boolean, output?: unknown, error?: string): Observation {
+  private obs(action: Action, success: boolean, output?: unknown, error?: string,
+              trust?: Observation['trust']): Observation {
     return createObservation({
       actionId: action.id, source: `env://${this.id}`, kind: 'env-change',
       success,
+      ...(trust !== undefined && { trust }),
       ...(output !== undefined && { output }),
       ...(error !== undefined && { error }),
     });

@@ -104,7 +104,7 @@ Checkpoints are written at reasoning boundaries and include:
 - tasks and actions;
 - observations and context;
 - optional `StatefulReasoner` state;
-- stable `runId` and next event sequence.
+- stable `runId`, next event sequence, and hash-chain head.
 
 Resume restores the journal identity and calls `restoreState()` when the
 reasoner implements `StatefulReasoner`.
@@ -115,6 +115,29 @@ const result = await new AgentRunner(deps).run({ resume: true });
 
 Checkpointing provides at-least-once recovery, not rollback of an external
 side effect. Use idempotency keys and authoritative reconciliation.
+
+## Wake and session compaction
+
+`wake()` is the journal-native resume: it rebuilds the session — tasks,
+actions, observations, context, iteration — from events alone, via
+`recoverSession`, and continues the same runId, sequence, and hash chain.
+No checkpoint store required; any object with `history(filter)` works
+(`SqliteEventStore`, `PgEventStore`, a parsed JSONL file).
+
+```ts
+const result = await new AgentRunner(deps).wake(eventStore, runId);
+// or: run({ resume: true, journal: events })
+```
+
+`wake` refuses an empty journal for the agent rather than silently starting
+fresh under a resumed identity. An interrupted reasoning iteration replays —
+at-least-once, safe under the deterministic `runId:iter-N` idempotency key.
+
+`runner.compact(summary)` is session compaction as a kernel operation: it
+emits `session.compacted` (the summary is in the audit trail, not a prompt
+trick) and collapses this runner's observations to the summary plus the
+`keepObservations` most recent. `wake` applies the same collapse on rebuild.
+The journal itself is never rewritten — the chain stays verifiable.
 
 ## Runner leases
 

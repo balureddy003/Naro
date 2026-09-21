@@ -4,9 +4,9 @@ import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { basename, resolve } from 'node:path';
 import { AGENT_STATES, TRANSITIONS, type NaroEvent } from '@naro/core';
-import { computeMetrics } from '@naro/observability';
+import { buildEvidence, computeMetrics, formatEvidence, SqliteEventStore } from '@naro/observability';
 import { BenchmarkRunner, diffReports, formatReport, JsonlReportStore, type EvalCase } from '@naro/evaluation';
-import { SqliteApprovalBridge } from '@naro/runtime';
+import { SqliteApprovalBridge, SqliteRunRegistry } from '@naro/runtime';
 import { startAgentServer, type RunnerFactory } from './serve.ts';
 
 export interface CliIO {
@@ -16,13 +16,23 @@ export interface CliIO {
 
 const HELP = `naro — universal agent foundation CLI
 
-  naro run <agent.ts>      run an agent module (Node 26 native TS)
+  naro run <agent.ts>      run an agent module (Node 24+ native TS)
   naro bench <bench.ts>    run a benchmark module exporting EvalCase[]
                            [--save <store.jsonl>] [--label <name>]
                            [--baseline <store.jsonl>] — gate: exit 1 on regressions
   naro replay <file.jsonl> reprint + summarize a recorded event stream
+  naro verify <file.jsonl> verify the hash chain + seal + print the evidence record [--pubkey key.pem]
+                           [--json] — machine-readable EvidenceRecord
+                           exit 0: chain intact · 1: broken/unchained · 2: usage
   naro init <dir>          scaffold a new agent project [--reasoner react|direct]
   naro serve <module.ts>   expose an agent as a service [--port N] [--host h]
+                             [--token t | NARO_SERVE_TOKEN] — bearer gate on
+                             all non-probe endpoints
+                             [--registry <file.db>] — durable run index
+                             [--journal <file.db>]  — shared event store for
+                               cross-replica GET /runs/:id/events
+                             [--approvals <file.db>] — expose /approvals
+                             (Postgres wiring is via the module's options)
                              module exports createRunner(goal): AgentRunner
   naro approvals --db <db> list pending human-in-the-loop requests
   naro approve <id> --db <db> [--deny] [--note 'why']
@@ -98,7 +108,33 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
       const m = computeMetrics(events);
       io.out(`\n— metrics —`);
       io.out(`  events=${m.totalEvents} iterations=${m.iterations} actions=${m.actionsRequested} denied=${m.actionsDenied} replans=${m.replans} duration=${m.durationMs}ms`);
+      const chain = buildEvidence(events).chain;
+      io.out(`  chain=${chain.ok ? `ok head=${chain.head?.slice(0, 12)}…` : `BROKEN ${chain.reason}`}`);
       return 0;
+    }
+
+    case 'verify': {
+      const file = rest[0];
+      if (!file) { io.err('usage: naro verify <file.jsonl> [--json] [--pubkey key.pem]'); return 2; }
+      const pkIdx = rest.indexOf('--pubkey');
+      const pubkeyFile = pkIdx >= 0 ? rest[pkIdx + 1] : undefined;
+      const expectedKey = pubkeyFile !== undefined
+        ? (await readFile(resolve(pubkeyFile), 'utf8')).trim()
+        : undefined;
+      const record = buildEvidence(await loadEvents(file));
+      let sealOk = true;
+      // --pubkey pins the signing key: the embedded key must match exactly.
+      if (expectedKey !== undefined && record.chain.sealed?.ok === true) {
+        sealOk = record.chain.sealed.publicKey?.trim() === expectedKey;
+        if (!sealOk) io.err('seal public key does not match --pubkey');
+      }
+      if (expectedKey !== undefined && record.chain.sealed === undefined) {
+        io.err('journal carries no seal — --pubkey has nothing to check');
+        sealOk = false;
+      }
+      if (rest.includes('--json')) io.out(JSON.stringify(record, null, 2));
+      else io.out(formatEvidence(record));
+      return record.chain.ok && sealOk ? 0 : 1;
     }
 
     case 'init': {
@@ -128,20 +164,41 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
     }
 
     case 'serve': {
-      const file = rest[0];
-      if (!file) { io.err('usage: naro serve <module.ts> [--port N] [--host h]'); return 2; }
-      const flag = (name: string) => rest[rest.indexOf(name) + 1];
-      const port = flag('--port') ? Number(flag('--port')) : 8080;
+      // Flags first — splicing them out leaves positional args clean, so
+      // `naro serve mod.ts --port 0` and `naro serve --port 0 mod.ts` both work.
+      const args = [...rest];
+      const flag = (name: string) => {
+        const i = args.indexOf(name);
+        return i >= 0 ? args.splice(i, 2)[1] : undefined;
+      };
+      const portArg = flag('--port');
+      const port = portArg !== undefined ? Number(portArg) : 8080;
       const host = flag('--host');
+      const token = flag('--token') ?? process.env['NARO_SERVE_TOKEN'];
+      const registryPath = flag('--registry');
+      const journalPath = flag('--journal');
+      const approvalsPath = flag('--approvals');
+      const file = args.find((a) => !a.startsWith('-'));
+      if (!file) { io.err('usage: naro serve <module.ts> [--port N] [--host h]'); return 2; }
       const mod = await import(pathToFileURL(resolve(file)).href) as { createRunner?: RunnerFactory };
       if (typeof mod.createRunner !== 'function') {
         io.err(`${file} must export createRunner(goal): AgentRunner`);
         return 2;
       }
-      const { url, close } = await startAgentServer(mod.createRunner, { port, ...(host !== undefined && { host }) });
+      const { url, close } = await startAgentServer(mod.createRunner, {
+        port,
+        ...(host !== undefined && { host }),
+        ...(token !== undefined && { token }),
+        ...(registryPath !== undefined && { registry: new SqliteRunRegistry(resolve(registryPath)) }),
+        ...(journalPath !== undefined && { journal: new SqliteEventStore(resolve(journalPath)) }),
+        ...(approvalsPath !== undefined && { approvals: new SqliteApprovalBridge(resolve(approvalsPath)) }),
+      });
       io.out(`agent serving at ${url} — POST /goals {description}`);
-      // Serve until killed.
-      process.on('SIGINT', () => { void close().then(() => process.exit(0)); });
+      // Serve until killed. SIGTERM (k8s/compose) and SIGINT both drain:
+      // readiness flips, in-flight runs get agent.cancelled, then close.
+      for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+        process.on(sig, () => { void close().then(() => process.exit(0)); });
+      }
       return new Promise<number>(() => {});
     }
 

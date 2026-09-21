@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"],
+  "references": [
+    { "path": "../../core" },
+    { "path": "../../runtime" },
+    { "path": "../../model" },
+    { "path": "../../tools" },
+    { "path": "../../reasoning" },
+    { "path": "../../observability" },
+    { "path": "../../verification" },
+    { "path": "../../profiles/coding" }
+  ]
+}

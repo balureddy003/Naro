@@ -7,6 +7,7 @@ import type { EventExporter } from './exporter.ts';
 interface Row {
   id: string; seq: number; run_id: string; agent_id: string;
   goal_id: string; type: string; at: number; data: string;
+  prev: string | null; hash: string | null;
 }
 
 /**
@@ -34,11 +35,19 @@ export class SqliteEventStore implements EventExporter {
         goal_id TEXT NOT NULL,
         type TEXT NOT NULL,
         at INTEGER NOT NULL,
-        data TEXT NOT NULL
+        data TEXT NOT NULL,
+        prev TEXT,
+        hash TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id, seq);
       CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id, seq);
     `);
+    // Databases created before chaining existed lack prev/hash — add them.
+    const cols = new Set(
+      (this.db.prepare('PRAGMA table_info(events)').all() as unknown as { name: string }[]).map((c) => c.name),
+    );
+    if (!cols.has('prev')) this.db.exec('ALTER TABLE events ADD COLUMN prev TEXT');
+    if (!cols.has('hash')) this.db.exec('ALTER TABLE events ADD COLUMN hash TEXT');
   }
 
   export(events: readonly NaroEvent[]): Promise<void> {
@@ -46,11 +55,12 @@ export class SqliteEventStore implements EventExporter {
       if (events.length === 0 || this.writeError) return;
       try {
         const insert = this.db.prepare(
-          'INSERT OR IGNORE INTO events (id, seq, run_id, agent_id, goal_id, type, at, data) VALUES (?,?,?,?,?,?,?,?)');
+          'INSERT OR IGNORE INTO events (id, seq, run_id, agent_id, goal_id, type, at, data, prev, hash) VALUES (?,?,?,?,?,?,?,?,?,?)');
         this.db.exec('BEGIN');
         try {
           for (const e of events) {
-            insert.run(e.id, e.seq, e.runId, e.agentId, e.goalId, e.type, e.at, JSON.stringify(e.data));
+            insert.run(e.id, e.seq, e.runId, e.agentId, e.goalId, e.type, e.at, JSON.stringify(e.data),
+              e.prev ?? null, e.hash ?? null);
           }
           this.db.exec('COMMIT');
         } catch (err) { this.db.exec('ROLLBACK'); throw err; }
@@ -76,6 +86,8 @@ export class SqliteEventStore implements EventExporter {
     return rows.map((r) => ({
       id: r.id, seq: r.seq, runId: r.run_id, agentId: r.agent_id, goalId: r.goal_id,
       type: r.type, at: r.at, data: JSON.parse(r.data),
+      ...(r.prev !== null && { prev: r.prev }),
+      ...(r.hash !== null && { hash: r.hash }),
     }) as NaroEvent);
   }
 

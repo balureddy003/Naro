@@ -1,0 +1,40 @@
+# Reference compose stack: Naro + Postgres (the multi-host durability tier).
+#
+#   docker compose -f deploy/compose.yml up
+#
+# The naro service runs `naro serve` with a mounted agent module. Point the
+# module's stores at Postgres via NARO_PG_URL; SQLite paths won't survive a
+# container restart unless you add a volume.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: naro
+      POSTGRES_PASSWORD: naro-dev-only
+      POSTGRES_DB: naro
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U naro"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  naro:
+    build: ..
+    ports: ["8080:8080"]
+    environment:
+      NARO_PG_URL: postgres://naro:naro-dev-only@postgres:5432/naro
+      # Set a shared bearer token for the control plane:
+      # NARO_SERVE_TOKEN: change-me
+    volumes:
+      # Mount your agent module — it must export createRunner(goal).
+      - ./agent.ts:/app/agent.ts:ro
+    command: ["serve", "/app/agent.ts", "--host", "0.0.0.0", "--port", "8080"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

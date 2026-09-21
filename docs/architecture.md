@@ -40,6 +40,17 @@ The result is a single-agent kernel that can support a coding agent, research
 agent, browser operator, data workflow, or robot controller without learning
 those domains itself.
 
+This decomposition matches the brain / hands / session separation described in
+Anthropic's [Scaling Managed Agents](https://www.anthropic.com/engineering/managed-agents):
+the runner and reasoner are the brain, `Environment.execute` and
+`ActionExecutor` are the hands, and the event journal is the session. The
+boundaries are real, not just conceptual: `serveEnvironment`/`HttpEnvironment`
+put the hands in another process or host behind the same contract
+([ADR 0008](adr/0008-environments-are-reachable-over-http.md)), and
+`AgentRunner.wake()` rebuilds the session from the journal alone — checkpoints
+are an optimization, not a requirement
+([ADR 0007](adr/0007-journal-is-the-source-of-truth-for-session-state.md)).
+
 ---
 
 ## 2. Level 1 — system context
@@ -579,6 +590,16 @@ event carries `runId` and monotonic `seq`. `SqliteEventStore` provides a durable
 queryable single-host journal. JSONL and OTLP exporters serialize writes and expose
 `flush()` so callers can wait for delivery before process exit.
 
+Each event also carries `prev` and `hash` — a SHA-256 chain computed in
+`EventBus.emit()` over the event's canonical form (see
+[ADR 0005](adr/0005-hash-chain-in-the-event-bus.md)). Checkpoints store the
+chain head so a resumed run extends the same chain rather than starting a new
+one. `verifyChain()` (`@naro/core`) recomputes a stored journal and reports
+the first break; `buildEvidence()` (`@naro/observability`) joins the chain
+verdict with per-action evidence (policy verdict → action → observation →
+verifier verdict), and `naro verify <run.jsonl>` prints that record and exits
+non-zero on a broken or unchained journal.
+
 The current OTLP adapter maps events to log records, not spans. The event model
 contains ordered facts but does not yet carry honest parent/child span timing.
 
@@ -593,8 +614,9 @@ into a CI exit code.
 ## 12. Checkpoint and recovery model
 
 A checkpoint stores iteration, tasks, actions, observations, retrieved context,
-optional `StatefulReasoner` state, run ID, and the next event sequence. It is
-written after a continued reasoning cycle, never during executor work.
+optional `StatefulReasoner` state, run ID, the next event sequence, and the
+journal's hash-chain head. It is written after a continued reasoning cycle,
+never during executor work.
 
 ```mermaid
 sequenceDiagram

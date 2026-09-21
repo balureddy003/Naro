@@ -26,6 +26,8 @@ export interface Checkpoint {
     readonly runId?: string;
     /** Last event sequence number — the resumed run's journal continues it. */
     readonly seq?: number;
+    /** Journal chain head at checkpoint time — the resumed run links its next event to it. */
+    readonly head?: string;
   };
 }
 
@@ -91,6 +93,7 @@ export function createCheckpoint(
   agentId: string,
   state: AgentState,
   data: Checkpoint['data'],
+  id: string = newId('ckpt'),
 ): Checkpoint {
-  return { id: newId('ckpt'), agentId, at: Date.now(), state, data };
+  return { id, agentId, at: Date.now(), state, data };
 }

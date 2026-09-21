@@ -33,6 +33,7 @@
     "example": "node examples/minimal-agent/src/index.ts",
     "example:react": "node examples/react-agent/src/index.ts",
     "example:coding": "node examples/coding-agent/src/index.ts",
+    "example:governed": "node examples/governed-agent/src/index.ts",
     "pack:check": "node scripts/pack-check.mjs",
     "changeset": "changeset",
     "version-packages": "npm run build && changeset version",

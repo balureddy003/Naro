@@ -108,11 +108,12 @@ export class ResearchEnvironment implements Environment {
     };
     this.pages.set(url, page);
     this.pages.set(landed, page);
+    // Fetched content is authored outside the system — external trust.
     return this.obs(action, res.ok, {
       url, status: res.status, bytes: page.bytes,
       ...(page.truncated && { truncated: true }),
       content: page.content,
-    }, res.ok ? undefined : `HTTP ${res.status}`);
+    }, res.ok ? undefined : `HTTP ${res.status}`, 'external');
   }
 
   private addCitation(action: Action): Observation {
@@ -127,10 +128,12 @@ export class ResearchEnvironment implements Environment {
     return this.obs(action, true, c);
   }
 
-  private obs(action: Action, success: boolean, output?: unknown, error?: string): Observation {
+  private obs(action: Action, success: boolean, output?: unknown, error?: string,
+              trust?: Observation['trust']): Observation {
     return createObservation({
       actionId: action.id, source: `env://${this.id}`, kind: 'env-change',
       success,
+      ...(trust !== undefined && { trust }),
       ...(output !== undefined && { output }),
       ...(error !== undefined && { error }),
     });

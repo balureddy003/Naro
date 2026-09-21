@@ -1,0 +1,96 @@
+# Reference Kubernetes manifests for `naro serve` — Postgres-backed mode.
+#
+#   kubectl apply -f deploy/k8s/naro.yaml
+#   kubectl create secret generic naro-pg --from-literal=url='postgres://…'
+#
+# Topology: N replicas of the control plane. Each pod runs runners; the
+# durable session lives in Postgres (PgEventStore + PgCheckpointStore), so a
+# pod can die and a peer can `wake(runId)` the run from the journal.
+# Leases (PgLeaseStore) prevent two pods from driving the same agent.
+# PgRunRegistry + PgEventStore (wired in the module) make /runs and
+# /runs/:id/events answer correctly on any replica.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: naro
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: naro-agent
+  namespace: naro
+data:
+  # Replace with your module — must export createRunner(goal): AgentRunner.
+  # Wire stores to NARO_PG_URL for multi-host durability.
+  agent.ts: |
+    import { createAgentSpec } from '@naro/core';
+    import { AgentRunner } from '@naro/runtime';
+    export function createRunner(goal) {
+      return new AgentRunner({
+        spec: createAgentSpec({ name: 'deployed', goal }),
+        /* reasoner, executor, policy — and Pg stores via process.env.NARO_PG_URL */
+      });
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: naro
+  namespace: naro
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: naro }
+  strategy:
+    # Rolling update: new pods pass readiness before old ones drain.
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  template:
+    metadata:
+      labels: { app: naro }
+    spec:
+      containers:
+        - name: naro
+          image: naro:latest           # built from the repo Dockerfile
+          imagePullPolicy: IfNotPresent
+          args: ["serve", "/app/agent/agent.ts", "--host", "0.0.0.0", "--port", "8080"]
+          ports: [{ containerPort: 8080 }]
+          env:
+            - name: NARO_PG_URL
+              valueFrom:
+                secretKeyRef: { name: naro-pg, key: url }
+            - name: NARO_SERVE_TOKEN
+              valueFrom:
+                secretKeyRef: { name: naro-pg, key: serve-token, optional: true }
+          volumeMounts:
+            - { name: agent, mountPath: /app/agent, readOnly: true }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          # /health = process alive; /ready = safe to send goals (fails
+          # while draining, so kube-proxy stops routing before SIGTERM
+          # cancellation begins).
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: { path: /ready, port: 8080 }
+            periodSeconds: 5
+          lifecycle:
+            preStop:
+              # Give readiness failure a moment to propagate to endpoints
+              # before the SIGTERM drain starts.
+              exec: { command: ["sh", "-c", "sleep 2"] }
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: agent
+          configMap: { name: naro-agent }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: naro
+  namespace: naro
+spec:
+  selector: { app: naro }
+  ports: [{ port: 80, targetPort: 8080 }]

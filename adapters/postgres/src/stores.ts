@@ -1,5 +1,5 @@
 import type { Goal, NaroEvent } from '@naro/core';
-import type { Checkpoint, CheckpointStore } from '@naro/runtime';
+import type { Checkpoint, CheckpointStore, RunRegistry, RunSummary } from '@naro/runtime';
 import type { LeaseStore } from '@naro/runtime';
 import type { LimitStore } from '@naro/policy';
 import type { EventExporter } from '@naro/observability';
@@ -43,8 +43,13 @@ async function migrate(q: PgQueryable): Promise<void> {
       goal_id TEXT NOT NULL,
       type TEXT NOT NULL,
       at BIGINT NOT NULL,
-      data JSONB NOT NULL
+      data JSONB NOT NULL,
+      prev TEXT,
+      hash TEXT
     );
+    -- Tables created before chaining existed lack prev/hash — add them.
+    ALTER TABLE naro_events ADD COLUMN IF NOT EXISTS prev TEXT;
+    ALTER TABLE naro_events ADD COLUMN IF NOT EXISTS hash TEXT;
     CREATE INDEX IF NOT EXISTS naro_events_agent ON naro_events(agent_id, event_seq);
     CREATE INDEX IF NOT EXISTS naro_events_run ON naro_events(run_id);
 
@@ -87,6 +92,19 @@ async function migrate(q: PgQueryable): Promise<void> {
       completed_at BIGINT
     );
     CREATE INDEX IF NOT EXISTS naro_bus_pending ON naro_bus_tasks(status, to_agent);
+
+    CREATE TABLE IF NOT EXISTS naro_runs (
+      run_id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      goal TEXT NOT NULL,
+      started_at BIGINT NOT NULL,
+      updated_at BIGINT NOT NULL,
+      result JSONB,
+      error TEXT,
+      host TEXT
+    );
+    CREATE INDEX IF NOT EXISTS naro_runs_started ON naro_runs(started_at DESC);
   `);
 }
 
@@ -134,12 +152,13 @@ export class PgEventStore implements EventExporter {
     const values: string[] = [];
     const params: unknown[] = [];
     events.forEach((e, i) => {
-      const b = i * 8;
-      values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8})`);
-      params.push(e.id, e.seq, e.runId, e.agentId, e.goalId, e.type, e.at, JSON.stringify(e.data));
+      const b = i * 10;
+      values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10})`);
+      params.push(e.id, e.seq, e.runId, e.agentId, e.goalId, e.type, e.at, JSON.stringify(e.data),
+        e.prev ?? null, e.hash ?? null);
     });
     await this.q.query(
-      `INSERT INTO naro_events (id, event_seq, run_id, agent_id, goal_id, type, at, data)
+      `INSERT INTO naro_events (id, event_seq, run_id, agent_id, goal_id, type, at, data, prev, hash)
        VALUES ${values.join(',')} ON CONFLICT (id) DO NOTHING`,
       params,
     );
@@ -158,6 +177,8 @@ export class PgEventStore implements EventExporter {
       id: r['id'] as string, seq: Number(r['event_seq']), runId: r['run_id'] as string,
       agentId: r['agent_id'] as string, goalId: r['goal_id'] as string,
       type: r['type'] as NaroEvent['type'], at: Number(r['at']), data: r['data'],
+      ...(r['prev'] != null && { prev: r['prev'] as string }),
+      ...(r['hash'] != null && { hash: r['hash'] as string }),
     }) as NaroEvent);
   }
 }
@@ -391,4 +412,57 @@ export class PgAgentBus implements AgentBus {
     this.closed = true;
     for (const p of this.pollers) clearInterval(p);
   }
+}
+
+// --- run registry --------------------------------------------------------------
+
+interface RunRow {
+  run_id: string; agent_id: string; status: string; goal: string;
+  started_at: number | string; updated_at: number | string;
+  result: unknown; error: string | null; host: string | null;
+}
+
+/** The shared run index: every replica's `naro serve` writes here, so
+ *  GET /runs answers the same truth on any host. */
+export class PgRunRegistry implements RunRegistry {
+  private readonly q: PgQueryable;
+  private constructor(q: PgQueryable) { this.q = q; }
+  static async create(q: PgQueryable): Promise<PgRunRegistry> {
+    await migrate(q);
+    return new PgRunRegistry(q);
+  }
+
+  async upsert(run: RunSummary): Promise<void> {
+    await this.q.query(
+      `INSERT INTO naro_runs (run_id, agent_id, status, goal, started_at, updated_at, result, error, host)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (run_id) DO UPDATE SET
+         status=$3, updated_at=$6, result=$7, error=$8, host=$9`,
+      [run.runId, run.agentId, run.status, run.goal, run.startedAt, run.updatedAt,
+        run.result === undefined ? null : JSON.stringify(run.result),
+        run.error ?? null, run.host ?? null],
+    );
+  }
+
+  async get(runId: string): Promise<RunSummary | undefined> {
+    const { rows } = await this.q.query('SELECT * FROM naro_runs WHERE run_id=$1', [runId]);
+    return rows[0] ? toSummary(rows[0] as unknown as RunRow) : undefined;
+  }
+
+  async list(opts: { limit?: number } = {}): Promise<readonly RunSummary[]> {
+    const { rows } = await this.q.query(
+      'SELECT * FROM naro_runs ORDER BY started_at DESC LIMIT $1', [opts.limit ?? 10_000]);
+    return rows.map((r) => toSummary(r as unknown as RunRow));
+  }
+}
+
+function toSummary(r: RunRow): RunSummary {
+  return {
+    runId: r.run_id, agentId: r.agent_id,
+    status: r.status as RunSummary['status'],
+    goal: r.goal, startedAt: Number(r.started_at), updatedAt: Number(r.updated_at),
+    ...(r.result != null && { result: r.result }),
+    ...(r.error != null && { error: r.error }),
+    ...(r.host != null && { host: r.host }),
+  };
 }

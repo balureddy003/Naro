@@ -1,0 +1,114 @@
+import { DatabaseSync } from 'node:sqlite';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+
+/** One row in the run index — what a `GET /runs` answer is built from. */
+export interface RunSummary {
+  readonly runId: string;
+  readonly agentId: string;
+  readonly status: 'running' | 'completed' | 'failed' | 'cancelled' | 'paused';
+  readonly goal: string;
+  readonly startedAt: number;
+  readonly updatedAt: number;
+  readonly result?: unknown;
+  readonly error?: string;
+  /** Which replica owns the live run — cross-replica reads go elsewhere. */
+  readonly host?: string;
+}
+
+/**
+ * The durable run index. `naro serve` writes every run here, so the list
+ * of runs — and each run's last-known status — survives a replica
+ * restart and is shared between replicas pointing at the same store.
+ */
+export interface RunRegistry {
+  upsert(run: RunSummary): Promise<void>;
+  get(runId: string): Promise<RunSummary | undefined>;
+  /** Newest first. */
+  list(opts?: { limit?: number }): Promise<readonly RunSummary[]>;
+}
+
+/** Default registry — process-local, lost on exit. Fine for dev/tests. */
+export class InMemoryRunRegistry implements RunRegistry {
+  private readonly runs = new Map<string, RunSummary>();
+
+  upsert(run: RunSummary): Promise<void> {
+    this.runs.set(run.runId, run);
+    return Promise.resolve();
+  }
+
+  get(runId: string): Promise<RunSummary | undefined> {
+    return Promise.resolve(this.runs.get(runId));
+  }
+
+  list(opts: { limit?: number } = {}): Promise<readonly RunSummary[]> {
+    const all = [...this.runs.values()].sort((a, b) => b.startedAt - a.startedAt);
+    return Promise.resolve(all.slice(0, opts.limit ?? all.length));
+  }
+}
+
+interface Row {
+  run_id: string; agent_id: string; status: string; goal: string;
+  started_at: number; updated_at: number; result: string | null;
+  error: string | null; host: string | null;
+}
+
+/** Durable run index on node:sqlite — survives restarts, shareable. */
+export class SqliteRunRegistry implements RunRegistry {
+  private readonly db: DatabaseSync;
+
+  constructor(path: string) {
+    if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
+    this.db = new DatabaseSync(path);
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS runs (
+        run_id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        goal TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        result TEXT,
+        error TEXT,
+        host TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at DESC);
+    `);
+  }
+
+  async upsert(run: RunSummary): Promise<void> {
+    await this.db.prepare(`
+      INSERT INTO runs (run_id, agent_id, status, goal, started_at, updated_at, result, error, host)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(run_id) DO UPDATE SET
+        status = excluded.status, updated_at = excluded.updated_at,
+        result = excluded.result, error = excluded.error, host = excluded.host
+    `).run(run.runId, run.agentId, run.status, run.goal, run.startedAt, run.updatedAt,
+      run.result === undefined ? null : JSON.stringify(run.result),
+      run.error ?? null, run.host ?? null);
+  }
+
+  async get(runId: string): Promise<RunSummary | undefined> {
+    const r = this.db.prepare('SELECT * FROM runs WHERE run_id = ?').get(runId) as Row | undefined;
+    return r && toSummary(r);
+  }
+
+  async list(opts: { limit?: number } = {}): Promise<readonly RunSummary[]> {
+    const rows = this.db.prepare('SELECT * FROM runs ORDER BY started_at DESC LIMIT ?')
+      .all(opts.limit ?? 10_000) as unknown as Row[];
+    return rows.map(toSummary);
+  }
+
+  close(): void { this.db.close(); }
+}
+
+function toSummary(r: Row): RunSummary {
+  return {
+    runId: r.run_id, agentId: r.agent_id,
+    status: r.status as RunSummary['status'],
+    goal: r.goal, startedAt: r.started_at, updatedAt: r.updated_at,
+    ...(r.result !== null && { result: JSON.parse(r.result) }),
+    ...(r.error !== null && { error: r.error }),
+    ...(r.host !== null && { host: r.host }),
+  };
+}

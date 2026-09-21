@@ -10,6 +10,16 @@ agent, a browser agent, or a robot controller without core changes.
 | `Environment` | `id` + `capabilities` + `state()` + `execute(action) → Observation` (extends `ActionExecutor`) |
 | `EnvironmentState` | observable snapshot — `resources` is domain-shaped |
 | `InMemoryEnvironment` | key-value world: `env.get`/`env.set`/`env.delete`/`env.list` |
+| `HttpEnvironment` | client: an `Environment` whose `execute`/`state` run over HTTP |
+| `serveEnvironment` | server: expose any `Environment` at `POST /execute`, `GET /state` |
+
+Remote transport lets hands run in a separate process, container, or host —
+the runner sees the same contract either way. The wire carries the action
+plus identity context; `signal` and resolved secrets never cross it, so a
+remote action runs to completion once started (at-least-once — reconcile via
+idempotency keys). `token` adds a shared-bearer gate; TLS and real authn/z
+belong to the deployment. See
+[ADR 0008](../docs/adr/0008-environments-are-reachable-over-http.md).
 
 ## The idea
 

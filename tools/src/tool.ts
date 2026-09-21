@@ -1,4 +1,4 @@
-import type { ExecContext } from '@naro/core';
+import type { ExecContext, TrustLevel } from '@naro/core';
 import type { JsonSchema } from './schema.ts';
 
 /**
@@ -30,6 +30,10 @@ export interface Tool {
    * Default: treated as non-idempotent (never blindly retried).
    */
   readonly idempotent?: boolean;
+  /** Trust of this tool's output. Default 'tool'; set 'external' for
+   *  anything that returns content authored outside the system — web
+   *  pages, emails, files from untrusted repos. */
+  readonly trust?: TrustLevel;
   readonly metadata?: Readonly<Record<string, unknown>>;
   execute(input: unknown, ctx: ExecContext): Promise<unknown>;
 }
