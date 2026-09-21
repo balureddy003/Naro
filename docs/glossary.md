@@ -124,6 +124,13 @@ Capabilities are declared and checked rather than assumed.
 Evidence produced by execution, verification, a human, or the runtime. It
 records source, success, output or error, and an optional originating action.
 
+## Principal
+
+A control-plane identity on `naro serve`: a bearer token mapped to an `id`
+plus `roles` (`viewer`, `operator`, `approver`). The principal id attributes
+HTTP actions — an approver's answer lands on `answered_by` in the approvals
+table and `by` on the journal's `human.approval.received` event.
+
 ## PolicyEngine
 
 The required authorization port called before every action. It returns

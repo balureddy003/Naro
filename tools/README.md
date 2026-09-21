@@ -13,7 +13,7 @@ Schema-contracted capabilities behind the runtime policy gate.
 | `ToolExecutor` | resolve, validate input, execute, validate output, observe |
 | `createToolPolicy()` | baseline policy derived from registered metadata |
 | `SecretProvider` | resolves secret references at execution time |
-| `EnvSecretProvider`, `MapSecretProvider`, `chainSecrets()` | included secret sources and composition |
+| `EnvSecretProvider`, `FileSecretProvider`, `MapSecretProvider`, `chainSecrets()` | included secret sources and composition |
 | `SandboxedExecutor` | worker-thread execution with heap and wall-clock limits |
 
 ## Tool lifecycle
@@ -79,9 +79,13 @@ Actions and prompts should contain references such as `env:API_KEY` or
 `vault:path#key`, not values. The runtime passes the configured resolver through
 `ExecContext`; the executor resolves at the last responsible moment.
 
-`EnvSecretProvider` reads `env:` references. `MapSecretProvider` is useful for
-tests and small controlled deployments. `chainSecrets()` returns the first
-resolved value. A Vault or cloud-secret adapter can implement the same port.
+`EnvSecretProvider` reads `env:` references. `FileSecretProvider` reads
+`file:/abs/path` references — for mounted secret volumes (k8s, injected
+credential files); reads are cached per path with a 60-second TTL
+(configurable) so rotations are picked up without a filesystem hit per
+action. `MapSecretProvider` is useful for tests and small controlled
+deployments. `chainSecrets()` returns the first resolved value. A Vault or
+cloud-secret adapter can implement the same port.
 
 ## Worker-thread sandbox
 

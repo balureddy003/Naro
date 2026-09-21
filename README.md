@@ -203,7 +203,9 @@ Implemented in this repository:
 - Serving: durable `RunRegistry` (SQLite/Postgres) indexes every run —
   `GET /runs` survives restarts and is shared across replicas; a shared
   journal answers cross-replica `GET /runs/:id/events`; `SqliteApprovalBridge`
-  exposes `GET`/`POST /approvals` over HTTP.
+  exposes `GET`/`POST /approvals` over HTTP. `--principals` adds
+  control-plane roles (viewer/operator/approver) with approver identity
+  journaled on `human.approval.received`.
 - Reasoning: ReAct (streaming, parallel `act-batch`), PlanExecute, Reflection,
   TreeSearch.
 - Models: OpenAI-compatible, Anthropic, Gemini adapters; `failover()`

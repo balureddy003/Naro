@@ -17,11 +17,21 @@ agent safe for production.
 permissions and side effects. Its default `otherwise: 'allow'` means “this
 engine does not own non-tool schemes,” not “all environments are safe.”
 
+The `naro serve` control plane has its own authorization: `--principals`
+maps bearer tokens to `{id, roles}` — `viewer` reads runs and the approval
+queue, `operator` submits goals, `approver` answers approvals
+(operator/approver imply viewer). `--token` is shorthand for one admin
+principal. Missing or bad credentials get 401; insufficient role gets 403.
+This is a control-plane role check, not tenant authz — that still belongs
+to the deployment in front.
+
 ## 2. Secrets
 
 - Put secret references in configuration or actions, never values.
-- Configure `EnvSecretProvider`, `MapSecretProvider`, a chained provider, or a
-  deployment-specific vault adapter.
+- Configure `EnvSecretProvider` (`env:`), `FileSecretProvider` (`file:` —
+  mounted secret volumes, cached with a 60s TTL so rotations are picked
+  up), `MapSecretProvider`, a chained provider, or a deployment-specific
+  vault adapter.
 - Resolve through `ExecContext.secrets` inside the executor.
 - Do not return resolved values in observations or errors.
 - Redact external telemetry as a backstop.
@@ -80,6 +90,14 @@ shared across replicas.
 Resume is at-least-once. A crash after an external side effect but before its
 observation is checkpointed can reissue the logical action. Idempotency and
 reconciliation are part of the production design.
+
+Retention splits operational stores from evidence. `SqliteApprovalBridge.prune`
+and `SqliteCheckpointStore.prune`/`PgCheckpointStore.prune` delete answered
+requests and superseded checkpoints — operational records, prune freely. The
+journal is the evidence: it is exported and sealed, never deleted. Approval
+rows carry `expires_at` (`created_at + timeoutMs`), so unanswered requests
+expire instead of pending forever, and `answered_by` attributes each answer
+to the principal that posted it.
 
 Every emitted event carries `prev`/`hash`, a SHA-256 chain `verifyChain()`
 recomputes and `naro verify <run.jsonl>` checks. With `AgentDeps.sealKey`,
@@ -143,8 +161,13 @@ request timeout does not prove remote work stopped.
 
 Events are immutable snapshots with stable `runId` and ordered `seq`, hash-chained
 per run (see §5). `naro verify <file.jsonl>` recomputes the chain and prints the
-per-action evidence record; wire it into audit and incident-review flows. OTLP
-export currently uses log records rather than a trace-span hierarchy.
+per-action evidence record; wire it into audit and incident-review flows. Gate
+events carry `PolicyEngine.id` (`policy` on `permission.requested` /
+`action.permitted` / `action.denied` / `human.approval.requested`), and
+`human.approval.received` carries the approver's control-plane identity
+(`by`) — the journal alone answers "who approved this and under which
+policy." OTLP export currently uses log records rather than a trace-span
+hierarchy.
 
 ## 9. Evaluation and release gates
 

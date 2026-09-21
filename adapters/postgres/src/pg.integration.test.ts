@@ -30,6 +30,17 @@ describePg('pg integration (requires NARO_PG_URL)', async () => {
     assert.equal(await s.latest(`${me}-other`), undefined);
   });
 
+  test('checkpoints: prune keeps the newest N per agent', async () => {
+    const s = await PgCheckpointStore.create(pool);
+    const me = `pg-prune-${Date.now()}`;
+    for (let i = 1; i <= 3; i++) {
+      await s.save({ id: `${me}-c${i}`, agentId: me, state: 'REASONING', at: i, data: { iteration: i } } as never);
+    }
+    assert.equal(await s.prune(1) >= 2, true);
+    const got = await s.latest(me);
+    assert.equal((got?.data as { iteration: number }).iteration, 3);
+  });
+
   test('leases: one holder, expiry, release', async () => {
     const l = await PgLeaseStore.create(pool);
     assert.equal(await l.acquire('k1', 'h1', 5000), true);

@@ -19,6 +19,8 @@ import type { Action, PolicyContext, PolicyDecision, PolicyEngine, PolicyVerdict
 export interface OpaOptions {
   /** OPA base URL, e.g. 'http://localhost:8181'. */
   readonly url: string;
+  /** Engine identity stamped on gate events. Default 'opa'. */
+  readonly id?: string;
   /** Rego document path whose value is the decision. Default: 'naro/action/decision'. */
   readonly decisionPath?: string;
   /** What to do when OPA is unreachable or returns garbage. Default: deny. */
@@ -31,11 +33,13 @@ export interface OpaOptions {
 const DECISIONS: ReadonlySet<string> = new Set(['allow', 'deny', 'require_approval', 'limit', 'audit']);
 
 export class OpaPolicyEngine implements PolicyEngine {
+  readonly id: string;
   private readonly opts: OpaOptions;
   private readonly fetchImpl: typeof fetch;
 
   constructor(opts: OpaOptions) {
     this.opts = opts;
+    this.id = opts.id ?? 'opa';
     this.fetchImpl = opts.fetchImpl ?? fetch;
   }
 

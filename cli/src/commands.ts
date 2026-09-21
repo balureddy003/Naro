@@ -28,6 +28,8 @@ const HELP = `naro — universal agent foundation CLI
   naro serve <module.ts>   expose an agent as a service [--port N] [--host h]
                              [--token t | NARO_SERVE_TOKEN] — bearer gate on
                              all non-probe endpoints
+                             [--principals <file.json>] — token→{id,roles}
+                               map; roles: viewer, operator, approver
                              [--registry <file.db>] — durable run index
                              [--journal <file.db>]  — shared event store for
                                cross-replica GET /runs/:id/events
@@ -175,6 +177,24 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
       const port = portArg !== undefined ? Number(portArg) : 8080;
       const host = flag('--host');
       const token = flag('--token') ?? process.env['NARO_SERVE_TOKEN'];
+      const principalsPath = flag('--principals');
+      let principals: Record<string, { id: string; roles: readonly string[] }> | undefined;
+      if (principalsPath !== undefined) {
+        try {
+          const parsed: unknown = JSON.parse(await readFile(resolve(principalsPath), 'utf8'));
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('expected a JSON object');
+          for (const [tok, p] of Object.entries(parsed)) {
+            const bad = typeof p !== 'object' || p === null
+              || typeof (p as { id?: unknown }).id !== 'string'
+              || !Array.isArray((p as { roles?: unknown }).roles);
+            if (bad) throw new Error(`entry for token '${tok}' must be {id: string, roles: string[]}`);
+          }
+          principals = parsed as typeof principals;
+        } catch (e) {
+          io.err(`--principals: cannot read ${principalsPath}: ${e instanceof Error ? e.message : String(e)}`);
+          return 2;
+        }
+      }
       const registryPath = flag('--registry');
       const journalPath = flag('--journal');
       const approvalsPath = flag('--approvals');
@@ -189,6 +209,7 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
         port,
         ...(host !== undefined && { host }),
         ...(token !== undefined && { token }),
+        ...(principals !== undefined && { principals }),
         ...(registryPath !== undefined && { registry: new SqliteRunRegistry(resolve(registryPath)) }),
         ...(journalPath !== undefined && { journal: new SqliteEventStore(resolve(journalPath)) }),
         ...(approvalsPath !== undefined && { approvals: new SqliteApprovalBridge(resolve(approvalsPath)) }),

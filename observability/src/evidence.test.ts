@@ -72,6 +72,24 @@ test('approval-required action that a human approves reads as approved', async (
   assert.equal(rec.actions[0]!.executed, true);
 });
 
+test('policy engine id + approver identity land on the action evidence', async () => {
+  const named: PolicyEngine = { id: 'acme-policy', evaluate: () => 'require_approval' };
+  const human: HumanBridge = {
+    approve: () => Promise.resolve({ approved: true, by: 'alice' }),
+    ask: () => Promise.resolve(''),
+  };
+  const runner = new AgentRunner({
+    spec: spec(), reasoner: actThenComplete, executor: echo, policy: named, human,
+  });
+  const rec = buildEvidence((await runner.run()).events);
+
+  const a = rec.actions[0]!;
+  assert.equal(a.policy, 'approved');
+  assert.equal(a.policyEngine, 'acme-policy');
+  assert.equal(a.approvedBy, 'alice');
+  assert.match(formatEvidence(rec), /\[engine: acme-policy\] \[approver: alice\]/);
+});
+
 test('failed action verification is counted and attributed to the verifier', async () => {
   const failsOnce: Verifier = {
     id: 'strict',

@@ -83,6 +83,14 @@ Additional flags:
   `GET /approvals` (pending queue) and `POST /approvals/:id
   {approved?|text?|note?}` so operators approve over HTTP — including
   cross-process, since the bridge is durable.
+- `--principals <file.json>` — maps bearer tokens to `{id, roles}`. Roles:
+  `viewer` (GET endpoints), `operator` (`POST /goals`), `approver`
+  (`POST /approvals/:id`); operator and approver imply viewer. Insufficient
+  role → `403 {error: 'forbidden', required: <role>}`. The principal id is
+  written to the approval (`answered_by`) and journaled on
+  `human.approval.received.by` — who approved is evidence. Supersedes
+  `--token`/`NARO_SERVE_TOKEN`, which remains as shorthand for one admin
+  principal.
 
 Production surface: `GET /health` + `GET /ready` probes (unauthenticated),
 optional bearer gate via `--token` or `NARO_SERVE_TOKEN`, 64 KiB body cap on

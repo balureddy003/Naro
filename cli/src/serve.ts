@@ -20,11 +20,12 @@ import { InMemoryRunRegistry, type AgentRunner, type ApprovalRequest, type RunRe
  *   GET  /health             → {ok: true}        (liveness — process up)
  *   GET  /ready              → {ready: bool}     (readiness — deps reachable)
  *
- * Deployment notes: `token` adds a shared-bearer gate on everything except
- * the probes (orchestrators probe without auth). `close()` drains — it
- * cancels in-flight runs so their journals end with `agent.cancelled`,
- * then stops accepting connections. TLS and tenant authz belong to the
- * deployment in front of it.
+ * Deployment notes: `principals` maps bearer tokens to identities + roles
+ * (viewer / operator / approver); `token` is the legacy shorthand for one
+ * admin principal. Either gates everything except the probes (orchestrators
+ * probe without auth). `close()` drains — it cancels in-flight runs so
+ * their journals end with `agent.cancelled`, then stops accepting
+ * connections. TLS and tenant authz belong to the deployment in front of it.
  *
  * `registry` is the durable run index — every run is upserted there, so
  * /runs survives a replica restart and is shared between replicas pointed
@@ -34,11 +35,40 @@ import { InMemoryRunRegistry, type AgentRunner, type ApprovalRequest, type RunRe
 
 export type RunnerFactory = (goal: ReturnType<typeof createGoal>) => AgentRunner;
 
+/** A control-plane identity: an id plus the roles it holds. */
+export interface Principal {
+  readonly id: string;
+  readonly roles: ReadonlySet<string>;
+}
+
+/**
+ * Endpoint → minimum role. `viewer` reads runs and the approval queue,
+ * `operator` submits goals, `approver` answers approvals. operator and
+ * approver each imply viewer.
+ */
+type Role = 'viewer' | 'operator' | 'approver';
+
+function requiredRole(method: string, path: string): Role | undefined {
+  if (method === 'POST' && path === '/goals') return 'operator';
+  if (method === 'POST' && /^\/approvals\/[^/]+$/.test(path)) return 'approver';
+  if (method === 'GET' && (path === '/runs' || path === '/approvals' || /^\/runs\/[^/]+(\/events)?$/.test(path))) return 'viewer';
+  return undefined;
+}
+
+/** operator/approver imply viewer — expand so checks are a single has(). */
+function expandRoles(roles: readonly string[]): ReadonlySet<string> {
+  const s = new Set(roles);
+  if (s.has('operator') || s.has('approver')) s.add('viewer');
+  return s;
+}
+
 export interface ServeOptions {
   readonly port?: number;
   readonly host?: string;
   /** Shared bearer token required on all endpoints except /health and /ready. */
   readonly token?: string;
+  /** Token→principal map: {id, roles}. supersedes `token` (which maps to one admin principal). */
+  readonly principals?: Readonly<Record<string, { id: string; roles: readonly string[] }>>;
   /** Readiness probe — throw or return false when a dependency is down. */
   readonly ready?: () => Promise<boolean> | boolean;
   /** POST /goals body cap in bytes — goals are small. Default 64 KiB. */
@@ -50,7 +80,7 @@ export interface ServeOptions {
   /** Shared approval queue — e.g. SqliteApprovalBridge. Enables /approvals. */
   readonly approvals?: {
     pending(): ApprovalRequest[] | Promise<ApprovalRequest[]>;
-    respond(id: string, answer: { approved?: boolean; text?: string; note?: string }): boolean | Promise<boolean>;
+    respond(id: string, answer: { approved?: boolean; text?: string; note?: string }, by?: string): boolean | Promise<boolean>;
   };
 }
 
@@ -71,6 +101,12 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
   const maxBody = opts.maxBodyBytes ?? 65_536;
   let draining = false;
 
+  // `principals` supersedes `token`; the legacy flag is one admin principal.
+  const principals: Readonly<Record<string, { id: string; roles: readonly string[] }>> | undefined =
+    opts.principals ?? (opts.token !== undefined
+      ? { [opts.token]: { id: 'token', roles: ['viewer', 'operator', 'approver'] } }
+      : undefined);
+
   const server: Server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     const json = (code: number, body: unknown) => {
@@ -90,8 +126,18 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       }
     }
 
-    if (opts.token !== undefined) {
-      if (req.headers.authorization !== `Bearer ${opts.token}`) return json(401, { error: 'unauthorized' });
+    // Authn: bearer token → principal. Authz: the route's required role.
+    // Neither configured → the control plane is open (dev default).
+    let principal: Principal | undefined;
+    if (principals !== undefined) {
+      const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1];
+      const p = bearer !== undefined ? principals[bearer] : undefined;
+      if (p === undefined) return json(401, { error: 'unauthorized' });
+      principal = { id: p.id, roles: expandRoles(p.roles) };
+      const required = requiredRole(req.method ?? '', url.pathname);
+      if (required !== undefined && !principal.roles.has(required)) {
+        return json(403, { error: 'forbidden', required });
+      }
     }
 
     if (req.method === 'GET' && url.pathname === '/runs') {
@@ -151,7 +197,9 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
         return json(e instanceof Error && e.message === 'too-large' ? 413 : 400,
           { error: e instanceof Error && e.message === 'too-large' ? 'body too large' : 'invalid JSON' });
       }
-      const done = await opts.approvals.respond(approvalMatch[1]!, body ?? {});
+      // `by` attributes the answer to the calling principal — the bridge
+      // persists it and the runner journals it on human.approval.received.
+      const done = await opts.approvals.respond(approvalMatch[1]!, body ?? {}, principal?.id);
       return done ? json(200, { ok: true }) : json(404, { error: 'no pending request' });
     }
 

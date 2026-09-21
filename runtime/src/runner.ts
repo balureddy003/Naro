@@ -461,8 +461,10 @@ export class AgentRunner {
 
     // Policy — every action, every time. The model can never self-authorize.
     // (Re-entrant: a batch gates several actions without leaving the gate.)
+    // `policy` stamps WHICH engine judged — the evidence record reads it back.
     if (this.state !== 'WAITING_FOR_PERMISSION') this.transition('WAITING_FOR_PERMISSION');
-    this.bus.emit('permission.requested', { action });
+    const policy = this.deps.policy.id;
+    this.bus.emit('permission.requested', { action, ...(policy !== undefined && { policy }) });
     const { decision, reason } = toVerdict(await this.deps.policy.evaluate(action, {
       agentId: this.deps.spec.id,
       goal: this.deps.spec.goal,
@@ -472,7 +474,7 @@ export class AgentRunner {
 
     if (decision === 'deny') {
       action.state = 'denied';
-      this.bus.emit('action.denied', { action, ...(reason !== undefined && { reason }) });
+      this.bus.emit('action.denied', { action, ...(reason !== undefined && { reason }), ...(policy !== undefined && { policy }) });
       this.record(createObservation({
         actionId: action.id, source: 'policy', kind: 'error',
         success: false, error: reason ? `denied by policy: ${reason}` : 'action denied by policy',
@@ -484,14 +486,18 @@ export class AgentRunner {
     // engine's counters (deny once exhausted); audit just marks the record.
     if (decision === 'require_approval') {
       this.bus.emit('human.approval.requested', {
-        action, ...(reason !== undefined && { question: reason }),
+        action, ...(reason !== undefined && { question: reason }), ...(policy !== undefined && { policy }),
       });
       this.transition('WAITING_FOR_HUMAN');
       const res = await (this.deps.human ?? noHumanBridge).approve(action);
-      this.bus.emit('human.approval.received', { approved: res.approved, ...(res.note !== undefined && { note: res.note }) });
+      this.bus.emit('human.approval.received', {
+        approved: res.approved,
+        ...(res.note !== undefined && { note: res.note }),
+        ...(res.by !== undefined && { by: res.by }),
+      });
       if (!res.approved) {
         action.state = 'denied';
-        this.bus.emit('action.denied', { action, reason: res.note ?? 'approval refused' });
+        this.bus.emit('action.denied', { action, reason: res.note ?? 'approval refused', ...(policy !== undefined && { policy }) });
         this.record(createObservation({
           actionId: action.id, source: 'human', kind: 'human',
           success: false, error: res.note ?? 'approval refused',
@@ -503,7 +509,7 @@ export class AgentRunner {
     }
 
     action.state = 'authorized';
-    this.bus.emit('action.permitted', { action });
+    this.bus.emit('action.permitted', { action, ...(policy !== undefined && { policy }) });
     if (action.taskId) this.setTaskStatus(action.taskId, 'running');
     return action;
   }

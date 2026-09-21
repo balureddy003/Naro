@@ -54,5 +54,23 @@ export class SqliteCheckpointStore implements CheckpointStore {
     })));
   }
 
+  /**
+   * Keep the newest `keepPerAgent` checkpoints per agent, delete the rest;
+   * returns the number removed. Checkpoints are recovery state — old ones
+   * are dead weight once a newer snapshot exists. (The journal, not the
+   * checkpoint, is the evidence — it is exported and sealed, never pruned.)
+   */
+  prune(keepPerAgent = 1): number {
+    const r = this.db.prepare(`
+      DELETE FROM checkpoints WHERE id IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (PARTITION BY agent_id ORDER BY at DESC, rowid DESC) AS rn
+          FROM checkpoints
+        ) WHERE rn > ?
+      )
+    `).run(keepPerAgent);
+    return Number(r.changes);
+  }
+
   close(): void { this.db.close(); }
 }

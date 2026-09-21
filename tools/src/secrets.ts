@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 /**
  * Secret resolution at the execution boundary.
  *
@@ -35,6 +37,41 @@ export class MapSecretProvider implements SecretProvider {
 
   resolve(ref: string): Promise<string | undefined> {
     return Promise.resolve(this.secrets[ref]);
+  }
+}
+
+/**
+ * 'file:/abs/path' → the file's content, trimmed. For mounted secrets —
+ * a k8s secret volume, an agent-injected credential file.
+ *
+ * Reads are cached per path with a TTL (default 60s): mounted secrets
+ * rotate underneath us via pod refresh, so the cache must expire — but
+ * re-reading on every action would stat the filesystem on the hot path.
+ * Misses are cached too; a bad ref doesn't become a per-action fs probe.
+ */
+export class FileSecretProvider implements SecretProvider {
+  private readonly prefix: string;
+  private readonly ttlMs: number;
+  private readonly cache = new Map<string, { value?: string; at: number }>();
+
+  constructor(prefix = 'file:', ttlMs = 60_000) {
+    this.prefix = prefix;
+    this.ttlMs = ttlMs;
+  }
+
+  async resolve(ref: string): Promise<string | undefined> {
+    if (!ref.startsWith(this.prefix)) return undefined;
+    const path = ref.slice(this.prefix.length);
+    const hit = this.cache.get(path);
+    if (hit !== undefined && Date.now() - hit.at < this.ttlMs) return hit.value;
+    let value: string | undefined;
+    try {
+      value = (await readFile(path, 'utf8')).trim();
+    } catch {
+      value = undefined; // unreadable/missing file → unresolved, not a crash
+    }
+    this.cache.set(path, { value, at: Date.now() });
+    return value;
   }
 }
 
