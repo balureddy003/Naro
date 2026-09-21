@@ -8,6 +8,10 @@ export type ObservationKind =
   | 'system'         // runtime-generated (timeouts, cancellations)
   | 'error';         // something failed in a way worth observing
 
+/** Who vouches for this observation's content. Drives transcript
+ *  delimiting and is available to PolicyEngine as ctx.provenance. */
+export type TrustLevel = 'system' | 'tool' | 'external';
+
 /**
  * An Observation is what the agent *learns* after acting or inspecting.
  *
@@ -26,6 +30,7 @@ export interface Observation {
   readonly success: boolean;
   readonly output?: unknown;
   readonly error?: string;
+  readonly trust: TrustLevel;
   readonly at: number;
 }
 
@@ -36,14 +41,22 @@ export interface ObservationInput {
   success: boolean;
   output?: unknown;
   error?: string;
+  trust?: TrustLevel;
 }
 
 export function createObservation(input: ObservationInput): Observation {
+  // system/verification/human evidence is authored by the runtime or the
+  // operator — everything else defaults to tool trust; 'external' is for
+  // content written outside the system (web pages, emails, foreign repos).
+  const trust = input.trust
+    ?? (input.kind === 'system' || input.kind === 'verification' || input.kind === 'human'
+      ? 'system' : 'tool');
   return {
     id: newId('obs'),
     source: input.source,
     kind: input.kind,
     success: input.success,
+    trust,
     at: Date.now(),
     ...(input.actionId !== undefined && { actionId: input.actionId }),
     ...(input.output !== undefined && { output: input.output }),

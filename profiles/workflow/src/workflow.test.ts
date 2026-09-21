@@ -51,8 +51,8 @@ test('retries give flaky steps their attempts', async () => {
   const flaky = { execute: async () => {
     calls++;
     return calls < 3
-      ? { id: 'o', at: 0, actionId: 'a', source: 'x', kind: 'env-change' as const, success: false, error: 'flaky' }
-      : { id: 'o', at: 0, actionId: 'a', source: 'x', kind: 'env-change' as const, success: true, output: 'done' };
+      ? { id: 'o', at: 0, actionId: 'a', source: 'x', kind: 'env-change' as const, success: false, error: 'flaky', trust: 'tool' as const }
+      : { id: 'o', at: 0, actionId: 'a', source: 'x', kind: 'env-change' as const, success: true, output: 'done', trust: 'tool' as const };
   } };
   const env = new WorkflowEnvironment({ executor: flaky, policy: allowAllPolicy });
   const o = await env.execute(act('workflow.run', { spec: { steps: [

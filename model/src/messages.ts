@@ -27,6 +27,14 @@ export interface ChatMessage {
   /** tool → id of the call this message answers. */
   readonly toolCallId?: string;
   readonly name?: string;
+  /**
+   * Cache-breakpoint hint: providers with explicit prompt caching (e.g.
+   * Anthropic `cache_control`) treat everything up to and including this
+   * message as the stable prefix. Providers that cache automatically
+   * (OpenAI) ignore it. Place on the last static block — typically system
+   * or retrieved context — never on volatile evidence.
+   */
+  readonly cacheBreakpoint?: boolean;
 }
 
 /** What a tool looks like to a model: name, docs, input schema. */
@@ -47,6 +55,8 @@ export interface ChatRequest {
   readonly maxTokens?: number;
   readonly stop?: readonly string[];
   readonly signal?: AbortSignal;
+  /** Mark the tool list as a cache breakpoint where the provider supports it. */
+  readonly cacheTools?: boolean;
   readonly metadata?: Readonly<Record<string, unknown>>;
 }
 

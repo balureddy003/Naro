@@ -37,6 +37,7 @@ export function unsupported(capability: string, envId: string): Omit<Observation
     source: `env://${envId}`,
     kind: 'env-change',
     success: false,
+    trust: 'tool',
     error: `environment '${envId}' does not support capability '${capability}'`,
   };
 }

@@ -61,7 +61,7 @@ default action `idempotencyKey`; the target system must store and enforce it.
 ## 5. Checkpoint and event durability
 
 A checkpoint contains tasks, actions, observations, context, iteration,
-optional reasoner state, run ID, and journal sequence.
+optional reasoner state, run ID, journal sequence, and hash-chain head.
 
 | Implementation | Scope | Use |
 |---|---|---|
@@ -71,10 +71,34 @@ optional reasoner state, run ID, and journal sequence.
 | `JsonlExporter` | one host, append-only events | simple audit |
 | `SqliteEventStore` | one host, queryable events | durable journal and run lookup |
 | `SqliteMemoryStore` | one host, FTS5 memory | persistent recall |
+| `SqliteRunRegistry` | one host, run index | `naro serve --registry` |
+
+`RunRegistry` is the durable run index `naro serve` upserts into — SQLite
+here, `PgRunRegistry` on Postgres — so `/runs` survives restarts and is
+shared across replicas.
 
 Resume is at-least-once. A crash after an external side effect but before its
 observation is checkpointed can reissue the logical action. Idempotency and
 reconciliation are part of the production design.
+
+Every emitted event carries `prev`/`hash`, a SHA-256 chain `verifyChain()`
+recomputes and `naro verify <run.jsonl>` checks. With `AgentDeps.sealKey`,
+the runner emits a terminal `journal.sealed` event — an Ed25519 signature
+over the chain head — so a rewritten or extended journal fails signature
+verification against the public key (`--pubkey` pins it). The chain is
+**tamper-evident; sealed, it is tamper-evident with attribution**: the
+remaining gap is key custody — the sealing key can still forge a consistent
+chain, so keep it outside the journal writer's reach (KMS/HSM) or stream
+events to a store the writer cannot modify (a `PgEventStore` under different
+credentials) and verify against that copy. Sealing is terminal by
+convention — `wake()` refuses a sealed journal. Events exported before
+chaining existed carry no `hash` and never verify — `verifyChain` reports
+them as `journal is not hash-chained`.
+
+Cost: the chain is cheap — `scripts/bench-chain.mjs` measures ~270k
+events/s emitted (canonicalize + SHA-256 + link) and ~390k events/s
+verified on commodity hardware. A 100k-event journal verifies in ~250ms.
+Ed25519 sealing adds one signature per run, not per event.
 
 ## 6. Concurrent runners and leases
 
@@ -117,7 +141,9 @@ request timeout does not prove remote work stopped.
   timeouts, cost growth, and failed verification;
 - export OTLP logs through `@naro/adapter-otel` when using a collector.
 
-Events are immutable snapshots with stable `runId` and ordered `seq`. OTLP
+Events are immutable snapshots with stable `runId` and ordered `seq`, hash-chained
+per run (see §5). `naro verify <file.jsonl>` recomputes the chain and prints the
+per-action evidence record; wire it into audit and incident-review flows. OTLP
 export currently uses log records rather than a trace-span hierarchy.
 
 ## 9. Evaluation and release gates
@@ -139,10 +165,18 @@ The repository provides a strong zero-infrastructure single-host substrate
 Postgres for multi-host deployments: `PgCheckpointStore`, `PgEventStore`,
 `PgMemoryStore`, `PgLeaseStore`, `PgLimitStore`, and `PgAgentBus` (atomic
 `SKIP LOCKED` claims, single-statement upsert quotas). Its integration tests
-run against a real Postgres service container in CI. A multi-host platform
-still needs deployment-specific services for:
+run against a real Postgres service container in CI.
 
-- container or VM isolation;
+Deployment artifacts ship in-repo: a root `Dockerfile` (Node 22-alpine,
+type-stripped — no build step), `deploy/compose.yml` (Naro + Postgres), and
+`deploy/k8s/naro.yaml` (rolling Deployment with `/health`+`/ready` probes,
+preStop drain, Postgres-backed session). `naro serve` drains on SIGTERM —
+readiness flips and in-flight runs journal `agent.cancelled`. See
+[deploy.md](deploy.md) for the four topologies and the networking matrix.
+
+A multi-host platform still needs deployment-specific services for:
+
+- container or VM isolation (`SandboxedExecutor` is a thread, not a sandbox);
 - organization-specific service identity and tenant authorization;
 - centralized secret management;
 - backup, migration, retention, and disaster recovery;

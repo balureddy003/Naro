@@ -41,4 +41,4 @@ test('later exports land in the same journal', async () => {
 eventExporterContract('SqliteEventStore', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'naro-ev-'));
   return new SqliteEventStore(join(dir, 'ev.db'));
-});
+}, async (exp) => (exp as SqliteEventStore).history().map((e) => JSON.stringify(e)));

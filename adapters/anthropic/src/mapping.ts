@@ -11,19 +11,35 @@ import type { ChatMessage, ChatRequest, FinishReason, ToolCall } from '@naro/mod
  *  - stop_reason vocabulary differs
  */
 
-type Block = { type: 'text'; text: string }
-  | { type: 'tool_use'; id: string; name: string; input: unknown }
-  | { type: 'tool_result'; tool_use_id: string; content: string }
+type CacheControl = { type: 'ephemeral' };
+
+type Block = { type: 'text'; text: string; cache_control?: CacheControl }
+  | { type: 'tool_use'; id: string; name: string; input: unknown; cache_control?: CacheControl }
+  | { type: 'tool_result'; tool_use_id: string; content: string; cache_control?: CacheControl }
   | { type: 'image'; source: { type: 'base64' | 'url'; media_type?: string; data?: string; url?: string } };
 
 interface AnthropicMessage { role: 'user' | 'assistant'; content: string | Block[] }
 
-export function splitSystem(messages: readonly ChatMessage[]): { system: string | undefined; rest: ChatMessage[] } {
-  const sys = messages.filter((m) => m.role === 'system')
+/**
+ * Anthropic prompt caching: `cache_control` rides on a block, and the
+ * `system` param becomes a block array when a breakpoint is set. Naro's
+ * `cacheBreakpoint` marks the END of the stable prefix — the standard
+ * layout is: cached system instructions + cached tool list + (optionally)
+ * cached retrieved context, then volatile transcript.
+ */
+export function splitSystem(messages: readonly ChatMessage[]): {
+  system: string | Block[] | undefined;
+  rest: ChatMessage[];
+} {
+  const sysMsgs = messages.filter((m) => m.role === 'system');
+  const sys = sysMsgs
     .map((m) => typeof m.content === 'string' ? m.content : m.content.map((p) => p.text ?? '').join(''))
     .join('\n\n');
+  const cached = sysMsgs.some((m) => m.cacheBreakpoint === true);
   return {
-    system: sys || undefined,
+    system: !sys ? undefined
+      : cached ? [{ type: 'text', text: sys, cache_control: { type: 'ephemeral' } }]
+      : sys,
     rest: messages.filter((m) => m.role !== 'system'),
   };
 }
@@ -40,6 +56,7 @@ export function toAnthropicMessages(messages: readonly ChatMessage[]): Anthropic
           type: 'tool_result',
           tool_use_id: m.toolCallId ?? '',
           content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+          ...(m.cacheBreakpoint === true && { cache_control: { type: 'ephemeral' as const } }),
         }],
       });
       continue;
@@ -59,17 +76,27 @@ export function toAnthropicMessages(messages: readonly ChatMessage[]): Anthropic
     for (const tc of m.toolCalls ?? []) {
       blocks.push({ type: 'tool_use', id: tc.id, name: tc.name, input: tc.arguments ?? {} });
     }
+    if (m.cacheBreakpoint === true && blocks.length > 0) {
+      const last = blocks[blocks.length - 1]!;
+      if (last.type !== 'image') last.cache_control = { type: 'ephemeral' };
+    }
     out.push({ role, content: blocks.length ? blocks : '' });
   }
   return out;
 }
 
 export function toAnthropicTools(req: ChatRequest) {
-  return req.tools?.map((t) => ({
+  const tools = req.tools?.map((t) => ({
     name: t.name,
     description: t.description,
     input_schema: t.parameters,
   }));
+  // A cache breakpoint on the last tool caches the whole tool list —
+  // it precedes the volatile transcript in the prompt layout.
+  if (req.cacheTools === true && tools?.length) {
+    (tools[tools.length - 1] as { cache_control?: CacheControl }).cache_control = { type: 'ephemeral' };
+  }
+  return tools;
 }
 
 export function fromAnthropicStop(reason: string | null | undefined): FinishReason {

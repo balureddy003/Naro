@@ -4,6 +4,17 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from './commands.ts';
+import { EventBus } from '@naro/runtime';
+import { generateSealKeypair, type NaroEvent } from '@naro/core';
+
+/** A real hash-chained journal, straight from the bus. */
+function chainedEvents(): NaroEvent[] {
+  const bus = new EventBus({ agentId: 'a', goalId: 'g' });
+  bus.emit('agent.created', { name: 'x' });
+  bus.emit('reasoning.started', { iteration: 0 });
+  bus.emit('agent.completed', { result: 'done' });
+  return bus.history() as NaroEvent[];
+}
 
 function capture() {
   const out: string[] = []; const err: string[] = [];
@@ -34,7 +45,92 @@ test('replay summarizes a JSONL audit stream', async () => {
     assert.match(text, /\[3\] a action.denied/);
     assert.match(text, /denied=1/);
     assert.match(text, /duration=500ms/);
+    assert.match(text, /chain=BROKEN journal is not hash-chained/); // legacy events have no hashes
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('verify exits 0 on an intact chain and prints the evidence record', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'naro-cli-'));
+  try {
+    const file = join(dir, 'audit.jsonl');
+    await writeFile(file, chainedEvents().map((e) => JSON.stringify(e)).join('\n'));
+    const { io, out } = capture();
+    assert.equal(await main(['verify', file], io), 0);
+    const text = out.join('\n');
+    assert.match(text, /chain: OK \(3 chained events/);
+    assert.match(text, /outcome: completed/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('verify exits 1 on a tampered chain and on unchained journals', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'naro-cli-'));
+  try {
+    const events = chainedEvents();
+    const tampered = events.map((e, i) =>
+      i === 1 ? ({ ...e, data: { iteration: 999 } } as unknown as NaroEvent) : e);
+    const bad = join(dir, 'bad.jsonl');
+    await writeFile(bad, tampered.map((e) => JSON.stringify(e)).join('\n'));
+    const { io, out } = capture();
+    assert.equal(await main(['verify', bad], io), 1);
+    assert.match(out.join('\n'), /chain: BROKEN/);
+
+    const legacy = join(dir, 'legacy.jsonl');
+    await writeFile(legacy, events.map((e) => {
+      const { prev: _p, hash: _h, ...rest } = e;
+      return JSON.stringify(rest);
+    }).join('\n'));
+    assert.equal(await main(['verify', legacy], io), 1);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('verify --json emits a machine-readable EvidenceRecord', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'naro-cli-'));
+  try {
+    const file = join(dir, 'audit.jsonl');
+    await writeFile(file, chainedEvents().map((e) => JSON.stringify(e)).join('\n'));
+    const { io, out } = capture();
+    assert.equal(await main(['verify', file, '--json'], io), 0);
+    const rec = JSON.parse(out.join('\n')) as { chain: { ok: boolean }; outcome: { status: string } };
+    assert.equal(rec.chain.ok, true);
+    assert.equal(rec.outcome.status, 'completed');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('verify --pubkey pins the seal key and rejects a mismatch', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'naro-cli-'));
+  try {
+    const { privateKeyPem, publicKeyPem } = generateSealKeypair();
+    const bus = new EventBus({ agentId: 'a', goalId: 'g' });
+    bus.emit('agent.completed', { result: 'x' });
+    bus.seal(privateKeyPem);
+    const file = join(dir, 'sealed.jsonl');
+    await writeFile(file, bus.history().map((e) => JSON.stringify(e)).join('\n'));
+
+    const pub = join(dir, 'seal.pub');
+    await writeFile(pub, publicKeyPem);
+    const { io, out } = capture();
+    assert.equal(await main(['verify', file, '--pubkey', pub], io), 0);
+    assert.match(out.join('\n'), /seal: VALID/);
+
+    // A different public key → exit 1.
+    const wrong = join(dir, 'wrong.pub');
+    await writeFile(wrong, generateSealKeypair().publicKeyPem);
+    const { io: io2, err } = capture();
+    assert.equal(await main(['verify', file, '--pubkey', wrong], io2), 1);
+    assert.match(err.join('\n'), /does not match/);
+
+    // --pubkey on an unsealed journal → exit 1 (nothing to check).
+    const unsealed = join(dir, 'unsealed.jsonl');
+    await writeFile(unsealed, chainedEvents().map((e) => JSON.stringify(e)).join('\n'));
+    const { io: io3 } = capture();
+    assert.equal(await main(['verify', unsealed, '--pubkey', pub], io3), 1);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('verify without a file exits 2', async () => {
+  const { io, err } = capture();
+  assert.equal(await main(['verify'], io), 2);
+  assert.match(err.join('\n'), /usage: naro verify/);
 });
 
 test('bench runs a module exporting EvalCase[]', async () => {

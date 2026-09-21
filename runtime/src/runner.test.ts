@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  allowAllPolicy, createAgentSpec, createGoal, createObservation,
+  allowAllPolicy, createAgentSpec, createGoal, createObservation, verifyChain,
   type ActionExecutor, type NaroEvent, type PolicyEngine, type Verifier,
 } from '@naro/core';
 import { AgentRunner } from './runner.ts';
@@ -170,6 +170,71 @@ test('pause → checkpoint → a fresh runner resumes with full history', async 
   assert.equal(r2.status, 'completed');
   assert.equal(r2.result, 'resumed-and-done');
   assert.ok(r2.events.some((e) => e.type === 'agent.resumed'));
+});
+
+test('pause + resume produces one continuous hash-chained journal', async () => {
+  const store = new InMemoryCheckpointStore();
+  const deps = makeDeps();
+
+  const reasoner1 = new DirectReasoner((ctx) =>
+    ({ kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 'step1' } }));
+  const runner1 = new AgentRunner({ ...deps, reasoner: reasoner1, checkpoints: store });
+  runner1.on('action.completed', () => runner1.pause());
+  const r1 = await runner1.run();
+  assert.equal(r1.status, 'paused');
+
+  const reasoner2 = new DirectReasoner((ctx) =>
+    ctx.observations.length >= 1
+      ? { kind: 'complete', result: 'resumed' }
+      : { kind: 'fail', reason: 'lost state' });
+  const runner2 = new AgentRunner({ ...deps, reasoner: reasoner2, checkpoints: store });
+  const r2 = await runner2.run({ resume: true });
+  assert.equal(r2.status, 'completed');
+
+  const all = [...r1.events, ...r2.events];
+  assert.ok(all.every((e) => e.runId === all[0]!.runId), 'one runId across resume');
+  const verdict = verifyChain(all);
+  assert.equal(verdict.ok, true, verdict.reason ?? 'chain intact');
+});
+
+test('goal verification.completed names the verifier', async () => {
+  const verifier: Verifier = { id: 'goal-checker', verify: () => Promise.resolve({ ok: true }) };
+  const runner = new AgentRunner({
+    ...makeDeps(), verifier,
+    reasoner: new DirectReasoner(() => ({ kind: 'complete', result: 'done' })),
+  });
+  const r = await runner.run();
+  const vc = r.events.find((e) => e.type === 'verification.completed');
+  assert.equal((vc as NaroEvent<'verification.completed'>).data.verifier, 'goal-checker');
+});
+
+test('external evidence lowers ctx.provenance at the next gate', async () => {
+  const externalExec: ActionExecutor = {
+    execute: (action) => Promise.resolve(createObservation({
+      actionId: action.id, source: 'env://web', kind: 'env-change',
+      success: true, output: 'a web page', trust: 'external',
+    })),
+  };
+  const seen: ({ lowest?: string; externalSources?: readonly string[] } | undefined)[] = [];
+  const spy: PolicyEngine = {
+    evaluate: (action, ctx) => { seen.push(ctx.provenance); return 'allow'; },
+  };
+  // iteration 3: after two actions, complete so the run ends
+  let calls = 0;
+  const counting = new DirectReasoner((ctx) => {
+    calls++;
+    if (calls >= 3) return { kind: 'complete', result: 'done' };
+    return ctx.observations.some((o) => o.kind === 'env-change')
+      ? { kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 'done' } }
+      : { kind: 'act', action: { capability: 'env.read', target: 'env://web', input: '' } };
+  });
+  const runner = new AgentRunner({ ...makeDeps(), executor: externalExec, policy: spy, reasoner: counting });
+  const r = await runner.run();
+  assert.equal(r.status, 'completed');
+  // Gate 1 saw no prior evidence; gate 2 saw iteration 1's external obs.
+  assert.equal(seen[0]?.lowest, 'system');
+  assert.equal(seen[1]?.lowest, 'external');
+  assert.deepEqual(seen[1]?.externalSources, ['env://web']);
 });
 
 test('iteration limit fails the run instead of looping forever', async () => {

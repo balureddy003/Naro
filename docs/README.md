@@ -57,6 +57,14 @@ The learning course moves from model mechanics to production operation:
 
 - [Architecture](architecture.md) — system, packages, runtime, data flow,
   deployment, and extension rules.
+- [Positioning](positioning.md) — where Naro sits and what distinguishes it.
+- [Market quadrant](market-quadrant.md) — analyst-style vision × execution
+  scoring of the field, Naro's position, and the 12-month direction vector.
+- [Evidence-gated completion](concepts/evidence-gated-completion.md) — why a
+  run isn't done until the kernel has proof, and how the hash chain and
+  evidence record work.
+- [Architecture decision records](adr/README.md) — the load-bearing choices
+  and their rejected alternatives.
 - [Design principles](principles.md) — enforceable review rules.
 - [Contract tests](../contract-tests/README.md) — executable compatibility for
   replaceable ports.
@@ -67,12 +75,15 @@ The learning course moves from model mechanics to production operation:
 
 - [Production readiness](production-readiness.md) — authorization, secrets,
   isolation, durability, leases, delivery, observability, and release gates.
+- [Deploying Naro](deploy.md) — topologies (single host, multi-host Postgres,
+  remote hands, beneath foreign harnesses), networking, scaling, and the
+  Dockerfile/compose/k8s manifests.
 - [`@naro/observability`](../observability/README.md) — metrics, redaction,
   JSONL, SQLite event journal, and export lifecycle.
 - [`@naro/adapter-otel`](../adapters/otel/README.md) — OTLP/HTTP logs.
 - [`@naro/evaluation`](../evaluation/README.md) — benchmark reports and baseline
   comparison.
-- [`naro` CLI](../cli/README.md) — scaffold, run, bench, replay, and states.
+- [`naro` CLI](../cli/README.md) — scaffold, run, bench, replay, verify, and states.
 
 ## Reference by subsystem
 

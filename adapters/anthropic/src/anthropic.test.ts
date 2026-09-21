@@ -97,3 +97,30 @@ test('structured output maps to a forced emit_result tool and unwraps back to JS
   assert.equal(res.message.content, '{"answer":42}');
   assert.equal(res.message.toolCalls, undefined);
 });
+
+test('cache breakpoints map to cache_control on system, message, and tools', async () => {
+  let sent: Record<string, unknown> = {};
+  const model = new AnthropicModel('claude-test', {
+    apiKey: 'k', fetchImpl: fakeFetch((b) => { sent = b; }),
+  });
+  await model.chat({
+    cacheTools: true,
+    tools: [{ name: 'lookup', description: 'd', parameters: { type: 'object' } }],
+    messages: [
+      { role: 'system', content: 'be terse', cacheBreakpoint: true },
+      { role: 'user', content: 'STABLE CONTEXT', cacheBreakpoint: true },
+      { role: 'user', content: 'volatile evidence' },
+    ],
+  });
+
+  // system becomes a block array carrying cache_control
+  const system = sent['system'] as { type: string; cache_control?: { type: string } }[];
+  assert.equal(system[0]?.cache_control?.type, 'ephemeral');
+  // the marked user message's last block carries it
+  const msgs = sent['messages'] as { content: { cache_control?: { type: string } }[] }[];
+  assert.equal(msgs[0]?.content.at(-1)?.cache_control?.type, 'ephemeral');
+  assert.equal(msgs[1]?.content.at(-1)?.cache_control, undefined);
+  // and the last tool carries it
+  const tools = sent['tools'] as { name: string; cache_control?: { type: string } }[];
+  assert.equal(tools.at(-1)?.cache_control?.type, 'ephemeral');
+});

@@ -64,7 +64,14 @@ browsers, databases, runbooks, workflows, and robots are domain environments.
 ## Event
 
 An immutable typed fact emitted during a run. Every event carries agent, goal,
-run ID, monotonic sequence, timestamp, type, and a structured-clone payload.
+run ID, monotonic sequence, timestamp, type, a structured-clone payload, and
+its hash-chain fields (`prev`, `hash`).
+
+## Evidence record
+
+The per-run join produced by `buildEvidence()`: chain verdict plus, for each
+action, the policy outcome, the observation, and the verifier verdict.
+`naro verify <run.jsonl>` prints it.
 
 ## Goal
 
@@ -75,6 +82,14 @@ does not grant permissions.
 
 A permission explicitly assigned to an agent composition. Policy compares
 requested or tool-required permissions with grants.
+
+## Hash chain
+
+The tamper-evident linking of a run's events: each event's `hash` covers its
+content and `prev` (its predecessor's hash), so editing, deleting, or
+reordering any event breaks every link after it. Tamper-evident, not
+tamper-proof — sealing (below) moves the residual trust to key custody —
+see [evidence-gated completion](concepts/evidence-gated-completion.md).
 
 ## HumanBridge
 
@@ -122,7 +137,9 @@ safety constraints without adding domain concepts to the kernel.
 ## Provenance
 
 Information about where context, memory, or evidence came from. Provenance
-supports citation, filtering, trust decisions, and incident analysis.
+supports citation, filtering, trust decisions, and incident analysis. In the
+policy gate, `ctx.provenance` summarizes the trust of the evidence the
+reasoner saw before requesting an action.
 
 ## Reasoner
 
@@ -134,6 +151,21 @@ A strategy that reads `ReasoningContext` and returns one `Decision`.
 The identity of one logical execution. It remains stable across checkpoint
 resume and appears on every event.
 
+## Seal
+
+A terminal `journal.sealed` event carrying an Ed25519 signature over the
+chain head (`EventBus.seal`, `AgentDeps.sealKey`). Anyone with the public
+key can prove the journal ends where the signer left it — `naro verify
+--pubkey` pins the expected key. Sealed journals cannot be `wake()`n; the
+seal is a signature over finality.
+
+## Session
+
+A run's durable state — the journal plus what `recoverSession()` rebuilds
+from it: tasks, actions, observations, context, iteration, chain head.
+`AgentRunner.wake()` resumes from the session alone; checkpoints are a
+fast-hydrate optimization over the same facts.
+
 ## Side effects
 
 Tool metadata describing external impact: `none`, `read`, `write`, or
@@ -143,6 +175,13 @@ Tool metadata describing external impact: `none`, `read`, `write`, or
 
 A named capability with input/output schemas, permissions, side-effect metadata,
 and an execution function.
+
+## Trust level
+
+`Observation.trust` — who authored the evidence: `system` (runtime or human),
+`tool` (a tool's output), or `external` (content written outside the system:
+web pages, emails, untrusted repos). Drives transcript delimiting and is
+available to policy as `ctx.provenance`.
 
 ## Verification
 

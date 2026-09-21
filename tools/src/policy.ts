@@ -16,6 +16,12 @@ export interface ToolPolicyOptions {
    * a hallucinated call. Default 'deny' (fail closed on unknown tools).
    */
   readonly unknownTool?: PolicyDecision;
+  /**
+   * Side effects refused when the triggering evidence was external —
+   * e.g. ['destructive','write'] blocks a web page from talking the agent
+   * into a shell command. Default: none (opt-in).
+   */
+  readonly denyExternalTriggered?: readonly SideEffect[];
 }
 
 /**
@@ -25,8 +31,9 @@ export interface ToolPolicyOptions {
  *  1. Non-tool target → `otherwise` (abstain — another engine owns it).
  *  2. `tool://` naming no registered tool → `unknownTool` (default deny).
  *  3. Tool requires permissions the agent lacks → deny.
- *  4. Destructive (or configured) side effects → require_approval.
- *  5. Otherwise → allow.
+ *  4. External-triggered side effect in `denyExternalTriggered` → deny.
+ *  5. Destructive (or configured) side effects → require_approval.
+ *  6. Otherwise → allow.
  *
  * This is the baseline policy; deployments layer OPA/Rego behind the
  * same PolicyEngine interface for richer, declarative rules.
@@ -38,6 +45,7 @@ export function createToolPolicy(
   const approvalFor = new Set(options.approvalFor ?? ['destructive']);
   const otherwise = options.otherwise ?? 'allow';
   const unknownTool = options.unknownTool ?? 'deny';
+  const denyExternal = new Set(options.denyExternalTriggered ?? []);
 
   return {
     evaluate(action: Action, ctx: PolicyContext): PolicyDecision {
@@ -47,6 +55,7 @@ export function createToolPolicy(
 
       const missing = tool.permissions.filter((p) => !ctx.grants.includes(p));
       if (missing.length > 0) return 'deny';
+      if (ctx.provenance?.lowest === 'external' && denyExternal.has(tool.sideEffects)) return 'deny';
       if (approvalFor.has(tool.sideEffects)) return 'require_approval';
       return 'allow';
     },

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createGoal } from '@naro/core';
-import { pgPool, PgCheckpointStore, PgAgentBus, PgLeaseStore, PgLimitStore, PgMemoryStore, PgEventStore } from './index.ts';
+import { pgPool, PgCheckpointStore, PgAgentBus, PgLeaseStore, PgLimitStore, PgMemoryStore, PgEventStore, PgRunRegistry } from './index.ts';
 import { checkpointStoreContract, memoryStoreContract, eventExporterContract } from '@naro/contract-tests';
 
 const url = process.env['NARO_PG_URL'];
@@ -12,7 +12,8 @@ const describePg = url ? test : test.skip;
 if (url) {
   checkpointStoreContract('PgCheckpointStore', async () => PgCheckpointStore.create(await pgPool(url)));
   memoryStoreContract('PgMemoryStore', async () => PgMemoryStore.create(await pgPool(url)));
-  eventExporterContract('PgEventStore', async () => PgEventStore.create(await pgPool(url)));
+  eventExporterContract('PgEventStore', async () => PgEventStore.create(await pgPool(url)),
+    async (exp) => (await (exp as PgEventStore).history()).map((e) => JSON.stringify(e)));
 }
 
 describePg('pg integration (requires NARO_PG_URL)', async () => {
@@ -62,5 +63,20 @@ describePg('pg integration (requires NARO_PG_URL)', async () => {
     await ev.export([{ id: 'e1', type: 'agent.created', seq: 1, at: 1, agentId: 'a', goalId: 'g', runId: 'r', data: { name: 'x' } }]);
     const hist = await ev.history({ runId: 'r' });
     assert.equal(hist.length, 1);
+  });
+
+  test('run registry: upsert → get → newest-first list', async () => {
+    const reg = await PgRunRegistry.create(pool);
+    const run = {
+      runId: `pg-run-${Date.now()}`, agentId: 'a1', status: 'running' as const,
+      goal: 'g', startedAt: Date.now(), updatedAt: Date.now(), host: 'h1',
+    };
+    await reg.upsert(run);
+    await reg.upsert({ ...run, status: 'completed', updatedAt: Date.now(), result: { ok: 1 } });
+    const got = await reg.get(run.runId);
+    assert.equal(got?.status, 'completed');
+    assert.deepEqual(got?.result, { ok: 1 });
+    assert.equal((await reg.list())[0]?.runId, run.runId);
+    assert.equal(await reg.get('nope'), undefined);
   });
 });

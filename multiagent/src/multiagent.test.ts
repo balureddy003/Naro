@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createGoal } from '@naro/core';
 const GOAL = createGoal({ description: 'test goal' });
-import { AgentDirectory, InMemoryAgentBus, delegationTool } from './index.ts';
+import { AgentDirectory, InMemoryAgentBus, delegationTool, delegationConstraints } from './index.ts';
 
 test('directory registers agents and finds exact capabilities', () => {
   const directory = new AgentDirectory();
@@ -40,5 +40,34 @@ test('delegation tool requires a grant and rejects agents outside the directory'
   await assert.rejects(
     tool.execute({ agent: 'unknown', goal: 'work' }, { agentId: 'lead', goalId: 'goal' , goal: GOAL, grants: []}),
     /unknown agent/,
+  );
+});
+
+test('bounded delegation: depth cap enforced, caps/grants/context travel in goal metadata', async () => {
+  const bus = new InMemoryAgentBus();
+  let childGoal: import('@naro/core').Goal | undefined;
+  bus.serve('researcher', (msg) => { childGoal = msg.goal; return Promise.resolve('done'); });
+
+  const tool = delegationTool(bus, 'lead', undefined, {
+    maxDepth: 1,
+    allowedCapabilities: ['fs.read'],
+    grants: ['tool.invoke'],
+    context: 'only look at src/auth/',
+  });
+  const parentCtx = { agentId: 'lead', goalId: GOAL.id, goal: GOAL, grants: [] };
+
+  await tool.execute({ agent: 'researcher', goal: 'find the auth bug' }, parentCtx);
+  assert.ok(childGoal);
+  assert.equal(delegationConstraints(childGoal).depth, 1);
+  assert.deepEqual(delegationConstraints(childGoal).capabilities, ['fs.read']);
+  assert.deepEqual(delegationConstraints(childGoal).grants, ['tool.invoke']);
+  assert.match(childGoal.description, /only look at src\/auth\//);
+  assert.match(childGoal.constraints.join(), /fs\.read/);
+
+  // The child at depth 1 cannot delegate further under maxDepth: 1.
+  await assert.rejects(
+    tool.execute({ agent: 'researcher', goal: 'go deeper' },
+      { ...parentCtx, goal: childGoal }),
+    /delegation depth 1 reached/,
   );
 });

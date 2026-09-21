@@ -4,6 +4,7 @@ import {
   createTask,
   createObservation,
   isStopped,
+  newId,
   type Action,
   type ActionExecutor,
   type ActionInput,
@@ -20,9 +21,11 @@ import {
   type ReasoningContext,
   type StatefulReasoner,
   type Task,
+  type TrustLevel,
   type Verifier,
 } from '@naro/core';
 import { EventBus } from './event-bus.ts';
+import { recoverSession, readJournal, type JournalSource, type RecoveredSession } from './session.ts';
 import { TimeoutError } from './timeout.ts';
 import { retry, type RetryPolicy } from './retry.ts';
 import { createCheckpoint, type CheckpointStore } from './checkpoint.ts';
@@ -68,6 +71,13 @@ export interface AgentDeps {
   readonly budgets?: { maxTotalTokens?: number; maxCostUsd?: number };
   /** Per-action execution deadline (ms). 0 = no timeout. */
   readonly actionTimeoutMs?: number;
+  /**
+   * Ed25519 private key (PEM) used to seal the journal at run end —
+   * `journal.sealed` signs the chain head, so the exported journal proves
+   * it ends where this key-holder left it. Key custody is yours (KMS/HSM);
+   * a paused run is NOT sealed — it may resume.
+   */
+  readonly sealKey?: string;
   /** Retry policy applied to action execution. Default: none. */
   readonly retry?: RetryPolicy;
 }
@@ -76,6 +86,19 @@ export interface RunOptions {
   readonly signal?: AbortSignal;
   /** Resume from the latest checkpoint (requires `checkpoints`). */
   readonly resume?: boolean;
+  /**
+   * Resume from the journal instead of a checkpoint — session as the
+   * source of truth. Combined with `resume: true`; when present, no
+   * checkpoint store is needed and `seq`/chain head continue from the
+   * journal's last event.
+   */
+  readonly journal?: readonly NaroEvent[];
+  /**
+   * Caller-assigned run identity (fresh runs only — resumes take the
+   * journal's runId). Lets an outer system (HTTP API, scheduler) correlate
+   * its own run handle with the journal's `runId` on every event.
+   */
+  readonly runId?: string;
 }
 
 export type RunStatus = 'completed' | 'failed' | 'cancelled' | 'paused';
@@ -106,6 +129,10 @@ export class AgentRunner {
   private readonly actions: Action[] = [];
   private readonly contextItems: ContextItem[] = [];
   private iteration = 0;
+  /** Observations recorded during the previous iteration — the evidence
+   *  the reasoner saw when it produced this iteration's decision. */
+  private lastIterationObservations: readonly Observation[] = [];
+  private iterObsStart = 0;
   private readonly usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0 };
   private pauseRequested = false;
   private readonly deps: AgentDeps;
@@ -156,9 +183,84 @@ export class AgentRunner {
     this.pauseRequested = true;
   }
 
+  /**
+   * Wake a run from its journal alone — no checkpoint required.
+   * `source` is an event list or any store with `history()` (SQLite, Pg,
+   * a parsed JSONL file). Without `runId`, the most recent run in the
+   * journal for this agent continues. Chain, seq, and runId extend the
+   * journal's last event, so the woken run reads as one audit trail.
+   */
+  async wake(
+    source: JournalSource | readonly NaroEvent[],
+    runId?: string,
+  ): Promise<RunResult> {
+    const base = await readJournal(
+      source,
+      runId !== undefined ? { runId } : { agentId: this.deps.spec.id },
+    );
+    let events = base.filter((e) => e.agentId === this.deps.spec.id);
+    if (runId === undefined && events.length > 0) {
+      const latest = events.reduce((a, b) => (b.seq > a.seq || b.at > a.at ? b : a)).runId;
+      events = events.filter((e) => e.runId === latest);
+    }
+    if (events.length === 0) {
+      throw new Error(`wake: no journal events for agent '${this.deps.spec.id}'${runId ? ` run '${runId}'` : ''} — refusing to start fresh under a resumed identity`);
+    }
+    if (events.at(-1)?.type === 'journal.sealed') {
+      // A seal is a signature over finality — continuing it would break
+      // the guarantee the signature makes.
+      throw new Error(`wake: run '${events.at(-1)!.runId}' is sealed — the journal is signed as complete and cannot be resumed`);
+    }
+    return this.run({ resume: true, journal: events });
+  }
+
+  /**
+   * Compact the session — a kernel operation on the journal, not a
+   * prompt-side window. Emits `session.compacted` so the summary is part
+   * of the audit trail, and swaps this runner's evidence list for the
+   * summary plus the `keepObservations` most recent. Journals rebuilt by
+   * `wake()` apply the same collapse.
+   */
+  compact(summary: string, opts: { keepObservations?: number } = {}): void {
+    const keep = Math.max(0, opts.keepObservations ?? 0);
+    const kept = this.observations.slice(-keep);
+    const dropped = this.observations.length - kept.length;
+    this.bus.emit('session.compacted', {
+      upToSeq: this.bus.nextSeq() - 1,
+      summary,
+      ...(dropped > 0 && { droppedObservations: dropped }),
+    });
+    this.observations.splice(0, this.observations.length,
+      createObservation({ source: 'session', kind: 'system', success: true, output: summary }),
+      ...kept);
+  }
+
   async run(options: RunOptions = {}): Promise<RunResult> {
     const { signal } = options;
     const { spec } = this.deps;
+    let recovered: RecoveredSession | undefined;
+
+    // Caller-assigned run identity — before any emit so every event of a
+    // fresh run carries it. Resumes ignore it: the journal's runId wins.
+    if (options.runId !== undefined && !options.resume) {
+      this.bus.resumeJournal(options.runId, this.bus.nextSeq());
+    }
+
+    // A resumed run continues the prior journal — runId, sequence, and
+    // hash-chain head — so every event of the resumed run links into the
+    // same audit trail. Must happen before the first emit.
+    if (options.resume) {
+      if (options.journal !== undefined) {
+        const s = recoverSession(options.journal);
+        if (s.runId) {
+          recovered = s;
+          this.bus.resumeJournal(s.runId, s.seq, s.head);
+        }
+      } else {
+        const cp = await this.deps.checkpoints?.latest(spec.id);
+        if (cp?.data.runId) this.bus.resumeJournal(cp.data.runId, cp.data.seq ?? 0, cp.data.head);
+      }
+    }
 
     this.bus.emit('agent.created', { name: spec.name });
     this.bus.emit('goal.started', { goal: spec.goal });
@@ -186,7 +288,8 @@ export class AgentRunner {
       }
 
       if (options.resume) {
-        await this.resumeFromCheckpoint();
+        if (recovered) this.hydrateSession(recovered);
+        else await this.resumeFromCheckpoint();
       } else {
         this.transition('UNDERSTANDING');
         this.transition('PLANNING');
@@ -199,7 +302,7 @@ export class AgentRunner {
         if (this.pauseRequested) {
           this.transition('PAUSED');
           this.bus.emit('agent.paused', {});
-          await this.saveCheckpoint();
+          await this.saveCheckpoint({ evenIfPaused: true });
           return { status: 'paused', state: this.state, events: this.bus.history() };
         }
         if (this.iteration >= (this.deps.maxIterations ?? 64)) {
@@ -208,6 +311,9 @@ export class AgentRunner {
 
         // From here to the end of the loop, control returns to REASONING.
         if (this.state !== 'REASONING') this.transition('REASONING');
+        // Provenance window: what the reasoner saw before deciding now.
+        this.lastIterationObservations = this.observations.slice(this.iterObsStart);
+        this.iterObsStart = this.observations.length;
         this.bus.emit('reasoning.started', { iteration: this.iteration });
         const decision = await this.deps.reasoner.decide(this.reasoningContext());
         this.bus.emit('reasoning.completed', { iteration: this.iteration, decision: decision.kind });
@@ -261,7 +367,7 @@ export class AgentRunner {
         this.transition('WAITING_FOR_CONTEXT');
         const items = (await this.deps.context?.retrieve(decision.query)) ?? [];
         this.contextItems.push(...items);
-        this.bus.emit('context.retrieved', { query: decision.query, itemCount: items.length });
+        this.bus.emit('context.retrieved', { query: decision.query, itemCount: items.length, items: [...items] });
         return 'continue'; // WAITING_FOR_CONTEXT → REASONING at loop top
       }
 
@@ -302,7 +408,10 @@ export class AgentRunner {
           this.transition('VERIFYING');
           this.bus.emit('verification.started', { subject: 'goal' });
           const v = await this.deps.verifier.verify({ goal: this.deps.spec.goal, result: decision.result });
-          this.bus.emit('verification.completed', { ok: v.ok, ...(v.reason !== undefined && { reason: v.reason }) });
+          this.bus.emit('verification.completed', {
+            ok: v.ok, verifier: this.deps.verifier.id,
+            ...(v.reason !== undefined && { reason: v.reason }),
+          });
           if (!v.ok) {
             this.transition('REPLANNING');
             this.bus.emit('replan.triggered', { reason: v.reason ?? 'final verification failed' });
@@ -357,6 +466,7 @@ export class AgentRunner {
       agentId: this.deps.spec.id,
       goal: this.deps.spec.goal,
       grants: this.deps.grants ?? [],
+      provenance: this.provenance(),
     });
 
     if (verdict === 'deny') {
@@ -479,6 +589,22 @@ export class AgentRunner {
     }
   }
 
+  /**
+   * Lowest trust among the observations the reasoner saw last iteration —
+   * 'external' < 'tool' < 'system'. Lets policy refuse side effects that
+   * untrusted content may have talked the model into.
+   */
+  private provenance(): { lowest: TrustLevel; externalSources: readonly string[] } {
+    const RANK: Record<TrustLevel, number> = { external: 0, tool: 1, system: 2 };
+    let lowest: TrustLevel = 'system';
+    const external = new Set<string>();
+    for (const o of this.lastIterationObservations) {
+      if (RANK[o.trust] < RANK[lowest]) lowest = o.trust;
+      if (o.trust === 'external') external.add(o.source);
+    }
+    return { lowest, externalSources: [...external] };
+  }
+
   // --- internals ---
 
   private reasoningContext(): ReasoningContext {
@@ -515,9 +641,15 @@ export class AgentRunner {
     this.bus.emit('agent.state_changed', { from, to });
   }
 
-  private async saveCheckpoint(): Promise<void> {
+  private async saveCheckpoint(opts: { evenIfPaused?: boolean } = {}): Promise<void> {
     const store = this.deps.checkpoints;
-    if (!store || isStopped(this.state)) return;
+    if (!store) return;
+    if (isStopped(this.state) && !(opts.evenIfPaused && this.state === 'PAUSED')) return;
+    // Emit BEFORE capturing seq/head: the checkpoint must record the journal
+    // position *including* this event, or the resumed run's first event
+    // would reuse its seq and link past it — a fork in the hash chain.
+    const id = newId('ckpt');
+    this.bus.emit('checkpoint.created', { checkpointId: id });
     const cp = createCheckpoint(this.deps.spec.id, this.state, {
       iteration: this.iteration,
       tasks: [...this.tasks.values()],
@@ -529,9 +661,23 @@ export class AgentRunner {
       }),
       runId: this.bus.runId,
       seq: this.bus.nextSeq(),
-    });
+      head: this.bus.head(),
+    }, id);
     await store.save(cp);
-    this.bus.emit('checkpoint.created', { checkpointId: cp.id });
+  }
+
+  /**
+   * Hydrate run state from a journal-recovered session — the wake path.
+   * Same end state as resumeFromCheckpoint, sourced from events.
+   */
+  private hydrateSession(s: RecoveredSession): void {
+    for (const task of s.tasks) this.tasks.set(task.id, task);
+    this.actions.push(...s.actions);
+    this.observations.push(...s.observations);
+    this.contextItems.push(...s.context);
+    this.iteration = s.iteration;
+    this.transition('RECOVERING');
+    this.bus.emit('agent.resumed', {});
   }
 
   private async resumeFromCheckpoint(): Promise<void> {
@@ -554,8 +700,9 @@ export class AgentRunner {
     // Reasoner state (pending tool calls, plan flags) survives resume.
     const sr = this.deps.reasoner as StatefulReasoner;
     if (cp.data.reasonerState !== undefined && sr.restoreState) sr.restoreState(cp.data.reasonerState);
-    // One continuous journal: same runId, sequence continues.
-    if (cp.data.runId) this.bus.resumeJournal(cp.data.runId, cp.data.seq ?? 0);
+    // Journal continuation (runId, seq, chain head) already happened in
+    // run() — before the first emit — so every event of this run links
+    // into the original chain.
     this.transition('RECOVERING');
     this.bus.emit('agent.resumed', { checkpointId: cp.id });
   }
@@ -571,6 +718,9 @@ export class AgentRunner {
     if (status === 'completed') this.bus.emit('agent.completed', { result: extra.result, ...usage });
     if (status === 'failed') this.bus.emit('agent.failed', { error: extra.error ?? 'unknown', ...usage });
     if (status === 'cancelled') this.bus.emit('agent.cancelled', { reason: extra.reason ?? '', ...usage });
+    // Seal last — the signature covers every event up to and including the
+    // terminal one. Paused runs are deliberately unsealed: they resume.
+    if (status !== 'paused' && this.deps.sealKey) this.bus.seal(this.deps.sealKey);
     const out: RunResult = { status, state: this.state, events: this.bus.history() };
     if (extra.result !== undefined) (out as { result?: unknown }).result = extra.result;
     if (extra.error !== undefined) (out as { error?: string }).error = extra.error;

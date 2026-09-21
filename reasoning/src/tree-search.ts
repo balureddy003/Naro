@@ -130,7 +130,7 @@ export class TreeSearchReasoner implements Reasoner {
           observations: [...ctx.observations, {
             id: 'sim', at: Date.now(), actionId: 'sim',
             source: 'sim://world-model', kind: 'tool-result',
-            success: true, output: predicted.output,
+            success: true, output: predicted.output, trust: 'tool',
           }],
         };
         const child = await this.expand(childCtx, depth - 1);

@@ -49,6 +49,8 @@ export class McpToolSource implements ToolSource {
       inputSchema: (t.inputSchema ?? { type: 'object' }) as JsonSchema,
       permissions: [],
       sideEffects,
+      // A remote server's output is authored outside this system.
+      trust: 'external',
       metadata: { origin: 'mcp' },
       execute: async (input) => {
         const res = await client.callTool({

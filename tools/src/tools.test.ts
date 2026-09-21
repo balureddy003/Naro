@@ -82,6 +82,29 @@ test('policy: missing permissions deny; destructive requires approval', () => {
   assert.equal(policy.evaluate(rmAction, { ...ctx, grants: ['fs.delete'] }), 'require_approval');
 });
 
+test('denyExternalTriggered refuses side effects on external evidence', () => {
+  const registry = new ToolRegistry().register(rmrf);
+  const policy = createToolPolicy(registry, { denyExternalTriggered: ['destructive'] });
+  const ctx = { agentId: 'a', goal: { id: 'g' } as never, grants: ['fs.delete'] };
+  const rmAction = createAction('a', { capability: 'tool.invoke', target: 'tool://delete-everything' });
+
+  const externalCtx = { ...ctx, provenance: { lowest: 'external' as const, externalSources: ['env://browser'] } };
+  assert.equal(policy.evaluate(rmAction, externalCtx), 'deny');
+
+  const toolCtx = { ...ctx, provenance: { lowest: 'tool' as const, externalSources: [] } };
+  assert.equal(policy.evaluate(rmAction, toolCtx), 'require_approval');
+
+  assert.equal(policy.evaluate(rmAction, ctx), 'require_approval'); // no provenance → unchanged
+});
+
+test('tool trust flows onto the success observation', async () => {
+  const ext = { ...calculator, name: 'web-fetch', trust: 'external' as const };
+  const obs = await exec(new ToolExecutor(new ToolRegistry().register(ext)), 'tool://web-fetch', { a: 1, b: 2 });
+  assert.equal(obs.trust, 'external');
+  const plain = await exec(new ToolExecutor(new ToolRegistry().register(calculator)), 'tool://calculator', { a: 1, b: 2 });
+  assert.equal(plain.trust, 'tool');
+});
+
 test('ToolSource discovery populates the registry', async () => {
   const registry = new ToolRegistry();
   registry.addSource({ id: 'local', discover: () => [calculator] });

@@ -92,10 +92,16 @@
       "path": "examples/coding-agent"
     },
     {
+      "path": "examples/governed-agent"
+    },
+    {
       "path": "./adapters/gemini"
     },
     {
       "path": "./adapters/postgres"
+    },
+    {
+      "path": "./adapters/harness"
     }
   ],
   "extends": "./tsconfig.base.json",

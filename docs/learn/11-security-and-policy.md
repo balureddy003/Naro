@@ -32,6 +32,12 @@ Preserve provenance, delimit untrusted content, minimize exposed tools, and
 verify actions outside the model. Delimiters help the model understand the
 boundary; they do not create a security boundary by themselves.
 
+Naro enforces this: every `Observation` carries a `trust` level (`system`,
+`tool`, `external`), transcripts delimit external evidence behind the
+strongest banner, and the gate sees `ctx.provenance` — the lowest trust of
+the evidence the reasoner just read — so `createToolPolicy({denyExternalTriggered})`
+can refuse side effects that outside content talked the model into.
+
 ### 2. Privilege escalation
 
 The model requests a capability the agent does not hold. Evaluate the action
@@ -103,7 +109,10 @@ Combine it with:
 
 A policy decision should also be observable. Naro's event stream records action
 requests, permission decisions, approvals, execution, and observations so a run
-can be reconstructed.
+can be reconstructed. The journal is hash-chained: each event covers its
+predecessor's hash, so a stored audit file that was edited, truncated, or
+reordered fails `naro verify <run.jsonl>`. That makes the trail tamper-*evident*;
+keeping a copy the writer cannot reach is what makes it trustworthy.
 
 ## Review checklist
 

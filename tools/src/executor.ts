@@ -70,6 +70,7 @@ export class ToolExecutor implements ActionExecutor {
       source: action.target,
       kind: 'tool-result',
       success: true,
+      trust: tool.trust ?? 'tool',
       output,
     });
   }

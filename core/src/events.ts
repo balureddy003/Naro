@@ -4,6 +4,7 @@ import type { Action } from './action.ts';
 import type { Observation } from './observation.ts';
 import type { AgentState } from './state.ts';
 import type { ModelUsage } from './reasoner.ts';
+import type { ContextItem } from './context.ts';
 
 /**
  * Everything meaningful inside an agent execution is an event.
@@ -20,7 +21,7 @@ export interface EventDataMap {
   'goal.started':               { goal: Goal };
   'task.created':               { task: Task };
   'plan.created':               { tasks: Task[] };
-  'context.retrieved':          { query: string; itemCount: number };
+  'context.retrieved':          { query: string; itemCount: number; items?: ContextItem[] };
   'reasoning.started':          { iteration: number };
   'reasoning.completed':        { iteration: number; decision: DecisionKind };
   /** Token/cost accounting for one model call, plus running totals. */
@@ -37,6 +38,16 @@ export interface EventDataMap {
   'replan.triggered':           { reason: string };
   'memory.written':             { key: string };
   'checkpoint.created':         { checkpointId: string };
+  /**
+   * Kernel-level session compaction: events at or before `upToSeq` are
+   * represented by `summary` when a session is rebuilt from the journal.
+   * The events themselves are never rewritten — compaction is an event.
+   */
+  'session.compacted':          { upToSeq: number; summary: string; droppedObservations?: number };
+  /** Terminal seal: the journal head signed by an Ed25519 key. `head`
+   *  equals this event's `prev`, making the seal self-verifying — rewrite
+   *  or extend the chain and the signature fails. */
+  'journal.sealed':             { head: string; signature: string; publicKey: string; algorithm: 'ed25519' };
   'human.approval.requested':   { action?: Action; question?: string };
   'human.approval.received':    { approved: boolean; note?: string };
   'agent.state_changed':        { from: AgentState; to: AgentState };
@@ -69,4 +80,11 @@ export type NaroEvent<T extends EventType = EventType> = T extends T ? {
   /** Which execution of this agent produced it — a fresh run gets a fresh runId. */
   readonly runId: string;
   readonly data: EventDataMap[T];
+  /**
+   * Hash of the preceding event in this run's chain — `GENESIS_HASH` for the
+   * first event. Absent on events written before chaining existed.
+   */
+  readonly prev?: string;
+  /** sha256 over the canonical form of this event, excluding `hash`. */
+  readonly hash?: string;
 } : never;

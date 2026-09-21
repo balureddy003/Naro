@@ -36,4 +36,19 @@ export function eventExporterContract(
     const seqs = lines.map((l) => (JSON.parse(l) as NaroEvent).seq);
     assert.deepEqual(seqs, [1, 2, 3, 4, 5]);
   });
+
+  test(`${name}: hash-chain fields survive the round trip`, async () => {
+    const exp = await make();
+    if (!readBack) return;
+    const chained = { ...ev(1), prev: 'a'.repeat(64), hash: 'b'.repeat(64) };
+    const legacy = ev(2); // no prev/hash — must read back without phantom fields
+    await exp.export([chained, legacy]);
+    await exp.flush?.();
+    const lines = await readBack(exp);
+    const back = lines.map((l) => JSON.parse(l) as NaroEvent);
+    assert.equal(back[0]!.prev, 'a'.repeat(64));
+    assert.equal(back[0]!.hash, 'b'.repeat(64));
+    assert.equal(back[1]!.prev, undefined);
+    assert.equal(back[1]!.hash, undefined);
+  });
 }
