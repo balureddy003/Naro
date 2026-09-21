@@ -21,11 +21,13 @@ describePg('pg integration (requires NARO_PG_URL)', async () => {
 
   test('checkpoints: save → latest → agent isolation', async () => {
     const s = await PgCheckpointStore.create(pool);
-    await s.save({ id: 'c1', agentId: 'a1', state: 'REASONING', at: 1, data: { iteration: 1 } } as never);
-    await s.save({ id: 'c2', agentId: 'a1', state: 'REASONING', at: 2, data: { iteration: 2 } } as never);
-    const got = await s.latest('a1');
+    // Unique agent ids — the contract suite shares this table.
+    const me = `pg-int-${Date.now()}`;
+    await s.save({ id: 'c1', agentId: me, state: 'REASONING', at: 1, data: { iteration: 1 } } as never);
+    await s.save({ id: 'c2', agentId: me, state: 'REASONING', at: 2, data: { iteration: 2 } } as never);
+    const got = await s.latest(me);
     assert.equal((got?.data as { iteration: number }).iteration, 2);
-    assert.equal(await s.latest('a2'), undefined);
+    assert.equal(await s.latest(`${me}-other`), undefined);
   });
 
   test('leases: one holder, expiry, release', async () => {
@@ -54,14 +56,16 @@ describePg('pg integration (requires NARO_PG_URL)', async () => {
 
   test('memory + events round-trip', async () => {
     const mem = await PgMemoryStore.create(pool);
-    await mem.write({ key: 'k', content: { v: 1 }, tier: 'semantic', tags: ['t'] });
-    assert.deepEqual((await mem.read('k'))?.content, { v: 1 });
+    const key = `pg-mem-${Date.now()}`; // unique — the contract suite shares this table
+    await mem.write({ key, content: { v: 1 }, tier: 'semantic', tags: ['t'] });
+    assert.deepEqual((await mem.read(key))?.content, { v: 1 });
     assert.ok((await mem.search('t', 5)).length >= 0);
-    assert.equal(await mem.forget('k'), true);
+    assert.equal(await mem.forget(key), true);
 
     const ev = await PgEventStore.create(pool);
-    await ev.export([{ id: 'e1', type: 'agent.created', seq: 1, at: 1, agentId: 'a', goalId: 'g', runId: 'r', data: { name: 'x' } }]);
-    const hist = await ev.history({ runId: 'r' });
+    const runId = `pg-ev-${Date.now()}`;
+    await ev.export([{ id: `${runId}-e1`, type: 'agent.created', seq: 1, at: 1, agentId: 'a', goalId: 'g', runId, data: { name: 'x' } }]);
+    const hist = await ev.history({ runId });
     assert.equal(hist.length, 1);
   });
 

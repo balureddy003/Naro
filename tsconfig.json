@@ -102,6 +102,9 @@
     },
     {
       "path": "./adapters/harness"
+    },
+    {
+      "path": "./adapters/opa"
     }
   ],
   "extends": "./tsconfig.base.json",
