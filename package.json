@@ -36,6 +36,7 @@
     "example:coding": "node examples/coding-agent/src/index.ts",
     "example:governed": "node examples/governed-agent/src/index.ts",
     "example:research": "node examples/research-agent/src/index.ts",
+    "example:production": "node cli/src/bin.ts serve examples/production-agent/src/agent.ts",
     "dogfood:server": "node dogfood/src/server.ts",
     "pack:check": "node scripts/pack-check.mjs",
     "changeset": "changeset",

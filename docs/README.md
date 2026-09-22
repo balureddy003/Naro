@@ -42,6 +42,7 @@ needs them, rather than introducing new ones:
 | 3 | [Coding agent](../examples/coding-agent/README.md) | `npm run example:coding` | 05 |
 | 4 | [Governed agent](../examples/governed-agent/README.md) | `npm run example:governed` | 08, 11, 12 |
 | 5 | [Research agent](../examples/research-agent/README.md) | `npm run example:research` | 04, 11 |
+| 6 | [Production agent](../examples/production-agent/README.md) — a real model, approval-gated destructive actions, a real verifier, durable stores (SQLite/Postgres), evidence export | `npm run example:production` | getting-started.md, use-cases.md |
 
 ## Tutorials and use cases (🟡 practitioner entry point)
 
