@@ -22,11 +22,12 @@ or a small service. Nothing else to deploy.
 
 N replicas of `naro serve` behind a load balancer, every durable port on
 Postgres (`@naro/adapter-pg` — events, checkpoints, memory, leases, limits,
-agent bus). This is the deploy/k8s manifest. `naro serve` itself picks up
-`NARO_PG_URL` (or `--pg`) for the control-plane run registry and journal;
-the agent module's own `AgentDeps` (checkpoints, leases, limits, memory,
-bus) still wire their Postgres stores explicitly in `createRunner()` —
-see the [`@naro/adapter-pg` README](../adapters/postgres/README.md).
+agent bus, approvals). This is the deploy/k8s manifest. `naro serve` itself
+picks up `NARO_PG_URL` (or `--pg`) for the control-plane run registry,
+journal, and approval queue; the agent module's own `AgentDeps`
+(checkpoints, leases, limits, memory, bus) still wire their Postgres stores
+explicitly in `createRunner()` — see the
+[`@naro/adapter-pg` README](../adapters/postgres/README.md).
 
 - **Session survives pod death.** The journal is in Postgres, not memory:
   `wake(runId)` on any pod rebuilds the run — same runId, same hash chain.
@@ -75,20 +76,19 @@ safe across replicas), and the returned `runId` IS the journal `runId`, so
 events, exports, and `wake(runId)` correlate with it. `GET /runs` reads the
 registry, `GET /runs/:id`, SSE tail at `GET /runs/:id/events` — live on the
 owning replica, replayed from the shared journal elsewhere — `GET
-/approvals` + `POST /approvals/:id` when `--approvals <db>` wires a shared
-`SqliteApprovalBridge`, `GET /health` + `GET /ready` probes
+/approvals` + `POST /approvals/:id` when `--approvals <db>` (SQLite) or
+`--approvals-pg <url>` / the shared `--pg`/`NARO_PG_URL` (Postgres) wires a
+shared approval bridge, `GET /health` + `GET /ready` probes
 (unauthenticated), 64 KiB body cap, and SIGTERM drain — in-flight runs
 abort and their journals end `agent.cancelled`.
 
-With `--registry` + `--journal` (SQLite, single host) or `--pg <url>` /
-`NARO_PG_URL` (Postgres, `--registry-pg`/`--journal-pg` to split them),
-N-replica `naro serve` is real: any replica answers `/runs` and
-`/runs/:id/events` for every run. Approvals are shared only on the SQLite
-path today (`--approvals <db>`, `SqliteApprovalBridge`) — there is no
-`PgApprovalBridge` yet, so a Postgres deployment's `/approvals` queue is
-still per-replica; point `--approvals` at a SQLite file on shared storage,
-or a network filesystem, until one ships. **Metrics** are OTel push
-(logs/events); a `/metrics` scrape endpoint is a reasonable next addition.
+With `--registry` + `--journal` + `--approvals` (SQLite, single host) or
+`--pg <url>` / `NARO_PG_URL` (Postgres, `--registry-pg`/`--journal-pg`/
+`--approvals-pg` to split them), N-replica `naro serve` is real: any
+replica answers `/runs`, `/runs/:id/events`, and `/approvals` for every
+run — `PgApprovalBridge` closes the last per-replica gap. **Metrics** are
+OTel push (logs/events); a `/metrics` scrape endpoint is a reasonable next
+addition.
 
 Internal rule: **never expose a Naro port without something in front of it.**
 The built-in bearer checks are a minimal gate, not an authz model — tenant

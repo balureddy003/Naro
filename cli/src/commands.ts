@@ -11,7 +11,7 @@ import { SqliteApprovalBridge, SqliteRunRegistry } from '@naro/runtime';
 // `--journal-pg` flag actually calls pgPool(): it dynamically imports the
 // optional 'pg' peer dependency only then, so `naro serve` without Postgres
 // flags never requires 'pg' to be installed.
-import { pgPool, PgEventStore, PgRunRegistry } from '@naro/adapter-pg';
+import { pgPool, PgApprovalBridge, PgEventStore, PgRunRegistry } from '@naro/adapter-pg';
 import { startAgentServer, type RunnerFactory, type ServeOptions } from './serve.ts';
 
 export interface CliIO {
@@ -57,10 +57,11 @@ const HELP = `naro — universal agent foundation CLI
                                cross-replica GET /runs/:id/events (SQLite)
                              [--approvals <file.db>] — expose /approvals
                              [--pg <url> | NARO_PG_URL] — Postgres-backed
-                               registry + journal for N-replica naro serve;
-                               overridden per-store by --registry-pg/--journal-pg;
+                               registry + journal + approvals for N-replica
+                               naro serve; overridden per-store by
+                               --registry-pg/--journal-pg/--approvals-pg;
                                requires the optional 'pg' package
-                             [--registry-pg <url>] [--journal-pg <url>]
+                             [--registry-pg <url>] [--journal-pg <url>] [--approvals-pg <url>]
                              module exports createRunner(goal): AgentRunner
   naro approvals --db <db> list pending human-in-the-loop requests
   naro approve <id> --db <db> [--deny] [--note 'why']
@@ -224,24 +225,29 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
       const registryPath = flag('--registry');
       const journalPath = flag('--journal');
       const approvalsPath = flag('--approvals');
-      // A shared --pg/NARO_PG_URL backs both stores; --registry-pg/--journal-pg
-      // override it per-store; see resolveServeStore() for the precedence.
+      // A shared --pg/NARO_PG_URL backs all three stores; --registry-pg/
+      // --journal-pg/--approvals-pg override it per-store; see
+      // resolveServeStore() for the precedence.
       const sharedPgUrl = flag('--pg') ?? process.env['NARO_PG_URL'];
       const registrySource = resolveServeStore({ sqlitePath: registryPath, pgUrlFlag: flag('--registry-pg'), sharedPgUrl });
       const journalSource = resolveServeStore({ sqlitePath: journalPath, pgUrlFlag: flag('--journal-pg'), sharedPgUrl });
+      const approvalsSource = resolveServeStore({ sqlitePath: approvalsPath, pgUrlFlag: flag('--approvals-pg'), sharedPgUrl });
 
       let registry: ServeOptions['registry'];
       let journal: ServeOptions['journal'];
+      let approvals: ServeOptions['approvals'];
       try {
         if (registrySource?.kind === 'sqlite') registry = new SqliteRunRegistry(resolve(registrySource.path));
         else if (registrySource?.kind === 'pg') registry = await PgRunRegistry.create(await pgPool(registrySource.url));
         if (journalSource?.kind === 'sqlite') journal = new SqliteEventStore(resolve(journalSource.path));
         else if (journalSource?.kind === 'pg') journal = await PgEventStore.create(await pgPool(journalSource.url));
+        if (approvalsSource?.kind === 'sqlite') approvals = new SqliteApprovalBridge(resolve(approvalsSource.path));
+        else if (approvalsSource?.kind === 'pg') approvals = await PgApprovalBridge.create(await pgPool(approvalsSource.url));
       } catch (e) {
         const notInstalled = e instanceof Error && 'code' in e && e.code === 'ERR_MODULE_NOT_FOUND';
         io.err(notInstalled
-          ? `Postgres registry/journal: the optional 'pg' package is not installed — run 'npm install pg'`
-          : `Postgres registry/journal: ${e instanceof Error ? e.message : String(e)}`);
+          ? `Postgres registry/journal/approvals: the optional 'pg' package is not installed — run 'npm install pg'`
+          : `Postgres registry/journal/approvals: ${e instanceof Error ? e.message : String(e)}`);
         return 2;
       }
 
@@ -259,7 +265,7 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
         ...(principals !== undefined && { principals }),
         ...(registry !== undefined && { registry }),
         ...(journal !== undefined && { journal }),
-        ...(approvalsPath !== undefined && { approvals: new SqliteApprovalBridge(resolve(approvalsPath)) }),
+        ...(approvals !== undefined && { approvals }),
       });
       io.out(`agent serving at ${url} — POST /goals {description}`);
       // Serve until killed. SIGTERM (k8s/compose) and SIGINT both drain:

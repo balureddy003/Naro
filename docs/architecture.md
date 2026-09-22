@@ -220,13 +220,14 @@ don't fit that shape — see the note after the table.
 | `@naro/adapter-opa` | OPA/Rego policy decisions | `core` |
 | `@naro/adapter-otel` | OTLP/HTTP log export | `observability`, `core` |
 | `@naro/adapter-a2a` | A2A agent cards + JSON-RPC task send | `multiagent`, `core` |
-| `@naro/adapter-pg` | Postgres — six ports at once (below) | `runtime`, `multiagent`, `memory`, `policy`, `observability`, `core` |
+| `@naro/adapter-pg` | Postgres — eight ports at once (below) | `runtime`, `multiagent`, `memory`, `policy`, `observability`, `core` |
 | `@naro/adapter-harness` | *nothing* — governs a foreign harness's own hooks | `runtime`, `core` |
 
 `@naro/adapter-pg` implements `CheckpointStore`, `EventStore`/
-`EventExporter`, `MemoryStore`, `LeaseStore`, `LimitStore`, and `AgentBus` on
-Postgres — one package, six ports, because multi-host durability is one
-deployment concern even though the kernel models it as several contracts.
+`EventExporter`, `MemoryStore`, `LeaseStore`, `LimitStore`, `AgentBus`,
+`RunRegistry`, and `HumanBridge` (`PgApprovalBridge`) on Postgres — one
+package, eight ports, because multi-host durability is one deployment
+concern even though the kernel models it as several contracts.
 `@naro/adapter-harness` translates no protocol at all: it runs the policy
 gate and journal *beneath* a foreign agent loop (Claude Agent SDK, OpenCode)
 via that harness's own tool-call hooks, rather than owning a loop itself.
@@ -824,11 +825,12 @@ These are deliberate implementation boundaries, not hidden guarantees:
   host) and Postgres via `@naro/adapter-pg` (the same six ports, durable
   across hosts). There is no third, larger tier — sharding a single Postgres
   further, or a non-relational store, is still an application concern.
-- `naro serve`'s approval queue (`/approvals`) is SQLite-only today —
-  `SqliteApprovalBridge` has no Postgres counterpart, so a Postgres-backed
-  multi-host deployment's approval queue is still per-replica even though its
-  run registry and journal are shared. HTTP and A2A transports are
-  synchronous either way — no async/streaming task protocol is included.
+- `naro serve`'s approval queue (`/approvals`) has both tiers too:
+  `SqliteApprovalBridge` for single-host, `PgApprovalBridge` (`--approvals-pg`
+  or the shared `--pg`/`NARO_PG_URL`) so a multi-host deployment's pending
+  approvals are answerable from any replica, the same as its run registry and
+  journal. HTTP and A2A transports are synchronous either way — no
+  async/streaming task protocol is included.
 - event history supports audit and derived metrics; deterministic replay of
   external side effects requires application-level fixtures or adapters.
 - OTLP export currently emits logs rather than a parented span graph.
