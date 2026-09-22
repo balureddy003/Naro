@@ -1,0 +1,49 @@
+name: Feature or capability request
+description: Propose a new capability, port, adapter, or profile.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read [docs/principles.md](../../docs/principles.md) first — it's the
+        actual review rubric. The two questions that decide most of these:
+        would a *non-coding* agent use this (if not, it's a profile or an
+        application, not core), and is the proposed interface smaller than
+        its implementation?
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The gap or friction you hit, not the solution yet. Link an issue, a use case in docs/use-cases.md, or a real deployment need if you have one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: |
+        What you'd add or change. If this touches the state machine, the
+        event schema, or a public contract (PolicyEngine, Verifier,
+        CheckpointStore, ContextProvider, ...), sketch it in the ADR
+        template from docs/adr/README.md rather than prose.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - Local change (bug-fix sized) — no new public contract
+        - New capability behind an existing contract (a new tool, a new profile behavior)
+        - New public contract or kernel-level change — needs an ADR
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else could solve this, and why is this the better fit? (Mirrors the ADR "alternatives" section — reuse it there if this gets that far.)
