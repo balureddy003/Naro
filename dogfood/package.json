@@ -1,0 +1,15 @@
+{
+  "name": "@naro/dogfood",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Naro governing its own development: a HarnessKernel + policy gate behind this repo's own Claude Code hooks.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "dependencies": {
+    "@naro/core": "0.1.0",
+    "@naro/runtime": "0.1.0",
+    "@naro/policy": "0.1.0",
+    "@naro/observability": "0.1.0",
+    "@naro/adapter-harness": "0.1.0"
+  }
+}

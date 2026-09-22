@@ -13,6 +13,7 @@
   "updateInternalDependencies": "patch",
   "ignore": [
     "@naro/example-*",
-    "@naro/contract-tests"
+    "@naro/contract-tests",
+    "@naro/dogfood"
   ]
 }

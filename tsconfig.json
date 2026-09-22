@@ -108,6 +108,9 @@
     },
     {
       "path": "./adapters/opa"
+    },
+    {
+      "path": "./dogfood"
     }
   ],
   "extends": "./tsconfig.base.json",

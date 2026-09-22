@@ -54,7 +54,8 @@ needs them, rather than introducing new ones:
 - DevOps runbooks;
 - deterministic workflows;
 - robotics;
-- multi-agent delegation.
+- multi-agent delegation;
+- governing a foreign coding harness (Naro governing its own development).
 
 Each use case names its capabilities, controls, evidence, and production
 boundary — start with the "composition checklist" at the top of the page,
@@ -99,6 +100,12 @@ assumes 00–07, and 11–12 assume 08–10:
 - [Design principles](principles.md) — enforceable review rules.
 - [Contract tests](../contract-tests/README.md) — executable compatibility for
   replaceable ports.
+- [CLAUDE.md](../CLAUDE.md) — the context `RepoContextSource` (and any
+  Claude Code session) reads for this repo; also this project's own
+  extension-rules/review-invariants checklist in one place.
+- [`dogfood/`](../dogfood/README.md) — Naro governing its own development:
+  this repo's own policy gate and journal running beneath Claude Code's
+  hooks. See use case 10 in [use-cases.md](use-cases.md).
 - [Documentation style](documentation-style.md) — page types, voice, claim
   standards, and maintenance checklist.
 
