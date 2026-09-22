@@ -44,15 +44,16 @@ infrastructure is going, and is the architecture built for it? Criteria:
 | Claude Agent SDK | Lab harness/SDK | 3.0 | 4.4 |
 | Pydantic AI | Typed orchestration | 3.1 | 3.7 |
 | agent-kernel / Bastion / Weaver | Security kernels | 3.4 | 1.6 |
-| **Naro** | **Evidence-gated kernel** | **4.6** | **1.4** |
+| **Naro** | **Evidence-gated kernel** | **4.7** | **1.4** |
 
 Vision scoring notes — where Naro earns its X: runtime-enforced governance 5
 (policy required, `VERIFYING` is a state), evidence 5 (hash chain + Ed25519
 seal + `naro verify`), decoupling 5 (`wake(runId)`, HTTP environments),
-neutrality 5 (harness adapter beneath Claude/OpenCode), patterns 4 (all
-present; provenance not yet a policy input), domains 4. Nobody else scores
-above 3 on the first three criteria: orchestration frameworks let you
-*build* verification; kernels gate but never check outcomes; lab SDKs are
+neutrality 5 (harness adapter beneath Claude/OpenCode), patterns 5 (all
+present, including provenance as a policy input — ADR 0010, shipped since
+the previous version of this review), domains 4. Nobody else scores above 3
+on the first three criteria: orchestration frameworks let you *build*
+verification; kernels gate but never check outcomes; lab SDKs are
 single-vendor.
 
 Execute scoring notes — where Naro loses its Y: distribution 0 (packages
@@ -141,14 +142,25 @@ cheap; movement on Y is the whole game.
 4. **Reference users.** One regulated-industry deployment that ships an
    evidence bundle to an auditor is worth more than any feature.
 
-**Right (vision) — the one move that widens the moat:**
+**Right (vision) — done since the last review:**
 
-- **Provenance as a policy input.** `Observation.trust`
-  (`system | tool | external`), delimited untrusted content in the
-  transcript, and `ctx.provenance` available to `PolicyEngine` — so a rule
-  can deny `shell.exec` when the triggering observation came from a web
-  page. Prompt injection becomes a kernel-enforced control rather than a
-  prompt-engineering suggestion; no entrant has this. (X: 4.6 → 4.9)
+- ~~Provenance as a policy input.~~ **Shipped** ([ADR 0010](adr/0010-provenance-is-a-policy-input.md)).
+  `Observation.trust` (`system | tool | external`), delimited untrusted
+  content in the transcript, and `ctx.provenance` available to
+  `PolicyEngine` — a rule can deny `shell.exec` when the triggering
+  observation came from a web page. Prompt injection is a kernel-enforced
+  control, not a prompt-engineering suggestion; no other entrant in this
+  field has it. `npm run example:research` demonstrates it; see
+  [architecture.md §2](architecture.md#provenance-is-a-policy-input-not-just-a-transcript-label).
+  (X: patterns 4 → 5, total 4.6 → ~4.7 — this is a single-criterion nudge,
+  not a full re-score of every axis.)
+
+**Right (vision) — the next move that widens the moat:**
+
+- No specific candidate identified yet. The remaining vision gap is
+  breadth (domains 4/5, ecosystem depth) rather than a single missing
+  mechanism — see the "Uniqueness" section above for what's already
+  differentiated.
 
 ## Cautions for a buyer
 
