@@ -14,6 +14,7 @@
     "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@naro/adapter-pg": "0.1.0",
     "@naro/core": "0.1.0",
     "@naro/evaluation": "0.1.0",
     "@naro/observability": "0.1.0",

@@ -99,10 +99,29 @@ can provide evidence; it cannot grant the agent permission.
 **Tenant filters happen too late.** Enforce access control before retrieval
 results reach the model. Prompt instructions are not row-level security.
 
-## Try this
+## Try it
 
-Build twenty questions whose answers you can point to in the source material.
-Measure whether the required chunk appears in the top results. Debug retrieval
-before judging the final prose—the model cannot cite evidence it never saw.
+Build twenty questions whose answers you can point to in the source
+material. Measure whether the required chunk appears in the top results.
+Debug retrieval before judging the final prose—the model cannot cite
+evidence it never saw.
+
+Then read the pipeline for real: open `context/src/engine.ts` (the
+`sources → merge → rank → select → truncate → budget` stages as code) and
+`context/src/keyword-source.ts` (the reference `ContextSource`). Run
+`npm run example:research` and check the research agent's citations —
+`ResearchEnvironment` refuses a citation whose URL was never actually
+fetched, which is provenance enforced structurally, not by convention.
+
+## Check yourself
+
+- Retrieval returns the right document, but the answer still cites the
+  wrong fact. Is that a retrieval problem, a ranking problem, or a
+  budgeting problem — and how would you tell which?
+- Why does "the tenant filter is in the prompt" fail as an access-control
+  strategy, even if the prompt says it clearly?
+- What's the difference between a document *providing evidence* and a
+  document *granting permission* — and which one can retrieved text
+  never do?
 
 Next: [Tool calling and MCP](05-tool-calling.md).

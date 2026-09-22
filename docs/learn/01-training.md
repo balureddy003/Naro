@@ -87,10 +87,29 @@ That separation gives you two useful freedoms:
 - Keep model versions explicit. A silent model upgrade is a production change.
 - Compare cost per successful task, not cost per model call.
 
-## Check your understanding
+## Try it
 
-Suppose an agent gives outdated shipping rules. Fine-tuning might help, but a
-versioned policy source retrieved at run time is usually the better design. It
-can be updated immediately, cited, audited, and filtered by tenant.
+Open `model/src/capabilities.ts` for the `ModelCapability` union, then
+grep for how differently each adapter declares it:
+
+```bash
+grep -n "capabilities" adapters/*/src/*.ts model/src/mock-model.ts
+```
+
+Every adapter (OpenAI-compatible, Anthropic, Gemini, `MockModel`)
+declares its own subset — `tool-calling`, `structured-output`, `vision`,
+`streaming`. Naro checks these declarations before offering a feature,
+instead of degrading silently. This is what "the boundary is `Model`, not
+weights" looks like in actual code.
+
+## Check yourself
+
+- An agent gives outdated shipping rules. Is fine-tuning or retrieval the
+  better first fix — and why does the answer change if the rules must be
+  auditable per tenant?
+- What's the difference between "the model refuses unsafe requests" and
+  "the model is authorized to do safe things"? Which one is Naro's job?
+- Your team wants to "teach the model our API" — sort that goal into one
+  of the six options in the cheapest-mechanism-first list above.
 
 Next: [Prompting and structured output](02-prompting.md).

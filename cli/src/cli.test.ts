@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { main } from './commands.ts';
+import { main, resolveServeStore } from './commands.ts';
 import { EventBus } from '@naro/runtime';
 import { generateSealKeypair, type NaroEvent } from '@naro/core';
 
@@ -20,6 +20,25 @@ function capture() {
   const out: string[] = []; const err: string[] = [];
   return { io: { out: (s: string) => out.push(s), err: (s: string) => err.push(s) }, out, err };
 }
+
+test('resolveServeStore: no path or url configures nothing', () => {
+  assert.equal(resolveServeStore({ sqlitePath: undefined, pgUrlFlag: undefined, sharedPgUrl: undefined }), undefined);
+});
+
+test('resolveServeStore: an explicit SQLite path wins over any Pg url', () => {
+  const r = resolveServeStore({ sqlitePath: 'runs.db', pgUrlFlag: 'postgres://a', sharedPgUrl: 'postgres://b' });
+  assert.deepEqual(r, { kind: 'sqlite', path: 'runs.db' });
+});
+
+test('resolveServeStore: a per-store Pg url wins over the shared one', () => {
+  const r = resolveServeStore({ sqlitePath: undefined, pgUrlFlag: 'postgres://per-store', sharedPgUrl: 'postgres://shared' });
+  assert.deepEqual(r, { kind: 'pg', url: 'postgres://per-store' });
+});
+
+test('resolveServeStore: falls back to the shared Pg url (e.g. NARO_PG_URL)', () => {
+  const r = resolveServeStore({ sqlitePath: undefined, pgUrlFlag: undefined, sharedPgUrl: 'postgres://shared' });
+  assert.deepEqual(r, { kind: 'pg', url: 'postgres://shared' });
+});
 
 test('states prints the full transition table', async () => {
   const { io, out } = capture();

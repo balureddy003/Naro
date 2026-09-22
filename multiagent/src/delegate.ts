@@ -37,6 +37,7 @@ const META_DEPTH = 'naro:depth';
 const META_CAPS = 'naro:capabilities';
 const META_GRANTS = 'naro:grants';
 const META_CONTEXT = 'naro:context';
+const META_TRACE = 'naro:traceId';
 
 /** What a delegated goal carries — read by the child's composition. */
 export function delegationConstraints(goal: Goal): {
@@ -44,6 +45,8 @@ export function delegationConstraints(goal: Goal): {
   capabilities?: readonly string[];
   grants?: readonly string[];
   context?: string;
+  /** The parent run's trace id — pass to `AgentRunner.run({ traceId })` so the child's journal correlates with the parent's. */
+  traceId?: string;
 } {
   const m = goal.metadata;
   return {
@@ -51,6 +54,7 @@ export function delegationConstraints(goal: Goal): {
     ...(Array.isArray(m[META_CAPS]) && { capabilities: m[META_CAPS] as string[] }),
     ...(Array.isArray(m[META_GRANTS]) && { grants: m[META_GRANTS] as string[] }),
     ...(typeof m[META_CONTEXT] === 'string' && { context: m[META_CONTEXT] as string }),
+    ...(typeof m[META_TRACE] === 'string' && { traceId: m[META_TRACE] as string }),
   };
 }
 
@@ -98,6 +102,9 @@ export function delegationTool(
           ...(bounds?.allowedCapabilities !== undefined && { [META_CAPS]: [...bounds.allowedCapabilities] }),
           ...(bounds?.grants !== undefined && { [META_GRANTS]: [...bounds.grants] }),
           ...(bounds?.context !== undefined && { [META_CONTEXT]: bounds.context }),
+          // Carries the parent's traceId to the child so a delegation chain's
+          // independently hash-chained journals still correlate as one trace.
+          ...(ctx.traceId !== undefined && { [META_TRACE]: ctx.traceId }),
         },
       });
       return bus.request(agent, child, fromAgentId);

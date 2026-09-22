@@ -54,13 +54,14 @@ test('bounded delegation: depth cap enforced, caps/grants/context travel in goal
     grants: ['tool.invoke'],
     context: 'only look at src/auth/',
   });
-  const parentCtx = { agentId: 'lead', goalId: GOAL.id, goal: GOAL, grants: [] };
+  const parentCtx = { agentId: 'lead', goalId: GOAL.id, goal: GOAL, grants: [], traceId: 'trace-root-1' };
 
   await tool.execute({ agent: 'researcher', goal: 'find the auth bug' }, parentCtx);
   assert.ok(childGoal);
   assert.equal(delegationConstraints(childGoal).depth, 1);
   assert.deepEqual(delegationConstraints(childGoal).capabilities, ['fs.read']);
   assert.deepEqual(delegationConstraints(childGoal).grants, ['tool.invoke']);
+  assert.equal(delegationConstraints(childGoal).traceId, 'trace-root-1');
   assert.match(childGoal.description, /only look at src\/auth\//);
   assert.match(childGoal.constraints.join(), /fs\.read/);
 

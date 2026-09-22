@@ -94,10 +94,30 @@ automatically better than one well-designed loop.
 More reasoning raises token cost and latency. Evaluate it against task success,
 not against how impressive the trace looks.
 
-## Check your understanding
+## Try it
 
-A deployment task has five known stages and each stage has a machine-checkable
-result. Start with plan–execute. An unfamiliar repository investigation where
-each finding changes the next question is a better fit for ReAct.
+Run the two smallest strategies back to back and diff how they behave:
+
+```bash
+npm run example          # DirectReasoner — one scripted decision
+npm run example:react    # ReActReasoner — decide, act, observe, repeat
+```
+
+Watch the event stream from each. `example` never emits
+`reasoning.started` more than once; `example:react` loops until a
+`complete` decision. Then open `reasoning/src/plan-execute.ts` and
+`reasoning/src/tree-search.ts` — both implement the same `Reasoner`
+interface with completely different control flow, which is the point of
+the closed `Decision` union.
+
+## Check yourself
+
+- Why is `Decision` a closed union (`plan | act | need-context |
+  wait-for-human | complete | fail`) instead of an open string? What
+  would the runtime lose if a reasoner could return anything?
+- A deployment task has five known stages, each with a machine-checkable
+  result. Which pattern fits, and which one would be over-engineering?
+- Reflection reruns a task using a lesson from the last failure. What
+  turns that lesson into a security problem if you skip verification?
 
 Next: [Retrieval-augmented generation](04-rag.md).

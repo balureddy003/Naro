@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/balureddy003/naro/security/advisories/new
+    about: Authorization/verification bypasses, chain or seal forgery, profile boundary escapes — do not file these as public issues. See SECURITY.md.

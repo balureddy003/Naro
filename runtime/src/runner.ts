@@ -100,6 +100,14 @@ export interface RunOptions {
    * its own run handle with the journal's `runId` on every event.
    */
   readonly runId?: string;
+  /**
+   * Correlates this run with a parent run across delegation — a child agent
+   * reads the inherited value off `delegationConstraints(goal).traceId`
+   * (`@naro/multiagent`) and passes it here so both runs' journals share
+   * one trace. Defaults to this run's own `runId` (a root run is the root
+   * of its own trace). Ignored on resume — the journal's traceId wins.
+   */
+  readonly traceId?: string;
 }
 
 export type RunStatus = 'completed' | 'failed' | 'cancelled' | 'paused';
@@ -245,6 +253,9 @@ export class AgentRunner {
     // fresh run carries it. Resumes ignore it: the journal's runId wins.
     if (options.runId !== undefined && !options.resume) {
       this.bus.resumeJournal(options.runId, this.bus.nextSeq());
+    }
+    if (options.traceId !== undefined && !options.resume) {
+      this.bus.traceId = options.traceId;
     }
 
     // A resumed run continues the prior journal — runId, sequence, and
@@ -539,6 +550,7 @@ export class AgentRunner {
         goalId: this.deps.spec.goal.id,
         goal: this.deps.spec.goal,
         grants: this.deps.grants ?? [],
+        traceId: this.bus.traceId,
         ...(this.deps.secrets !== undefined && { secrets: this.deps.secrets }),
         signal: ctrl.signal,
       };

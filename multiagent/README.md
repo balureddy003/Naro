@@ -69,6 +69,27 @@ bus.serve('researcher', async (message) => runSpecialist(message.goal));
 registry.register(delegationTool(bus, 'lead', directory));
 ```
 
+## Correlating parent and child journals
+
+Each delegated agent has its own runId and its own independently hash-chained
+journal — delegation never merges chains. To still answer "which child runs
+belong to this parent's request," `delegationTool()` stamps the parent's
+`ExecContext.traceId` onto the child goal's metadata
+(`naro:traceId`). The receiving side reads it back through
+`delegationConstraints()` and passes it into the child's own run:
+
+```ts
+bus.serve('researcher', async (message) => {
+  const { traceId } = delegationConstraints(message.goal);
+  const runner = new AgentRunner({ spec: specFor(message.goal), /* … */ });
+  return runner.run({ traceId }); // omit to let the child start its own trace
+});
+```
+
+A root run's `traceId` defaults to its own `runId`, so every run — delegated
+or not — always carries one. `traceId` is correlation metadata, not part of
+the hash chain: verifying either journal never depends on it.
+
 ## Boundaries
 
 - Select context for the child; do not copy the parent transcript wholesale.

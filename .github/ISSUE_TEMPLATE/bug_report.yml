@@ -1,0 +1,65 @@
+name: Bug report
+description: Something in the kernel, an adapter, or a profile doesn't behave as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. If this is a security bug (an authorization
+        or verification bypass, a chain/seal forgery, a profile boundary
+        escape — see [SECURITY.md](../../SECURITY.md)), please **don't** file
+        it here — use a private [security advisory](https://github.com/balureddy003/naro/security/advisories/new)
+        instead.
+
+  - type: input
+    id: package
+    attributes:
+      label: Affected package
+      description: e.g. @naro/runtime, @naro/policy, @naro/adapter-harness, profiles/coding
+      placeholder: "@naro/runtime"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen? Quote the doc or ADR this contradicts if there is one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include the exact error, event sequence, or state transition if relevant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: |
+        A small script or test is ideal — Naro's own contract-test suites
+        (`@naro/contract-tests`) are a good model for the shape. Paste code,
+        not just a description.
+      render: typescript
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Naro version / commit
+      placeholder: "0.1.0 / abc1234"
+    validations:
+      required: true
+
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      description: "`node --version` — Naro requires Node 24+"
+    validations:
+      required: true

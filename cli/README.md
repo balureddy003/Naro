@@ -76,9 +76,15 @@ Additional flags:
 - `--registry <file.db>` — durable `RunRegistry` (`SqliteRunRegistry`);
   `GET /runs` answers from it, so the run index survives restarts and is
   shared between replicas pointed at the same store. Default: in-memory.
-  Postgres (`PgRunRegistry`) is wired via the module, not a flag.
 - `--journal <file.db>` — a shared `SqliteEventStore`; `GET /runs/:id/events`
   for a run a peer replica owns replays from it instead of 404ing.
+- `--pg <url>` / `NARO_PG_URL` — Postgres-backed `PgRunRegistry` +
+  `PgEventStore` for both ports at once, the N-replica control-plane story
+  (`docs/deploy.md` topology 2). `--registry-pg <url>` / `--journal-pg <url>`
+  override the shared URL per-store. An explicit `--registry`/`--journal`
+  SQLite path always wins over Postgres for that same store. Requires the
+  optional `pg` peer dependency (`npm install pg`) — `naro serve` without
+  any Postgres flag never needs it.
 - `--approvals <file.db>` — a shared `SqliteApprovalBridge`; exposes
   `GET /approvals` (pending queue) and `POST /approvals/:id
   {approved?|text?|note?}` so operators approve over HTTP — including

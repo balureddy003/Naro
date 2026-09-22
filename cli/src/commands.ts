@@ -7,11 +7,33 @@ import { AGENT_STATES, TRANSITIONS, type NaroEvent } from '@naro/core';
 import { buildEvidence, computeMetrics, formatEvidence, SqliteEventStore } from '@naro/observability';
 import { BenchmarkRunner, diffReports, formatReport, JsonlReportStore, type EvalCase } from '@naro/evaluation';
 import { SqliteApprovalBridge, SqliteRunRegistry } from '@naro/runtime';
-import { startAgentServer, type RunnerFactory } from './serve.ts';
+// Statically imported but Postgres-inert until a `--pg`/`--registry-pg`/
+// `--journal-pg` flag actually calls pgPool(): it dynamically imports the
+// optional 'pg' peer dependency only then, so `naro serve` without Postgres
+// flags never requires 'pg' to be installed.
+import { pgPool, PgEventStore, PgRunRegistry } from '@naro/adapter-pg';
+import { startAgentServer, type RunnerFactory, type ServeOptions } from './serve.ts';
 
 export interface CliIO {
   out: (s: string) => void;
   err: (s: string) => void;
+}
+
+/**
+ * Which durable store backs one `naro serve` port (registry or journal):
+ * an explicit SQLite path always wins over Postgres for that same store —
+ * single-host flags stay authoritative when given — otherwise a per-store
+ * Pg URL wins over the shared one. Pure and side-effect free so the
+ * precedence rules are unit-testable without a real Postgres connection.
+ */
+export function resolveServeStore(opts: {
+  readonly sqlitePath: string | undefined;
+  readonly pgUrlFlag: string | undefined;
+  readonly sharedPgUrl: string | undefined;
+}): { readonly kind: 'sqlite'; readonly path: string } | { readonly kind: 'pg'; readonly url: string } | undefined {
+  if (opts.sqlitePath !== undefined) return { kind: 'sqlite', path: opts.sqlitePath };
+  const url = opts.pgUrlFlag ?? opts.sharedPgUrl;
+  return url !== undefined ? { kind: 'pg', url } : undefined;
 }
 
 const HELP = `naro — universal agent foundation CLI
@@ -30,11 +52,15 @@ const HELP = `naro — universal agent foundation CLI
                              all non-probe endpoints
                              [--principals <file.json>] — token→{id,roles}
                                map; roles: viewer, operator, approver
-                             [--registry <file.db>] — durable run index
+                             [--registry <file.db>] — durable run index (SQLite)
                              [--journal <file.db>]  — shared event store for
-                               cross-replica GET /runs/:id/events
+                               cross-replica GET /runs/:id/events (SQLite)
                              [--approvals <file.db>] — expose /approvals
-                             (Postgres wiring is via the module's options)
+                             [--pg <url> | NARO_PG_URL] — Postgres-backed
+                               registry + journal for N-replica naro serve;
+                               overridden per-store by --registry-pg/--journal-pg;
+                               requires the optional 'pg' package
+                             [--registry-pg <url>] [--journal-pg <url>]
                              module exports createRunner(goal): AgentRunner
   naro approvals --db <db> list pending human-in-the-loop requests
   naro approve <id> --db <db> [--deny] [--note 'why']
@@ -198,6 +224,27 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
       const registryPath = flag('--registry');
       const journalPath = flag('--journal');
       const approvalsPath = flag('--approvals');
+      // A shared --pg/NARO_PG_URL backs both stores; --registry-pg/--journal-pg
+      // override it per-store; see resolveServeStore() for the precedence.
+      const sharedPgUrl = flag('--pg') ?? process.env['NARO_PG_URL'];
+      const registrySource = resolveServeStore({ sqlitePath: registryPath, pgUrlFlag: flag('--registry-pg'), sharedPgUrl });
+      const journalSource = resolveServeStore({ sqlitePath: journalPath, pgUrlFlag: flag('--journal-pg'), sharedPgUrl });
+
+      let registry: ServeOptions['registry'];
+      let journal: ServeOptions['journal'];
+      try {
+        if (registrySource?.kind === 'sqlite') registry = new SqliteRunRegistry(resolve(registrySource.path));
+        else if (registrySource?.kind === 'pg') registry = await PgRunRegistry.create(await pgPool(registrySource.url));
+        if (journalSource?.kind === 'sqlite') journal = new SqliteEventStore(resolve(journalSource.path));
+        else if (journalSource?.kind === 'pg') journal = await PgEventStore.create(await pgPool(journalSource.url));
+      } catch (e) {
+        const notInstalled = e instanceof Error && 'code' in e && e.code === 'ERR_MODULE_NOT_FOUND';
+        io.err(notInstalled
+          ? `Postgres registry/journal: the optional 'pg' package is not installed — run 'npm install pg'`
+          : `Postgres registry/journal: ${e instanceof Error ? e.message : String(e)}`);
+        return 2;
+      }
+
       const file = args.find((a) => !a.startsWith('-'));
       if (!file) { io.err('usage: naro serve <module.ts> [--port N] [--host h]'); return 2; }
       const mod = await import(pathToFileURL(resolve(file)).href) as { createRunner?: RunnerFactory };
@@ -210,8 +257,8 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
         ...(host !== undefined && { host }),
         ...(token !== undefined && { token }),
         ...(principals !== undefined && { principals }),
-        ...(registryPath !== undefined && { registry: new SqliteRunRegistry(resolve(registryPath)) }),
-        ...(journalPath !== undefined && { journal: new SqliteEventStore(resolve(journalPath)) }),
+        ...(registry !== undefined && { registry }),
+        ...(journal !== undefined && { journal }),
         ...(approvalsPath !== undefined && { approvals: new SqliteApprovalBridge(resolve(approvalsPath)) }),
       });
       io.out(`agent serving at ${url} — POST /goals {description}`);

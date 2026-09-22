@@ -1,27 +1,49 @@
 # Naro Documentation
 
-Choose the path that matches what you are trying to accomplish.
+Three tracks, one codebase. Pick the one that matches what you're actually
+trying to do today — you can switch tracks any time, and every page links
+back to this one.
 
-## Get started
+| Track | You're here if… | Start here |
+|---|---|---|
+| 🟢 **Beginner** | You want to understand agent loops, or you're new to Naro specifically, and you learn best building something small first | [Build your first safe agent](getting-started.md), then the learning course ([00](learn/00-how-llms-work.md) → [12](learn/12-scale-and-reliability.md)) in order |
+| 🟡 **Practitioner** | You already know what an agent loop is; you're integrating Naro into a real coding/research/data/devops system | [End-to-end use cases](use-cases.md) → the profile README for your domain → [production readiness](production-readiness.md) before you ship — and read [agent loops](learn/08-agent-loops.md) and [security and policy](learn/11-security-and-policy.md) for two defaults that bite in production: verification is skipped entirely with no verifier configured, and the baseline policy allows non-tool schemes by default |
+| 🔴 **Expert** | You're extending the kernel, writing a new adapter or port, or deciding whether to bet a system on Naro at all | [Architecture](architecture.md) → [ADRs](adr/README.md) → [positioning](positioning.md) + [market quadrant](market-quadrant.md) |
+
+The tracks are entry points, not tiers of importance — a practitioner
+debugging a replan loop ends up on the same [agent loops](learn/08-agent-loops.md)
+page a beginner started with, and an expert reviewing a PR still opens
+[use-cases.md](use-cases.md) to check a claim against a real composition.
+They *are* different in depth by design: the beginner track is a 13-chapter
+course because a newcomer needs the scaffolding, and the other two tracks
+are short because they assume it. If a page below feels like it's missing
+context, that's the signal to detour into the course rather than push
+through — the two callouts above exist because skipping straight to
+production readiness would otherwise miss them.
+
+## Get started (🟢 beginner entry point)
 
 New to Naro:
 
 1. [Build your first safe agent](getting-started.md) — offline, policy-gated,
-   verified, and observable.
+   verified, and observable. ~15 minutes, nothing to install beyond Node.
 2. [Glossary](glossary.md) — the vocabulary used throughout the project.
+   Keep it open in a tab; every other page assumes these terms.
 3. [How LLMs work](learn/00-how-llms-work.md) — begin the concept course.
 
-Runnable examples:
+Runnable examples — the learning course's "Try it" sections below all
+point back at these same five, one or two at a time as each chapter
+needs them, rather than introducing new ones:
 
-| Level | Example | Run |
-|---|---|---|
-| 1 | [Minimal agent](../examples/minimal-agent/README.md) | `npm run example` |
-| 2 | [ReAct agent](../examples/react-agent/README.md) | `npm run example:react` |
-| 3 | [Coding agent](../examples/coding-agent/README.md) | `npm run example:coding` |
-| 4 | [Governed agent](../examples/governed-agent/README.md) | `npm run example:governed` |
-| 5 | [Research agent](../examples/research-agent/README.md) | `npm run example:research` |
+| Level | Example | Run | Used by |
+|---|---|---|---|
+| 1 | [Minimal agent](../examples/minimal-agent/README.md) | `npm run example` | 00, 03 |
+| 2 | [ReAct agent](../examples/react-agent/README.md) | `npm run example:react` | 02, 03 |
+| 3 | [Coding agent](../examples/coding-agent/README.md) | `npm run example:coding` | 05 |
+| 4 | [Governed agent](../examples/governed-agent/README.md) | `npm run example:governed` | 08, 11, 12 |
+| 5 | [Research agent](../examples/research-agent/README.md) | `npm run example:research` | 04, 11 |
 
-## Tutorials and use cases
+## Tutorials and use cases (🟡 practitioner entry point)
 
 [End-to-end use cases](use-cases.md) covers production-shaped compositions for:
 
@@ -35,11 +57,18 @@ Runnable examples:
 - multi-agent delegation.
 
 Each use case names its capabilities, controls, evidence, and production
-boundary.
+boundary — start with the "composition checklist" at the top of the page,
+then jump straight to your domain. You don't need the learning course
+below to use this page; it links back to the concept it assumes wherever
+one matters.
 
-## Concepts
+## Learn the concepts (🟢 beginner track)
 
-The learning course moves from model mechanics to production operation:
+The learning course moves from model mechanics to production operation.
+Each page is 5–10 minutes and ends with a "try it" pointing at a runnable
+example, plus a short self-check so you know whether to move on or
+reread. Read them in order the first time through — 08 (agent loops)
+assumes 00–07, and 11–12 assume 08–10:
 
 1. [How LLMs work](learn/00-how-llms-work.md)
 2. [Training](learn/01-training.md)
@@ -55,7 +84,7 @@ The learning course moves from model mechanics to production operation:
 12. [Security and policy](learn/11-security-and-policy.md)
 13. [Scale and reliability](learn/12-scale-and-reliability.md)
 
-## Architecture and design
+## Architecture and design (🔴 expert entry point)
 
 - [Architecture](architecture.md) — system, packages, runtime, data flow,
   deployment, and extension rules.
@@ -73,7 +102,7 @@ The learning course moves from model mechanics to production operation:
 - [Documentation style](documentation-style.md) — page types, voice, claim
   standards, and maintenance checklist.
 
-## Operations and production
+## Operations and production (🟡 practitioner: pre-ship checklist)
 
 - [Production readiness](production-readiness.md) — authorization, secrets,
   isolation, durability, leases, delivery, observability, and release gates.
@@ -88,6 +117,8 @@ The learning course moves from model mechanics to production operation:
 - [`naro` CLI](../cli/README.md) — scaffold, run, bench, replay, verify, and states.
 
 ## Reference by subsystem
+
+Every track ends up here — this is the lookup table, not a reading order.
 
 ### Kernel and runtime
 
