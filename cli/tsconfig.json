@@ -20,6 +20,9 @@
     },
     {
       "path": "../evaluation"
+    },
+    {
+      "path": "../adapters/postgres"
     }
   ],
   "exclude": [
