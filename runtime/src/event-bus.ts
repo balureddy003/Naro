@@ -11,6 +11,8 @@ export interface EventBusOptions {
   readonly runId?: string;
   /** Chain head to link the first emitted event to — defaults to GENESIS_HASH. */
   readonly headStart?: string;
+  /** Correlates this run with a parent run across delegation — defaults to this run's own `runId`. */
+  readonly traceId?: string;
 }
 
 /**
@@ -25,6 +27,8 @@ export interface EventBusOptions {
  */
 export class EventBus {
   readonly runId: string;
+  /** This run's trace id — a root run is the root of its own trace until `setTraceId` says otherwise. */
+  traceId: string;
   private readonly handlers = new Map<string, Set<(e: NaroEvent) => void>>();
   private readonly log: NaroEvent[] = [];
   /** Handler failures, isolated rather than fatal. Inspectable for alerting. */
@@ -41,6 +45,7 @@ export class EventBus {
   ) {
     this.scope = scope;
     this.runId = opts.runId ?? newId('run');
+    this.traceId = opts.traceId ?? this.runId;
     this.seq = opts.seqStart ?? 1;
     this.chainHead = opts.headStart ?? GENESIS_HASH;
   }
@@ -65,6 +70,7 @@ export class EventBus {
       agentId: this.scope.agentId,
       goalId: this.scope.goalId,
       runId: this.runId,
+      traceId: this.traceId,
       // Snapshot: an event must never mutate after the fact.
       data: structuredClone(data),
       prev: this.chainHead,

@@ -81,6 +81,18 @@ export type NaroEvent<T extends EventType = EventType> = T extends T ? {
   readonly goalId: string;
   /** Which execution of this agent produced it — a fresh run gets a fresh runId. */
   readonly runId: string;
+  /**
+   * Correlates this run's events with others in the same delegation chain.
+   * A root run's `traceId` equals its own `runId`; a delegated child run
+   * inherits the parent's `traceId` via `ExecContext.traceId` →
+   * goal metadata → `RunOptions.traceId` (see `@naro/multiagent`'s
+   * `delegationTool`/`delegationConstraints`). Optional and additive, like
+   * `prev`/`hash`: `EventBus.emit()` always sets it, but events built before
+   * this field existed carry none. Correlation metadata, not part of the
+   * hash chain — each run's chain is independently tamper-evident, and
+   * traceId only links two independently-verifiable chains together.
+   */
+  readonly traceId?: string;
   readonly data: EventDataMap[T];
   /**
    * Hash of the preceding event in this run's chain — `GENESIS_HASH` for the

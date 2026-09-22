@@ -314,10 +314,15 @@ For protocol-level discovery and JSON-RPC task exchange, use
 - send a bounded goal and selected context, not the full parent transcript;
 - authenticate and encrypt cross-process transport;
 - apply budgets and delegation-depth limits;
-- verify child output before the parent trusts it.
+- verify child output before the parent trusts it;
+- pass the parent's `traceId` (`delegationConstraints(goal).traceId`) into
+  the child's `AgentRunner.run({ traceId })` so both journals correlate —
+  each keeps its own independent hash chain, but an auditor can still walk
+  a whole delegation tree by trace.
 
 **Evidence:** delegation action, target agent identity, child result or error,
-and parent-side verification.
+parent-side verification, and — across the delegation chain — a shared
+`traceId` linking every participant's independently verifiable journal.
 
 ---
 
