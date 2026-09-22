@@ -86,11 +86,29 @@ if (response.finishReason === 'length') {
 - Keep secrets out of prompts unless the complete data path is trusted.
 - Measure token use. Long prompts affect cost, latency, and often quality.
 
-## Check your understanding
+## Try it
 
-If the same prompt produces two different answers, that is not automatically a
-bug. Ask which part varied: sampling, model version, retrieved context, tool
-results, or provider routing. Agent engineering starts when those variables
-become explicit.
+Open `model/src/mock-model.ts` — it's the smallest complete `Model`
+implementation in the repo: no network, no tokens, just the
+request/response contract every provider adapter fills in for real.
+Then run:
+
+```bash
+npm run example
+```
+
+Watch the console. Each `model.usage` event is exactly the `Usage` this
+page described — `ChatResponse.finishReason` and token counts, flowing
+through the runtime as data, not as something you have to parse out of
+free text.
+
+## Check yourself
+
+- Why does `ChatResponse.finishReason === 'length'` matter more than the
+  text itself when the agent decides what to do next?
+- A colleague says "we set temperature to 0, so the output is
+  deterministic." What's missing from that claim?
+- If the same prompt gives two different answers, name three things that
+  could have varied besides the model weights.
 
 Next: [Training—and why Naro does not do it](01-training.md).

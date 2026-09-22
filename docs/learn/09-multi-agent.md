@@ -97,4 +97,25 @@ or make a demo look autonomous. First try a stronger verifier, a clearer plan,
 or parallel tool calls. Coordination has a real cost in tokens, latency,
 security review, and failure handling.
 
+## Try it
+
+```bash
+node --test "multiagent/src/**/*.test.ts"
+```
+
+Read `multiagent/src/multiagent.test.ts` alongside the output — it builds
+a real `InMemoryAgentBus`, delegates a bounded goal, and asserts the
+depth cap, capabilities, and grants actually traveled in the child goal's
+metadata rather than trusting the delegate to behave. That's "design the
+handoff first" as an executable contract instead of a paragraph.
+
+## Check yourself
+
+- A lead agent delegates to a worker and passes its entire conversation
+  transcript "to be safe." What does that actually put at risk?
+- `maxDepth: 1` is set on a delegation tool. What happens when the child
+  agent tries to delegate again, and where is that enforced?
+- A worker agent returns a confident, well-formatted result. What earns
+  it the parent's trust — its formatting, or something else?
+
 Next: [Evaluation](10-evaluation.md).

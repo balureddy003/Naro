@@ -108,4 +108,27 @@ A healthy trace should answer: what did the agent know, what did it decide, who
 authorized it, what changed in the world, and what evidence justified the next
 step? If one of those is missing, add structure before adding more model calls.
 
+## Try it
+
+```bash
+node cli/src/bin.ts states
+```
+
+Prints the full 17-state transition table straight from `@naro/core` —
+every legal move, including the ones this page's diagram simplified away.
+Then run `npm run example:governed` and watch a run actually pass through
+`WAITING_FOR_PERMISSION` and (if you configure a bridge)
+`WAITING_FOR_HUMAN` — the states are not a diagram, they're what the
+event stream shows happening.
+
+## Check yourself
+
+- Why is there no `REASONING → ACTING` transition in the table, even for
+  a tool the agent clearly has permission to use?
+- A run crashes mid-tool-call. What state does it resume into, and why
+  not "wherever it left off"?
+- What's the structural difference between "the model said it's done"
+  and `COMPLETED`? Which state sits between them, and what can send the
+  run back to `REASONING` instead?
+
 Next: [Multi-agent systems](09-multi-agent.md).

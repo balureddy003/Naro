@@ -115,4 +115,27 @@ Before registering a tool, answer:
 - Does it honor `AbortSignal`?
 - What output can safely return to the model?
 
+## Try it
+
+```bash
+npm run example:coding
+```
+
+Watch the event stream for the sequence this page described:
+`action.requested` → `permission.requested` → `action.permitted` (or
+`action.denied`) → `action.completed`. Then open `tools/src/executor.ts`
+(the resolve → validate → execute → validate path) and
+`profiles/coding/src/tools.ts` for real tool definitions with
+`permissions` and `sideEffects` declared.
+
+## Check yourself
+
+- A tool call includes a valid-looking argument the model invented,
+  never confirmed by a schema. Where does that get caught — input
+  validation, policy, or output validation?
+- Why is "the tool schema looked fine" not the same question as "was this
+  agent allowed to call it"?
+- An MCP server exposes a new remote tool with no declared side effects.
+  What does Naro assume about it, and why is that the safe default?
+
 Next: [Context engineering](06-context-engineering.md).

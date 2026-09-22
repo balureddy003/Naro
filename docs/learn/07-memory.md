@@ -47,7 +47,10 @@ Longer-lived memory lives in `@naro/memory`. The `MemoryStore` contract supports
 write, read, search, tier-scoped search, and forget. Naro includes:
 
 - `InMemoryMemoryStore` for tests and process-local use;
-- `FileMemoryStore` for JSONL persistence without external infrastructure.
+- `FileMemoryStore` for JSONL persistence without external infrastructure;
+- `SqliteMemoryStore` for durable, transactional storage with FTS5/BM25
+  full-text recall — the option for a single-host agent that needs memory
+  to survive a restart without adding an external database.
 
 Reasoners receive memory through `ctx.memory`, exposed as the smaller
 `MemoryReader` interface. That separation is intentional: a reasoning strategy
@@ -95,5 +98,34 @@ For each candidate memory, finish this sentence:
 > Remember this because ___, until ___, for ___, based on evidence from ___.
 
 If those blanks are unclear, do not write the memory yet.
+
+## Try it
+
+```ts
+import { SqliteMemoryStore } from '@naro/memory';
+
+const memory = new SqliteMemoryStore('.naro/memory.db');
+await memory.write({
+  key: 'deploy-policy',
+  content: 'deploy to prod requires two approvals',
+  tier: 'semantic',
+  source: 'runbook.md',
+});
+const hits = await memory.search('deploy approvals', 5);
+```
+
+Open `memory/src/sqlite-store.ts` to see the FTS5 query and its
+substring-scoring fallback when a query isn't FTS-safe — a good example
+of a store degrading gracefully instead of throwing on unusual input.
+
+## Check yourself
+
+- An agent writes "the API rate limit is 100 req/s" to semantic memory
+  after reading a tool's error message. What's missing from that write
+  that this page said every write needs?
+- Why is memory *easier to poison* than RAG, even though both retrieve
+  information into context?
+- A user asks to delete their data. Name two places besides the primary
+  memory store where that fact needs to propagate.
 
 Next: [Agent loops and state machines](08-agent-loops.md).

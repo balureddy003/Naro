@@ -107,10 +107,27 @@ runtime. Put important cases in [evaluation](10-evaluation.md).
 - Keep stable instructions first when your provider supports prefix caching,
   but measure before optimizing around provider-specific behavior.
 
-## Try this
+## Try it
 
 Take a prompt from your application and mark each line as instruction,
-evidence, example, or output contract. If a line fits none of those, remove it
-and compare the result in an eval.
+evidence, example, or output contract. If a line fits none of those,
+remove it and compare the result in an eval.
+
+Then look at where Naro actually builds one: open `reasoning/src/react.ts`
+and `reasoning/src/transcript.ts` to see a real `ChatRequest` assembled —
+messages, tools, and `responseFormat` — from a `ReasoningContext`. Run
+`npm run example:react` and watch the events; each `reasoning.started` /
+`action.requested` pair is one turn of the layered prompt this page
+described, made concrete.
+
+## Check yourself
+
+- Why isn't a `system` message a security boundary, even though it
+  carries the application's instructions?
+- A tool call keeps returning malformed JSON. Is the fix "add more
+  instructions" or "add a schema and validate"? What's the actual
+  difference?
+- Name one thing that belongs in `responseFormat` and one thing that
+  belongs in `tools` — and why mixing them up breaks capability checking.
 
 Next: [Reasoning patterns](03-reasoning-patterns.md).
