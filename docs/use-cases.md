@@ -84,6 +84,12 @@ Run the offline reference:
 npm run example:coding
 ```
 
+The snippet above is the shape of it; for every control below actually
+wired together — a real model, approval gating, a real verifier, durable
+stores, evidence export — see the
+[production agent](../examples/production-agent/README.md), runnable
+against a real repository with `npm run example:production`.
+
 **Required controls**
 
 - keep the workspace root jailed;
