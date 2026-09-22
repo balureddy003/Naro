@@ -101,10 +101,14 @@ If those blanks are unclear, do not write the memory yet.
 
 ## Try it
 
+Save this as `try-memory.ts` in the repo root (it needs `@naro/memory`
+resolvable from `node_modules`, so it has to live inside the checkout)
+and run it with `node try-memory.ts`:
+
 ```ts
 import { SqliteMemoryStore } from '@naro/memory';
 
-const memory = new SqliteMemoryStore('.naro/memory.db');
+const memory = new SqliteMemoryStore('.naro/try-memory.db');
 await memory.write({
   key: 'deploy-policy',
   content: 'deploy to prod requires two approvals',
@@ -112,9 +116,11 @@ await memory.write({
   source: 'runbook.md',
 });
 const hits = await memory.search('deploy approvals', 5);
+console.log(hits);
 ```
 
-Open `memory/src/sqlite-store.ts` to see the FTS5 query and its
+You should see one hit with a near-1.0 score. Open
+`memory/src/sqlite-store.ts` to see the FTS5 query and its
 substring-scoring fallback when a query isn't FTS-safe — a good example
 of a store degrading gracefully instead of throwing on unusual input.
 

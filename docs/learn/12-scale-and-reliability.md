@@ -186,5 +186,8 @@ work.
 - Your retry policy doubles the backoff on every attempt. Name one
   failure mode this page listed that backoff alone does *not* fix.
 
-Return to [How LLMs work](00-how-llms-work.md), or move from concepts to the
-repository's runnable examples.
+Return to [How LLMs work](00-how-llms-work.md), or move from concepts to
+practice: [production readiness](../production-readiness.md) turns
+everything in this course into a pre-ship checklist, and the
+[documentation map](../README.md) lists every runnable example this
+course pointed at, in one place.

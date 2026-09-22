@@ -126,6 +126,9 @@ actually enforced against a fixture, not just described.
 - Why is "the context window is big enough" not the same claim as "the
   model will use the right part of it"?
 - Where does provenance (which source an item came from) actually get
-  used later — pick two consumers from earlier pages in this course.
+  used later? Two consumers you've already seen in this course: citation
+  trails in [RAG](04-rag.md), and the trust-level gate in
+  [security and policy](11-security-and-policy.md). Can you name a third,
+  specific to this page?
 
 Next: [Memory](07-memory.md).

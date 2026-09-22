@@ -7,14 +7,19 @@ back to this one.
 | Track | You're here if… | Start here |
 |---|---|---|
 | 🟢 **Beginner** | You want to understand agent loops, or you're new to Naro specifically, and you learn best building something small first | [Build your first safe agent](getting-started.md), then the learning course ([00](learn/00-how-llms-work.md) → [12](learn/12-scale-and-reliability.md)) in order |
-| 🟡 **Practitioner** | You already know what an agent loop is; you're integrating Naro into a real coding/research/data/devops system | [End-to-end use cases](use-cases.md) → the profile README for your domain → [production readiness](production-readiness.md) before you ship |
+| 🟡 **Practitioner** | You already know what an agent loop is; you're integrating Naro into a real coding/research/data/devops system | [End-to-end use cases](use-cases.md) → the profile README for your domain → [production readiness](production-readiness.md) before you ship — and read [agent loops](learn/08-agent-loops.md) and [security and policy](learn/11-security-and-policy.md) for two defaults that bite in production: verification is skipped entirely with no verifier configured, and the baseline policy allows non-tool schemes by default |
 | 🔴 **Expert** | You're extending the kernel, writing a new adapter or port, or deciding whether to bet a system on Naro at all | [Architecture](architecture.md) → [ADRs](adr/README.md) → [positioning](positioning.md) + [market quadrant](market-quadrant.md) |
 
-No track is "better" — a practitioner debugging a replan loop is reading
-the same [agent loops](learn/08-agent-loops.md) page a beginner started
-with, and an expert reviewing a PR still opens [use-cases.md](use-cases.md)
-to check a claim against a real composition. The tracks are entry points,
-not tiers.
+The tracks are entry points, not tiers of importance — a practitioner
+debugging a replan loop ends up on the same [agent loops](learn/08-agent-loops.md)
+page a beginner started with, and an expert reviewing a PR still opens
+[use-cases.md](use-cases.md) to check a claim against a real composition.
+They *are* different in depth by design: the beginner track is a 13-chapter
+course because a newcomer needs the scaffolding, and the other two tracks
+are short because they assume it. If a page below feels like it's missing
+context, that's the signal to detour into the course rather than push
+through — the two callouts above exist because skipping straight to
+production readiness would otherwise miss them.
 
 ## Get started (🟢 beginner entry point)
 
@@ -26,15 +31,17 @@ New to Naro:
    Keep it open in a tab; every other page assumes these terms.
 3. [How LLMs work](learn/00-how-llms-work.md) — begin the concept course.
 
-Runnable examples:
+Runnable examples — the learning course's "Try it" sections below all
+point back at these same five, one or two at a time as each chapter
+needs them, rather than introducing new ones:
 
-| Level | Example | Run |
-|---|---|---|
-| 1 | [Minimal agent](../examples/minimal-agent/README.md) | `npm run example` |
-| 2 | [ReAct agent](../examples/react-agent/README.md) | `npm run example:react` |
-| 3 | [Coding agent](../examples/coding-agent/README.md) | `npm run example:coding` |
-| 4 | [Governed agent](../examples/governed-agent/README.md) | `npm run example:governed` |
-| 5 | [Research agent](../examples/research-agent/README.md) | `npm run example:research` |
+| Level | Example | Run | Used by |
+|---|---|---|---|
+| 1 | [Minimal agent](../examples/minimal-agent/README.md) | `npm run example` | 00, 03 |
+| 2 | [ReAct agent](../examples/react-agent/README.md) | `npm run example:react` | 02, 03 |
+| 3 | [Coding agent](../examples/coding-agent/README.md) | `npm run example:coding` | 05 |
+| 4 | [Governed agent](../examples/governed-agent/README.md) | `npm run example:governed` | 08, 11, 12 |
+| 5 | [Research agent](../examples/research-agent/README.md) | `npm run example:research` | 04, 11 |
 
 ## Tutorials and use cases (🟡 practitioner entry point)
 
