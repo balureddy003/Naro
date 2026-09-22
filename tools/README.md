@@ -84,8 +84,10 @@ Actions and prompts should contain references such as `env:API_KEY` or
 credential files); reads are cached per path with a 60-second TTL
 (configurable) so rotations are picked up without a filesystem hit per
 action. `MapSecretProvider` is useful for tests and small controlled
-deployments. `chainSecrets()` returns the first resolved value. A Vault or
-cloud-secret adapter can implement the same port.
+deployments. `chainSecrets()` returns the first resolved value.
+`@naro/adapter-vault`'s `VaultSecretProvider` implements `vault:path#key`
+against HashiCorp Vault KV v2 with the same TTL-cached posture; a
+cloud-KMS adapter can implement the same port the same way.
 
 ## Worker-thread sandbox
 

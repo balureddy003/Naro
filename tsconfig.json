@@ -110,6 +110,9 @@
       "path": "./adapters/opa"
     },
     {
+      "path": "./adapters/vault"
+    },
+    {
       "path": "./dogfood"
     }
   ],

@@ -30,13 +30,17 @@ to the deployment in front.
 - Put secret references in configuration or actions, never values.
 - Configure `EnvSecretProvider` (`env:`), `FileSecretProvider` (`file:` —
   mounted secret volumes, cached with a 60s TTL so rotations are picked
-  up), `MapSecretProvider`, a chained provider, or a deployment-specific
-  vault adapter.
+  up), `MapSecretProvider`, `@naro/adapter-vault`'s `VaultSecretProvider`
+  (`vault:` — HashiCorp Vault KV v2, same TTL-cached posture), or a
+  chained provider composing several of these.
 - Resolve through `ExecContext.secrets` inside the executor.
 - Do not return resolved values in observations or errors.
 - Redact external telemetry as a backstop.
 
-Naro does not include a Vault, cloud KMS, or managed secret backend today.
+Naro does not include a cloud KMS or managed secret backend today. Vault
+token lifecycle (AppRole login, renewal, Kubernetes auth) stays a
+deployment concern — `VaultSecretProvider` takes a static token or a
+caller-supplied header, not a login flow.
 
 ## 3. Execution isolation
 
