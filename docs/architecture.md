@@ -11,8 +11,9 @@ as far as your role requires:
    observability, recovery, and delegation.
 5. **Code view** — the contracts and invariants contributors must preserve.
 
-The diagrams describe the implementation in this repository. Future deployment
-options are labeled as such.
+The diagrams describe the implementation in this repository, not a planned
+future state — where a capability is a deployment responsibility rather than
+something Naro supplies, the text says so explicitly (§14, §16).
 
 ---
 
@@ -100,6 +101,20 @@ humans, and success criteria are appropriate.
 A prompt role, model refusal, or tool description is not an authorization
 boundary. Permission comes from runtime configuration and `PolicyEngine`.
 
+### Provenance is a policy input, not just a transcript label
+
+The "source → context" row above is more than a delimiter convention.
+`Observation.trust` (`system | tool | external`) is stamped at the point an
+observation is created, and `ctx.provenance` — the lowest trust level the
+reasoner has read since its last decision — is passed to `PolicyEngine` at
+the gate. `createToolPolicy({ denyExternalTriggered })` uses it to deny a
+side effect whose triggering evidence came from outside the system, even
+when the model itself decided to take that action. This turns prompt
+injection into a kernel-enforced control instead of a prompt-engineering
+suggestion: the policy engine sees where the evidence came from, not only
+what the model asked to do. `npm run example:research` demonstrates it.
+See [ADR 0010](adr/0010-provenance-is-a-policy-input.md).
+
 ---
 
 ## 3. Level 2 — package architecture
@@ -145,26 +160,6 @@ flowchart TB
         contracts["@naro/contract-tests\nport conformance suites"]
     end
 
-    subgraph profiles["Domain profiles"]
-        coding["@naro/profile-coding\nworkspace env + coding tools"]
-        research["@naro/profile-research\nfetch + citations"]
-        browser["@naro/profile-browser\nBrowserDriver port + Playwright"]
-        data["@naro/profile-data\nSQL env + node:sqlite"]
-        devops["@naro/profile-devops\nrunbook registry + probes"]
-        workflow["@naro/profile-workflow\nDAG runner"]
-        robotics["@naro/profile-robotics\nRobotDriver port + estop latch"]
-    end
-
-    subgraph adapters["Edge adapters"]
-        openai["@naro/adapter-openai"]
-        mcp["@naro/adapter-mcp"]
-        otel["@naro/adapter-otel"]
-        opa["@naro/adapter-opa"]
-        anthropic["@naro/adapter-anthropic"]
-        gemini["@naro/adapter-gemini"]
-        a2a["@naro/adapter-a2a"]
-    end
-
     runtime --> core
     model --> core
     tools --> core
@@ -189,43 +184,53 @@ flowchart TB
     cli --> observability
     cli --> evaluation
     contracts --> core
-
-    openai --> model
-    openai --> core
-    mcp --> tools
-    mcp --> core
-    otel --> observability
-    otel --> core
-    opa --> core
-    anthropic --> model
-    anthropic --> core
-    gemini --> model
-    gemini --> core
-    a2a --> multiagent
-    a2a --> core
-
-    coding --> environment
-    coding --> tools
-    coding --> core
-    research --> environment
-    research --> tools
-    research --> core
-    browser --> environment
-    browser --> tools
-    browser --> core
-    data --> environment
-    data --> tools
-    data --> core
-    devops --> environment
-    devops --> tools
-    devops --> core
-    workflow --> environment
-    workflow --> tools
-    workflow --> core
-    robotics --> environment
-    robotics --> tools
-    robotics --> core
 ```
+
+Domain profiles and edge adapters are lower-variance than the diagram above
+— every profile depends on the same three packages, and most adapters
+translate one protocol into `core`/`model`/`tools` — so they're tables, not
+more flowchart, below.
+
+### Domain profiles
+
+Every profile has the identical shape: a domain `Environment`, domain
+`Tool`s built on it, and nothing else.
+
+| Profile | Distinctive capability | Depends on |
+|---|---|---|
+| `@naro/profile-coding` | workspace env + coding tools | `environment`, `tools`, `core` |
+| `@naro/profile-research` | fetch + citations | `environment`, `tools`, `core` |
+| `@naro/profile-browser` | `BrowserDriver` port + Playwright | `environment`, `tools`, `core` |
+| `@naro/profile-data` | SQL env + `node:sqlite` | `environment`, `tools`, `core` |
+| `@naro/profile-devops` | runbook registry + probes | `environment`, `tools`, `core` |
+| `@naro/profile-workflow` | DAG runner | `environment`, `tools`, `core` |
+| `@naro/profile-robotics` | `RobotDriver` port + estop latch | `environment`, `tools`, `core` |
+
+### Edge adapters
+
+Most adapters translate one external protocol into one Naro contract. Two
+don't fit that shape — see the note after the table.
+
+| Adapter | Translates | Depends on |
+|---|---|---|
+| `@naro/adapter-openai` | OpenAI-compatible model API | `model`, `core` |
+| `@naro/adapter-anthropic` | Anthropic Messages API | `model`, `core` |
+| `@naro/adapter-gemini` | Gemini `generateContent` | `model`, `core` |
+| `@naro/adapter-mcp` | MCP tool discovery | `tools`, `core` |
+| `@naro/adapter-opa` | OPA/Rego policy decisions | `core` |
+| `@naro/adapter-otel` | OTLP/HTTP log export | `observability`, `core` |
+| `@naro/adapter-a2a` | A2A agent cards + JSON-RPC task send | `multiagent`, `core` |
+| `@naro/adapter-pg` | Postgres — six ports at once (below) | `runtime`, `multiagent`, `memory`, `policy`, `observability`, `core` |
+| `@naro/adapter-harness` | *nothing* — governs a foreign harness's own hooks | `runtime`, `core` |
+
+`@naro/adapter-pg` implements `CheckpointStore`, `EventStore`/
+`EventExporter`, `MemoryStore`, `LeaseStore`, `LimitStore`, and `AgentBus` on
+Postgres — one package, six ports, because multi-host durability is one
+deployment concern even though the kernel models it as several contracts.
+`@naro/adapter-harness` translates no protocol at all: it runs the policy
+gate and journal *beneath* a foreign agent loop (Claude Agent SDK, OpenCode)
+via that harness's own tool-call hooks, rather than owning a loop itself.
+See §14 and [ADR 0009](adr/0009-governance-beneath-foreign-harnesses.md).
 
 ### Package responsibilities
 
@@ -247,7 +252,7 @@ flowchart TB
 | `@naro/contract-tests` | reusable behavioral suites for replaceable ports | production runtime behavior |
 | `@naro/cli` | run, benchmark, baseline diff, replay, and state inspection commands | hidden agent composition |
 | `@naro/profile-*` | domain environments, tools, drivers, and safety constraints | domain concepts in core |
-| adapters | translation to model, tool, policy, telemetry, and agent protocols | vendor-specific types in public core contracts |
+| adapters | translation to model, tool, policy, telemetry, storage, and agent protocols | vendor-specific types in public core contracts |
 
 ---
 
@@ -576,7 +581,8 @@ flowchart LR
     bus --> jsonl["JsonlExporter"]
     bus --> console["ConsoleExporter"]
     bus --> otlp["OtlpExporter\nOTLP/HTTP logs"]
-    bus --> sqlite["SqliteEventStore\ndurable journal"]
+    bus --> sqlite["SqliteEventStore\ndurable single-host journal"]
+    bus --> pgstore["PgEventStore\ndurable multi-host journal"]
     bus --> ui["application subscribers"]
 
     history["completed RunResult.events\nincluding model.usage"] --> metrics["computeMetrics"]
@@ -586,9 +592,11 @@ flowchart LR
 
 Observability derives interpretation from the event stream rather than keeping
 a second hidden state. Event payloads are structured-cloned snapshots; every
-event carries `runId` and monotonic `seq`. `SqliteEventStore` provides a durable,
-queryable single-host journal. JSONL and OTLP exporters serialize writes and expose
-`flush()` so callers can wait for delivery before process exit.
+event carries `runId` and monotonic `seq`. `SqliteEventStore` provides a
+durable, queryable single-host journal; `PgEventStore` (`@naro/adapter-pg`) is
+the same journal readable from any replica. JSONL and OTLP exporters
+serialize writes and expose `flush()` so callers can wait for delivery before
+process exit.
 
 Each event also carries `prev` and `hash` — a SHA-256 chain computed in
 `EventBus.emit()` over the event's canonical form (see
@@ -640,9 +648,12 @@ completed before its observation was checkpointed. At-least-once recovery
 therefore requires idempotency keys, reconciliation, or durable external
 operation IDs.
 
-Included stores are in-memory, append-only JSONL, and transactional SQLite.
-`SqliteCheckpointStore` is the durable single-host option. Missing files mean no
-checkpoint; corrupt data fails rather than silently starting a fresh run.
+Included stores are in-memory, append-only JSONL, transactional SQLite, and
+Postgres. `SqliteCheckpointStore` is the durable single-host option;
+`PgCheckpointStore` (`@naro/adapter-pg`) is the durable multi-host option — a
+checkpoint written by one replica is readable by any other. Missing files
+mean no checkpoint; corrupt data fails rather than silently starting a fresh
+run.
 
 ---
 
@@ -677,9 +688,12 @@ application-provided verifiers.
 `@naro/adapter-a2a` adds agent cards, task send/get/cancel, and SSE lifecycle
 streaming through `requestStream()`. The stream reports task state rather than
 incremental model tokens or artifacts. `DurableAgentBus` stores tasks in SQLite,
-atomically claims work, and reclaims
-stale claims for at-least-once single-host delivery. Handlers must therefore be
-idempotent. Multi-host durability still requires a shared database or broker.
+atomically claims work, and reclaims stale claims for at-least-once
+single-host delivery. `PgAgentBus` (`@naro/adapter-pg`) is the same contract
+on Postgres — `SKIP LOCKED` claims give at-least-once delivery across
+replicas on any host that can reach the database, not just one machine.
+Handlers must be idempotent either way; a reclaimed stale claim means a
+handler ran and never marked completion, not that it never ran.
 
 Delegation requires the `agent.delegate` permission and remains visible to
 policy and audit. Returned agent output is still untrusted and should be
@@ -689,8 +703,11 @@ verified by the caller.
 
 ## 14. Deployment views
 
-Naro packages are libraries, so deployment topology belongs to the application.
-Two common shapes are shown below.
+Naro packages are libraries, so deployment topology belongs to the
+application. Two shapes are shown below — [deploy.md](deploy.md) covers two
+more (environments as a separate remote process, and governance running
+beneath a foreign harness) with the Dockerfile/compose/k8s manifests that
+implement them.
 
 ### Single-process development
 
@@ -703,27 +720,50 @@ flowchart LR
     app --> model["local or hosted model"]
 ```
 
-This shape is appropriate for examples, tests, local automation, and controlled
-single-user workflows.
+Zero infrastructure — SQLite is a file, not a server. Appropriate for
+examples, tests, local automation, and controlled single-user workflows.
+The limit is the file: one host, no failover.
 
-### Supervised production service
+### Multi-host control plane
 
 ```mermaid
 flowchart LR
-    api["API / scheduler"] --> workers["Agent workers"]
-    workers --> models["model gateway"]
-    workers --> tools["isolated tool services / MCP"]
-    workers --> state["durable checkpoint + memory stores"]
-    workers --> policy["central policy / approval service"]
-    workers --> collector["OTLP collector"]
-    collector --> ops["logs, dashboards, alerts"]
-    workers <-->|durable transport| peers["specialist agent workers"]
+    lb["Load balancer"] --> r1["naro serve\nreplica 1"]
+    lb --> r2["naro serve\nreplica 2"]
+    r1 --> pg[("Postgres\ncheckpoints · events · memory\nleases · limits · agent bus")]
+    r2 --> pg
+    r1 -.->|"principals: viewer / operator / approver"| lb
+    r2 -.->|approval queue over HTTP| lb
+    r1 --> models["model providers"]
+    r2 --> models
+    pg --> collector["OTLP collector"]
 ```
 
-Naro supplies zero-infrastructure SQLite stores, single-host leases and durable
-delegation, secret-provider ports, JWT hooks, and OTLP export. Multi-host queues
-and leases, centralized secret backends, tenant isolation, TLS/mTLS, container
-sandboxing, and hosted operations remain deployment responsibilities.
+Every durable port — checkpoints, events, memory, leases, limits, and the
+agent bus — has a Postgres implementation in `@naro/adapter-pg`, so this
+topology needs no bespoke infrastructure code, only a Postgres connection
+string. A run started on one replica can be read, resumed (`wake(runId)`),
+or approved from any other, because the journal and the lease are both in
+the shared database, not in process memory. `naro serve --principals` maps
+bearer tokens to `{id, roles}` for this shared control plane — the approver
+identity lands in the journal (`human.approval.received.by`), and gate
+events carry the policy engine's own id (`PolicyEngine.id`, alongside the
+verdict's `reason` — [ADR 0011](adr/0011-policy-verdicts-carry-reasons.md)),
+so "who approved this, and under which policy, and why" is answered by the
+journal alone ([ADR 0012](adr/0012-control-plane-identity.md)). See
+[deploy.md](deploy.md)'s "Topology 2" for the full networking matrix and the
+k8s/compose manifests that implement this diagram.
+
+### What's still a deployment responsibility
+
+Naro supplies the stores, leases, queues, secret-provider ports, JWT hooks,
+and OTLP export — both the zero-infrastructure SQLite tier and the
+multi-host Postgres tier above. What it does not supply: centralized secret
+management (KMS/HSM), tenant authorization (the control-plane roles above
+are viewer/operator/approver, not per-tenant isolation), TLS/mTLS, container
+or VM sandboxing for hostile code, and hosted operations (dashboards,
+on-call, capacity planning). §16 names the remaining implementation limits
+inside the ports themselves.
 
 ---
 
@@ -779,10 +819,16 @@ These are deliberate implementation boundaries, not hidden guarantees:
   only for tests and controlled development.
 - action deadlines abort the executor signal; an external system may still have
   committed work before observing cancellation.
-- SQLite checkpoints, events, memory, leases, and delegation are durable across
-  processes sharing one host, not distributed across hosts.
-- in-process policy limits are not distributed; HTTP and A2A transports are
-  synchronous, while the included durable queue is SQLite-backed and single-host.
+- durability has two included tiers, not one: SQLite (checkpoints, events,
+  memory, leases, limits, delegation — durable across processes sharing one
+  host) and Postgres via `@naro/adapter-pg` (the same six ports, durable
+  across hosts). There is no third, larger tier — sharding a single Postgres
+  further, or a non-relational store, is still an application concern.
+- `naro serve`'s approval queue (`/approvals`) is SQLite-only today —
+  `SqliteApprovalBridge` has no Postgres counterpart, so a Postgres-backed
+  multi-host deployment's approval queue is still per-replica even though its
+  run registry and journal are shared. HTTP and A2A transports are
+  synchronous either way — no async/streaming task protocol is included.
 - event history supports audit and derived metrics; deterministic replay of
   external side effects requires application-level fixtures or adapters.
 - OTLP export currently emits logs rather than a parented span graph.
@@ -799,7 +845,14 @@ where they can rely on Naro and where production infrastructure must take over.
 - [Documentation map](README.md)
 - [End-to-end use cases](use-cases.md)
 - [Production readiness](production-readiness.md)
+- [Deploying Naro](deploy.md) — the topologies this doc's §14 summarizes,
+  in full, with networking and the deployment manifests.
 - [Design principles](principles.md)
+- [Architecture decision records](adr/README.md) — every ADR this doc
+  cites (0005, 0007, 0008, 0009, 0010, 0011, 0012), and the ones it doesn't.
+- [Market quadrant](market-quadrant.md) — where this architecture sits
+  relative to the field, and what's still missing for adoption rather
+  than for correctness.
 - [How LLMs work](learn/00-how-llms-work.md)
 - [Agent loops and state machines](learn/08-agent-loops.md)
 - [Evaluation](learn/10-evaluation.md)
