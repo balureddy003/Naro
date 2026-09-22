@@ -26,6 +26,17 @@ test('history preserves the full ordered log', () => {
   assert.equal(h[0]!.agentId, 'a1');
 });
 
+test('a root run is the root of its own trace; a set traceId stamps every subsequent event', () => {
+  const bus = new EventBus({ agentId: 'a1', goalId: 'g1' });
+  const root = bus.emit('agent.created', { name: 'root' });
+  assert.equal(root.traceId, bus.runId);
+
+  bus.traceId = 'trace-from-parent';
+  const child = bus.emit('reasoning.started', { iteration: 0 });
+  assert.equal(child.traceId, 'trace-from-parent');
+  assert.equal(root.traceId, bus.runId, 'earlier events keep their own snapshot');
+});
+
 test('unsubscribe stops delivery', () => {
   const bus = new EventBus({ agentId: 'a1', goalId: 'g1' });
   let count = 0;

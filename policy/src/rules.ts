@@ -1,4 +1,4 @@
-import type { Action, PolicyContext, PolicyDecision, PolicyEngine } from '@naro/core';
+import { toVerdict, type Action, type PolicyContext, type PolicyDecision, type PolicyEngine, type PolicyResult, type PolicyVerdict } from '@naro/core';
 import { InMemoryLimitStore, type LimitStore } from './limiter.ts';
 
 /**
@@ -33,38 +33,41 @@ export interface AuditEntry {
  *   "allowed, but on the record."
  */
 export class RulePolicyEngine implements PolicyEngine {
+  /** Engine identity stamped on gate events (default 'rules'). */
+  readonly id: string;
   private readonly rules: readonly PolicyRule[];
   private readonly defaultDecision: PolicyDecision;
   private readonly limits: LimitStore;
   private readonly log: AuditEntry[] = [];
 
-  constructor(rules: readonly PolicyRule[], options: { default?: PolicyDecision; limits?: LimitStore } = {}) {
+  constructor(rules: readonly PolicyRule[], options: { id?: string; default?: PolicyDecision; limits?: LimitStore } = {}) {
+    this.id = options.id ?? 'rules';
     this.rules = rules;
     this.defaultDecision = options.default ?? 'allow';
     this.limits = options.limits ?? new InMemoryLimitStore();
   }
 
-  evaluate(action: Action, ctx: PolicyContext): Promise<PolicyDecision> | PolicyDecision {
+  evaluate(action: Action, ctx: PolicyContext): Promise<PolicyResult> | PolicyResult {
     for (const rule of this.rules) {
       if (!rule.when(action, ctx)) continue;
       if (rule.then === 'limit') return this.limitVerdict(rule, action);
       if (rule.then === 'audit') {
         this.log.push({ at: Date.now(), actionId: action.id, target: action.target, decision: 'audit', ruleId: rule.id });
       }
-      return rule.then;
+      return { decision: rule.then, reason: `rule ${rule.id}` };
     }
     return this.defaultDecision;
   }
 
-  private limitVerdict(rule: PolicyRule, action: Action): PolicyDecision | Promise<PolicyDecision> {
+  private limitVerdict(rule: PolicyRule, action: Action): PolicyVerdict | Promise<PolicyVerdict> {
     const spec = rule.limit ?? { maxCalls: 1 };
     // record() counts this call — attempts past the cap count too (that's
     // what makes a rate limit a rate limit, not a success quota).
     const n = this.limits.record(rule.id, spec.windowMs, Date.now());
-    const settle = (count: number): PolicyDecision => {
+    const settle = (count: number): PolicyVerdict => {
       const decision: PolicyDecision = count <= spec.maxCalls ? 'allow' : 'deny';
       this.log.push({ at: Date.now(), actionId: action.id, target: action.target, decision, ruleId: rule.id });
-      return decision;
+      return { decision, ...(decision === 'deny' && { reason: `limit ${rule.id} exhausted` }) };
     };
     // In-memory stays synchronous; durable stores go async.
     return typeof n === 'number' ? settle(n) : n.then(settle);
@@ -153,12 +156,15 @@ export function allOf(...engines: readonly PolicyEngine[]): PolicyEngine {
     deny: 4, require_approval: 3, limit: 2, audit: 1, allow: 0,
   };
   return {
-    async evaluate(action: Action, ctx: PolicyContext): Promise<PolicyDecision> {
-      let verdict: PolicyDecision = 'allow';
+    // Composite id names the member engines — 'allOf(tool-policy,rules)' —
+    // so the journal still says which composition decided.
+    id: `allOf(${engines.map((e) => e.id ?? 'anonymous').join(',')})`,
+    async evaluate(action: Action, ctx: PolicyContext): Promise<PolicyVerdict> {
+      let verdict: PolicyVerdict = { decision: 'allow' };
       for (const engine of engines) {
-        const d = await engine.evaluate(action, ctx);
-        if (strictness[d] > strictness[verdict]) verdict = d;
-        if (verdict === 'deny') break; // nothing is stricter — short-circuit
+        const v = toVerdict(await engine.evaluate(action, ctx));
+        if (strictness[v.decision] > strictness[verdict.decision]) verdict = v;
+        if (verdict.decision === 'deny') break; // nothing is stricter — short-circuit
       }
       return verdict;
     },

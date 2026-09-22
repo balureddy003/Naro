@@ -95,6 +95,9 @@
       "path": "examples/governed-agent"
     },
     {
+      "path": "examples/research-agent"
+    },
+    {
       "path": "./adapters/gemini"
     },
     {
@@ -105,6 +108,9 @@
     },
     {
       "path": "./adapters/opa"
+    },
+    {
+      "path": "./dogfood"
     }
   ],
   "extends": "./tsconfig.base.json",

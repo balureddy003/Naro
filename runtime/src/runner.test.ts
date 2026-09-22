@@ -60,11 +60,13 @@ test('full loop: reason → act → observe → complete, all events emitted', a
 
 test('policy denial becomes an observation — the reasoner sees it and adapts', async () => {
   const denyWrites: PolicyEngine = {
-    evaluate: (a) => (a.target.includes('env://') ? 'deny' : 'allow'),
+    evaluate: (a) => (a.target.includes('env://')
+      ? { decision: 'deny' as const, reason: 'env writes are forbidden' }
+      : 'allow'),
   };
   let sawDenial = false;
   const reasoner = new DirectReasoner((ctx) => {
-    const denied = ctx.observations.some((o) => o.error === 'action denied by policy');
+    const denied = ctx.observations.some((o) => o.error === 'denied by policy: env writes are forbidden');
     if (denied) { sawDenial = true; return { kind: 'complete', result: 'gave up gracefully' }; }
     return { kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 'v' } };
   });
@@ -73,7 +75,8 @@ test('policy denial becomes an observation — the reasoner sees it and adapts',
 
   assert.equal(result.status, 'completed');
   assert.ok(sawDenial);
-  assert.ok(result.events.some((e) => e.type === 'action.denied'));
+  const denied = result.events.find((e) => e.type === 'action.denied');
+  assert.equal(denied?.data.reason, 'env writes are forbidden');
 });
 
 test('require_approval routes through WAITING_FOR_HUMAN via the bridge', async () => {
@@ -96,6 +99,38 @@ test('require_approval routes through WAITING_FOR_HUMAN via the bridge', async (
   assert.equal(result.status, 'completed');
   assert.equal(asked, 2);
   assert.ok(result.events.some((e) => e.type === 'human.approval.requested'));
+});
+
+test('PolicyEngine.id stamps the gate events — the journal names the decider', async () => {
+  const named: PolicyEngine = { id: 'acme-rules', evaluate: () => 'allow' };
+  const reasoner = new DirectReasoner((ctx) =>
+    ctx.observations.length
+      ? { kind: 'complete', result: 'done' }
+      : { kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 'v' } });
+  const runner = new AgentRunner({ ...makeDeps(), reasoner, policy: named });
+  const result = await runner.run();
+  for (const type of ['permission.requested', 'action.permitted'] as const) {
+    const e = result.events.find((x) => x.type === type);
+    assert.equal(e && 'policy' in e.data ? e.data.policy : undefined, 'acme-rules');
+  }
+});
+
+test('approval attribution: bridge by → human.approval.received.by', async () => {
+  const gated: PolicyEngine = { id: 'gate', evaluate: () => 'require_approval' };
+  const human = {
+    approve: () => Promise.resolve({ approved: true, by: 'alice' }),
+    ask: () => Promise.resolve(''),
+  };
+  const reasoner = new DirectReasoner((ctx) =>
+    ctx.observations.some((o) => o.kind === 'env-change')
+      ? { kind: 'complete', result: 'ok' }
+      : { kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 'v' } });
+  const runner = new AgentRunner({ ...makeDeps(), reasoner, policy: gated, human });
+  const result = await runner.run();
+  const received = result.events.find((e) => e.type === 'human.approval.received');
+  assert.equal(received?.data.by, 'alice');
+  const requested = result.events.find((e) => e.type === 'human.approval.requested');
+  assert.equal(requested?.data.policy, 'gate');
 });
 
 test('tool failure surfaces as an error observation, not a crash', async () => {

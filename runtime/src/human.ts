@@ -8,7 +8,13 @@ import type { Action } from '@naro/core';
  * promises — the agent sits in WAITING_FOR_HUMAN until resolved.
  */
 export interface HumanBridge {
-  approve(action: Action, question?: string): Promise<{ approved: boolean; note?: string }>;
+  /**
+   * `by` is the responder's identity when the bridge knows it (e.g. the
+   * principal that posted to `POST /approvals/:id`) — the runner stamps it
+   * on `human.approval.received`, so approver attribution lands in the
+   * journal, not only in the bridge's table.
+   */
+  approve(action: Action, question?: string): Promise<{ approved: boolean; note?: string; by?: string }>;
   ask(question: string): Promise<string>;
 }
 

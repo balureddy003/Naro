@@ -6,6 +6,10 @@ export interface ActionEvidence {
   readonly capability: string;
   /** Gate outcome: policy verdict plus the human-approval path, if taken. */
   readonly policy: 'permitted' | 'approved' | 'denied' | 'unresolved';
+  /** Which engine judged — `PolicyEngine.id` stamped on the gate events. */
+  readonly policyEngine?: string;
+  /** Who approved — `human.approval.received.by` (control-plane identity). */
+  readonly approvedBy?: string;
   readonly deniedReason?: string;
   readonly executed: boolean;
   readonly observation?: {
@@ -57,6 +61,7 @@ export function buildEvidence(events: readonly NaroEvent[]): EvidenceRecord {
   const sorted = [...events].sort((a, b) => a.seq - b.seq);
   const byAction = new Map<string, {
     capability: string; policy: ActionEvidence['policy']; deniedReason?: string;
+    policyEngine?: string; approvedBy?: string;
     executed: boolean; approvalAsked: boolean;
     observation?: ActionEvidence['observation'];
     verification?: ActionEvidence['verification'];
@@ -68,6 +73,7 @@ export function buildEvidence(events: readonly NaroEvent[]): EvidenceRecord {
   };
 
   let pendingSubject: string | undefined;
+  let pendingApprovalAction: string | undefined;
   let goalVerification: EvidenceRecord['goalVerification'];
   let outcome: EvidenceRecord['outcome'];
   let usage: EvidenceRecord['usage'];
@@ -80,18 +86,36 @@ export function buildEvidence(events: readonly NaroEvent[]): EvidenceRecord {
         x.capability = e.data.action.capability;
         break;
       }
+      case 'permission.requested':
+        if (e.data.policy !== undefined) entry(e.data.action.id).policyEngine = e.data.policy;
+        break;
       case 'human.approval.requested':
-        if (e.data.action) entry(e.data.action.id).approvalAsked = true;
+        if (e.data.action) {
+          const x = entry(e.data.action.id);
+          x.approvalAsked = true;
+          if (e.data.policy !== undefined) x.policyEngine = e.data.policy;
+          pendingApprovalAction = e.data.action.id;
+        }
+        break;
+      case 'human.approval.received':
+        // The received event has no action id — it answers the most recent
+        // approval.requested that carried one (the runner emits them paired).
+        if (e.data.by !== undefined && pendingApprovalAction !== undefined) {
+          entry(pendingApprovalAction).approvedBy = e.data.by;
+        }
+        pendingApprovalAction = undefined;
         break;
       case 'action.denied': {
         const x = entry(e.data.action.id);
         x.policy = 'denied';
         x.deniedReason = e.data.reason ?? 'denied by policy';
+        if (e.data.policy !== undefined) x.policyEngine = e.data.policy;
         break;
       }
       case 'action.permitted': {
         const x = entry(e.data.action.id);
         x.policy = x.approvalAsked ? 'approved' : 'permitted';
+        if (e.data.policy !== undefined) x.policyEngine = e.data.policy;
         break;
       }
       case 'action.started':
@@ -140,6 +164,8 @@ export function buildEvidence(events: readonly NaroEvent[]): EvidenceRecord {
 
   const actions: ActionEvidence[] = [...byAction.entries()].map(([actionId, x]) => ({
     actionId, capability: x.capability, policy: x.policy,
+    ...(x.policyEngine !== undefined && { policyEngine: x.policyEngine }),
+    ...(x.approvedBy !== undefined && { approvedBy: x.approvedBy }),
     ...(x.deniedReason !== undefined && { deniedReason: x.deniedReason }),
     executed: x.executed,
     ...(x.observation !== undefined && { observation: x.observation }),
@@ -178,7 +204,9 @@ export function formatEvidence(record: EvidenceRecord): string {
       : `seal: INVALID — ${chain.sealed.reason ?? 'unknown'}`);
   }
   for (const a of record.actions) {
-    const gate = a.policy === 'denied' ? `denied (${a.deniedReason})` : a.policy;
+    const gate = (a.policy === 'denied' ? `denied (${a.deniedReason})` : a.policy)
+      + (a.policyEngine !== undefined ? ` [engine: ${a.policyEngine}]` : '')
+      + (a.approvedBy !== undefined ? ` [approver: ${a.approvedBy}]` : '');
     const obs = a.observation
       ? a.observation.success ? `observed ok` : `observed FAILED${a.observation.error ? `: ${a.observation.error}` : ''}`
       : a.executed ? 'no observation' : 'not executed';

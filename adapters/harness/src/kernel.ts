@@ -1,5 +1,5 @@
 import {
-  createAction, createGoal, createObservation,
+  createAction, createGoal, createObservation, toVerdict,
   type Action, type Goal, type NaroEvent, type Observation,
   type PolicyEngine, type Verifier,
 } from '@naro/core';
@@ -75,32 +75,33 @@ export class HarnessKernel {
       ...(call.callId !== undefined && { toolCallId: call.callId }),
     });
     this.bus.emit('action.requested', { action });
-    this.bus.emit('permission.requested', { action });
-    const verdict = await this.deps.policy.evaluate(action, {
+    const policy = this.deps.policy.id;
+    this.bus.emit('permission.requested', { action, ...(policy !== undefined && { policy }) });
+    const { decision, reason } = toVerdict(await this.deps.policy.evaluate(action, {
       agentId: this.deps.agentId,
       goal: this.deps.goal,
       grants: this.deps.grants ?? [],
-    });
+    }));
 
-    if (verdict === 'deny') {
+    if (decision === 'deny') {
       action.state = 'denied';
-      this.bus.emit('action.denied', { action });
+      this.bus.emit('action.denied', { action, ...(reason !== undefined && { reason }), ...(policy !== undefined && { policy }) });
       this.bus.emit('observation.created', { observation: createObservation({
         actionId: action.id, source: 'policy', kind: 'error',
-        success: false, error: 'action denied by policy',
+        success: false, error: reason ?? 'action denied by policy',
       }) });
-      return { decision: 'deny', reason: 'denied by policy' };
+      return { decision: 'deny', reason: reason ?? 'denied by policy' };
     }
-    if (verdict === 'require_approval') {
+    if (decision === 'require_approval') {
       // The harness owns its approval UI; we record the requirement and
       // hand the decision back as 'ask'.
-      this.bus.emit('human.approval.requested', { action });
+      this.bus.emit('human.approval.requested', { action, ...(policy !== undefined && { policy }) });
       this.pending.set(call.callId ?? `seq-${this.seq++}`, action);
-      return { decision: 'ask', reason: 'requires approval' };
+      return { decision: 'ask', reason: reason ?? 'requires approval' };
     }
     // 'allow', 'limit', 'audit' — proceed; audit is already in the journal.
     action.state = 'authorized';
-    this.bus.emit('action.permitted', { action });
+    this.bus.emit('action.permitted', { action, ...(policy !== undefined && { policy }) });
     this.pending.set(call.callId ?? `seq-${this.seq++}`, action);
     return { decision: 'allow' };
   }

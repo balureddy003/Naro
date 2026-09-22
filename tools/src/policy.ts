@@ -1,8 +1,10 @@
-import type { Action, PolicyContext, PolicyDecision, PolicyEngine } from '@naro/core';
+import type { Action, PolicyContext, PolicyDecision, PolicyEngine, PolicyVerdict } from '@naro/core';
 import type { ToolRegistry } from './registry.ts';
 import type { SideEffect } from './tool.ts';
 
 export interface ToolPolicyOptions {
+  /** Engine identity stamped on gate events. Default 'tool-policy'. */
+  readonly id?: string;
   /** Side effects that require human approval before running. */
   readonly approvalFor?: readonly SideEffect[]; // default ['destructive']
   /**
@@ -48,16 +50,27 @@ export function createToolPolicy(
   const denyExternal = new Set(options.denyExternalTriggered ?? []);
 
   return {
-    evaluate(action: Action, ctx: PolicyContext): PolicyDecision {
-      if (!action.target.startsWith('tool://')) return otherwise;
-      const tool = registry.get(action.target.slice('tool://'.length));
-      if (!tool) return unknownTool; // a tool:// target that names nothing — fail closed
+    id: options.id ?? 'tool-policy',
+    evaluate(action: Action, ctx: PolicyContext): PolicyVerdict {
+      if (!action.target.startsWith('tool://')) return { decision: otherwise };
+      const name = action.target.slice('tool://'.length);
+      const tool = registry.get(name);
+      if (!tool) {
+        return { decision: unknownTool, reason: `no registered tool '${name}'` };
+      }
 
       const missing = tool.permissions.filter((p) => !ctx.grants.includes(p));
-      if (missing.length > 0) return 'deny';
-      if (ctx.provenance?.lowest === 'external' && denyExternal.has(tool.sideEffects)) return 'deny';
-      if (approvalFor.has(tool.sideEffects)) return 'require_approval';
-      return 'allow';
+      if (missing.length > 0) return { decision: 'deny', reason: `missing grants: ${missing.join(', ')}` };
+      if (ctx.provenance?.lowest === 'external' && denyExternal.has(tool.sideEffects)) {
+        return {
+          decision: 'deny',
+          reason: `${tool.sideEffects} side effect triggered by external evidence (${ctx.provenance.externalSources.join(', ')})`,
+        };
+      }
+      if (approvalFor.has(tool.sideEffects)) {
+        return { decision: 'require_approval', reason: `${tool.sideEffects} side effect requires approval` };
+      }
+      return { decision: 'allow' };
     },
   };
 }

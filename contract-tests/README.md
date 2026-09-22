@@ -19,6 +19,7 @@ checkpointStoreContract('MySqlCheckpointStore', () => new MySqlCheckpointStore(o
 | `policyEngineContract` | returns a valid `PolicyDecision`, deterministic shape |
 | `eventExporterContract` | empty batches OK, seq order preserved across concurrent exports (durable sinks) |
 | `toolSourceContract` | discovered tools have name/schema/execute, names unique |
+| `toolTrustContract` | a tool wrapping an environment stamps trust no higher than the env's observation (external stays external) |
 
 ## Design
 

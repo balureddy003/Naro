@@ -1,4 +1,4 @@
-import { createAction, createObservation, type Action, type ActionExecutor, type ExecContext, type Observation, type PolicyEngine } from '@naro/core';
+import { createAction, createObservation, toVerdict, type Action, type ActionExecutor, type ExecContext, type Observation, type PolicyEngine } from '@naro/core';
 import type { Environment, EnvironmentState } from '@naro/environment';
 
 /**
@@ -138,11 +138,11 @@ export class WorkflowEnvironment implements Environment {
         });
         // Nested steps face the same gate as top-level actions — a workflow
         // is a way to authorize a batch, not a way to sneak one through.
-        const verdict = await this.policy.evaluate(stepAction, {
+        const { decision, reason } = toVerdict(await this.policy.evaluate(stepAction, {
           agentId: ctx.agentId, goal: ctx.goal, grants: ctx.grants,
-        });
-        if (verdict === 'deny' || verdict === 'require_approval') {
-          lastErr = `step denied by policy (${verdict})`;
+        }));
+        if (decision === 'deny' || decision === 'require_approval') {
+          lastErr = `step denied by policy (${decision}${reason ? ': ' + reason : ''})`;
           continue; // retrying a denial won't help, but the shape stays uniform
         }
         const obs = await this.executor.execute(stepAction, ctx);

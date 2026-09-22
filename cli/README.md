@@ -76,13 +76,27 @@ Additional flags:
 - `--registry <file.db>` — durable `RunRegistry` (`SqliteRunRegistry`);
   `GET /runs` answers from it, so the run index survives restarts and is
   shared between replicas pointed at the same store. Default: in-memory.
-  Postgres (`PgRunRegistry`) is wired via the module, not a flag.
 - `--journal <file.db>` — a shared `SqliteEventStore`; `GET /runs/:id/events`
   for a run a peer replica owns replays from it instead of 404ing.
+- `--pg <url>` / `NARO_PG_URL` — Postgres-backed `PgRunRegistry` +
+  `PgEventStore` for both ports at once, the N-replica control-plane story
+  (`docs/deploy.md` topology 2). `--registry-pg <url>` / `--journal-pg <url>`
+  override the shared URL per-store. An explicit `--registry`/`--journal`
+  SQLite path always wins over Postgres for that same store. Requires the
+  optional `pg` peer dependency (`npm install pg`) — `naro serve` without
+  any Postgres flag never needs it.
 - `--approvals <file.db>` — a shared `SqliteApprovalBridge`; exposes
   `GET /approvals` (pending queue) and `POST /approvals/:id
   {approved?|text?|note?}` so operators approve over HTTP — including
   cross-process, since the bridge is durable.
+- `--principals <file.json>` — maps bearer tokens to `{id, roles}`. Roles:
+  `viewer` (GET endpoints), `operator` (`POST /goals`), `approver`
+  (`POST /approvals/:id`); operator and approver imply viewer. Insufficient
+  role → `403 {error: 'forbidden', required: <role>}`. The principal id is
+  written to the approval (`answered_by`) and journaled on
+  `human.approval.received.by` — who approved is evidence. Supersedes
+  `--token`/`NARO_SERVE_TOKEN`, which remains as shorthand for one admin
+  principal.
 
 Production surface: `GET /health` + `GET /ready` probes (unauthenticated),
 optional bearer gate via `--token` or `NARO_SERVE_TOKEN`, 64 KiB body cap on

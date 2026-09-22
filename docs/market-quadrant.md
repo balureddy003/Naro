@@ -44,23 +44,26 @@ infrastructure is going, and is the architecture built for it? Criteria:
 | Claude Agent SDK | Lab harness/SDK | 3.0 | 4.4 |
 | Pydantic AI | Typed orchestration | 3.1 | 3.7 |
 | agent-kernel / Bastion / Weaver | Security kernels | 3.4 | 1.6 |
-| **Naro** | **Evidence-gated kernel** | **4.6** | **1.4** |
+| **Naro** | **Evidence-gated kernel** | **4.7** | **1.4** |
 
 Vision scoring notes — where Naro earns its X: runtime-enforced governance 5
 (policy required, `VERIFYING` is a state), evidence 5 (hash chain + Ed25519
 seal + `naro verify`), decoupling 5 (`wake(runId)`, HTTP environments),
-neutrality 5 (harness adapter beneath Claude/OpenCode), patterns 4 (all
-present; provenance not yet a policy input), domains 4. Nobody else scores
-above 3 on the first three criteria: orchestration frameworks let you
-*build* verification; kernels gate but never check outcomes; lab SDKs are
+neutrality 5 (harness adapter beneath Claude/OpenCode), patterns 5 (all
+present, including provenance as a policy input — ADR 0010, shipped since
+the previous version of this review), domains 4. Nobody else scores above 3
+on the first three criteria: orchestration frameworks let you *build*
+verification; kernels gate but never check outcomes; lab SDKs are
 single-vendor.
 
 Execute scoring notes — where Naro loses its Y: distribution 0 (packages
-unpublished; `naro init` scaffolds to a 404), hardening 3 (Postgres ports,
-leases, drain, probes exist; in-memory run registry blocks N-replica
-control plane), ecosystem 3, DX 3 (deep docs, but the end-to-end path
-broke at step one before this review), organization 1 (single author,
-v0.1.0), language 1 (TypeScript only, Node 24+).
+unpublished, by choice — see the direction vector; `naro init` scaffolds
+to a 404 until then), hardening 3 (Postgres ports, leases, drain, probes,
+a durable run registry, journal, and now approval queue all exist — the
+control plane has no remaining SQLite-only piece, but nothing here is
+distributed *across* Postgres itself), ecosystem 3, DX 3 (deep docs, but the
+end-to-end path broke at step one before this review), organization 1
+(single author, v0.1.0), language 1 (TypeScript only, Node 24+).
 
 ## The quadrant
 
@@ -126,24 +129,38 @@ cheap; movement on Y is the whole game.
 **Up (execute) — in order of leverage:**
 
 1. **Publish.** Set `NPM_TOKEN`, merge the version PR. Every other score is
-   capped at zero until packages resolve. (Y: 1.4 → ~2.2)
-2. **Durable run registry + `/approvals` on the control plane.** Read runs
-   back from `PgEventStore`; expose the approval queue over HTTP. Makes
-   N-replica `naro serve` true rather than documented. (Y → ~2.8)
+   capped at zero until packages resolve. Deliberately deferred until a
+   reference use case exists to publish *for* — see item 4. (Y: 1.4 → ~2.2)
+2. ~~Durable run registry on the control plane.~~ **Done.** `naro serve
+   --pg <url>` / `NARO_PG_URL` (`--registry-pg`/`--journal-pg`/
+   `--approvals-pg` to split them) wires `PgRunRegistry` + `PgEventStore` +
+   `PgApprovalBridge`, so `GET /runs`, `/runs/:id/events`, and `/approvals`
+   are all real across replicas, not just SQLite-single-host. (Y → ~2.6)
 3. **Python client** for `serveEnvironment` and `HttpAgentBus`, and a
    Python harness hook for Claude Code. The kernel stays TypeScript; the
    door widens to the Python-majority market. (Y → ~3.2)
 4. **Reference users.** One regulated-industry deployment that ships an
    evidence bundle to an auditor is worth more than any feature.
 
-**Right (vision) — the one move that widens the moat:**
+**Right (vision) — done since the last review:**
 
-- **Provenance as a policy input.** `Observation.trust`
-  (`system | tool | external`), delimited untrusted content in the
-  transcript, and `ctx.provenance` available to `PolicyEngine` — so a rule
-  can deny `shell.exec` when the triggering observation came from a web
-  page. Prompt injection becomes a kernel-enforced control rather than a
-  prompt-engineering suggestion; no entrant has this. (X: 4.6 → 4.9)
+- ~~Provenance as a policy input.~~ **Shipped** ([ADR 0010](adr/0010-provenance-is-a-policy-input.md)).
+  `Observation.trust` (`system | tool | external`), delimited untrusted
+  content in the transcript, and `ctx.provenance` available to
+  `PolicyEngine` — a rule can deny `shell.exec` when the triggering
+  observation came from a web page. Prompt injection is a kernel-enforced
+  control, not a prompt-engineering suggestion; no other entrant in this
+  field has it. `npm run example:research` demonstrates it; see
+  [architecture.md §2](architecture.md#provenance-is-a-policy-input-not-just-a-transcript-label).
+  (X: patterns 4 → 5, total 4.6 → ~4.7 — this is a single-criterion nudge,
+  not a full re-score of every axis.)
+
+**Right (vision) — the next move that widens the moat:**
+
+- No specific candidate identified yet. The remaining vision gap is
+  breadth (domains 4/5, ecosystem depth) rather than a single missing
+  mechanism — see the "Uniqueness" section above for what's already
+  differentiated.
 
 ## Cautions for a buyer
 

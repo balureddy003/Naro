@@ -1,4 +1,4 @@
-import type { Action, PolicyContext, PolicyDecision, PolicyEngine } from '@naro/core';
+import type { Action, PolicyContext, PolicyDecision, PolicyEngine, PolicyVerdict } from '@naro/core';
 
 /**
  * OPA adapter: every action becomes a Rego query.
@@ -19,6 +19,8 @@ import type { Action, PolicyContext, PolicyDecision, PolicyEngine } from '@naro/
 export interface OpaOptions {
   /** OPA base URL, e.g. 'http://localhost:8181'. */
   readonly url: string;
+  /** Engine identity stamped on gate events. Default 'opa'. */
+  readonly id?: string;
   /** Rego document path whose value is the decision. Default: 'naro/action/decision'. */
   readonly decisionPath?: string;
   /** What to do when OPA is unreachable or returns garbage. Default: deny. */
@@ -31,15 +33,17 @@ export interface OpaOptions {
 const DECISIONS: ReadonlySet<string> = new Set(['allow', 'deny', 'require_approval', 'limit', 'audit']);
 
 export class OpaPolicyEngine implements PolicyEngine {
+  readonly id: string;
   private readonly opts: OpaOptions;
   private readonly fetchImpl: typeof fetch;
 
   constructor(opts: OpaOptions) {
     this.opts = opts;
+    this.id = opts.id ?? 'opa';
     this.fetchImpl = opts.fetchImpl ?? fetch;
   }
 
-  async evaluate(action: Action, ctx: PolicyContext): Promise<PolicyDecision> {
+  async evaluate(action: Action, ctx: PolicyContext): Promise<PolicyVerdict> {
     const path = this.opts.decisionPath ?? 'naro/action/decision';
     const input = {
       action: {
@@ -58,16 +62,25 @@ export class OpaPolicyEngine implements PolicyEngine {
       });
       if (!res.ok) return this.onError(`OPA ${res.status}`);
       const body = await res.json() as { result?: unknown };
-      const decision = typeof body.result === 'string' ? body.result : undefined;
-      if (decision && DECISIONS.has(decision)) return decision as PolicyDecision;
+      // result may be a bare decision string or {decision, reason} —
+      // the object form lets Rego say *why* (lands in the evidence record).
+      const result = typeof body.result === 'object' && body.result !== null
+        ? (body.result as { decision?: unknown; reason?: unknown })
+        : { decision: body.result };
+      if (typeof result.decision === 'string' && DECISIONS.has(result.decision)) {
+        return {
+          decision: result.decision as PolicyDecision,
+          ...(typeof result.reason === 'string' && { reason: result.reason }),
+        };
+      }
       return this.onError(`OPA returned non-decision: ${JSON.stringify(body.result)}`);
     } catch (e) {
       return this.onError(e instanceof Error ? e.message : String(e));
     }
   }
 
-  private onError(why: string): PolicyDecision {
-    if ((this.opts.onError ?? 'deny') === 'allow') return 'allow';
-    return 'deny'; // fail-closed; the reason lands in the observation via runner
+  private onError(why: string): PolicyVerdict {
+    if ((this.opts.onError ?? 'deny') === 'allow') return { decision: 'allow' };
+    return { decision: 'deny', reason: why }; // fail-closed; the reason lands in the observation via runner
   }
 }

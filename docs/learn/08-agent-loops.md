@@ -40,6 +40,7 @@ stateDiagram-v2
     VERIFYING --> REPLANNING: evidence failed
     REPLANNING --> REASONING
     VERIFYING --> COMPLETED: evidence passed
+    REASONING --> COMPLETED: no verifier configured
     REASONING --> FAILED
     FAILED --> RECOVERING
     PAUSED --> RECOVERING
@@ -48,6 +49,17 @@ stateDiagram-v2
 
 The complete transition table lives in `@naro/core`; the diagram focuses on the
 main execution path.
+
+**`VERIFYING` is conditional, not guaranteed.** `AgentDeps.verifier` is
+optional. Look at `runner.ts`'s `case 'complete'`: when a verifier *is*
+configured, a `complete` decision enters `VERIFYING` and can bounce to
+`REPLANNING` on failed evidence — the `REASONING → COMPLETED` edge above.
+When no verifier is configured, the same `complete` decision goes
+straight to `COMPLETED`, no evidence checked. `core/src/state.ts`'s
+`TRANSITIONS` table declares both edges as legal. If your agent claims
+"evidence-gated completion" as a guarantee, that guarantee is exactly as
+strong as the verifier you actually wired in — not a property of the
+runtime alone.
 
 ## The structural rules
 
@@ -107,5 +119,29 @@ propagate the signal; `SandboxedExecutor` terminates its worker directly.
 A healthy trace should answer: what did the agent know, what did it decide, who
 authorized it, what changed in the world, and what evidence justified the next
 step? If one of those is missing, add structure before adding more model calls.
+
+## Try it
+
+```bash
+node cli/src/bin.ts states
+```
+
+Prints the full 17-state transition table straight from `@naro/core` —
+every legal move, including the ones this page's diagram simplified away.
+Then run `npm run example:governed` and watch a run actually pass through
+`WAITING_FOR_PERMISSION` and (if you configure a bridge)
+`WAITING_FOR_HUMAN` — the states are not a diagram, they're what the
+event stream shows happening.
+
+## Check yourself
+
+- Why is there no `REASONING → ACTING` transition in the table, even for
+  a tool the agent clearly has permission to use?
+- A run crashes mid-tool-call. What state does it resume into, and why
+  not "wherever it left off"?
+- What's the structural difference between "the model said it's done"
+  and `COMPLETED`? Name the one config field that decides whether
+  anything sits between them, and what sends the run to `REPLANNING`
+  instead when it does.
 
 Next: [Multi-agent systems](09-multi-agent.md).

@@ -119,4 +119,25 @@ out of the agent's context.
 **Ignoring operational cost.** Optimize cost per successful outcome, not tokens
 per call.
 
+## Try it
+
+```bash
+node cli/src/bin.ts bench benchmarks/smoke.ts --baseline benchmarks/baseline.jsonl
+```
+
+This is the exact command Naro's own CI runs as a release gate (see
+`.github/workflows/ci.yml`, job `bench-gate`) — real `AgentRunner`
+instances, not mocked outcomes, diffed against a committed baseline.
+Change a case in `benchmarks/smoke.ts`, rerun, and watch it report the
+regression instead of a vague "looks different."
+
+## Check yourself
+
+- A benchmark's pass rate goes up 5% but token cost per success doubles.
+  Is that a win? What would you need to know to decide?
+- Why does `naro bench --baseline` treat a *silently removed* case as a
+  regression, not a pass?
+- Your only judge for a subjective task is an LLM. Name one way to catch
+  it being wrong before it becomes the sole safety check.
+
 Next: [Security and policy](11-security-and-policy.md).

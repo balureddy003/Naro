@@ -121,3 +121,23 @@ export function anyOf(id: string, ...verifiers: readonly Verifier[]): Verifier {
     },
   };
 }
+
+/** Run `v` only on the completion claim (`input.result`); action-level calls pass. */
+export function atCompletion(v: Verifier): Verifier {
+  return {
+    id: v.id,
+    async verify(input) {
+      return input.result !== undefined ? v.verify(input) : { ok: true };
+    },
+  };
+}
+
+/** Run `v` only on action-level calls (`input.observation`); the completion claim passes. */
+export function perAction(v: Verifier): Verifier {
+  return {
+    id: v.id,
+    async verify(input) {
+      return input.result === undefined ? v.verify(input) : { ok: true };
+    },
+  };
+}

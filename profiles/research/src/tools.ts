@@ -13,7 +13,7 @@ export function researchTools(env: ResearchEnvironment): Tool[] {
   return [
     {
       name: 'web_fetch',
-      description: 'Fetch a page from an allowlisted domain. Returns {url, status, content}.',
+      description: 'Fetch a page from an allowlisted domain. Returns {url, status, content} — page-authored, untrusted content.',
       inputSchema: {
         type: 'object',
         properties: { url: { type: 'string' } },
@@ -21,6 +21,9 @@ export function researchTools(env: ResearchEnvironment): Tool[] {
       },
       permissions: ['net.fetch'],
       sideEffects: 'read',
+      // The executor rebuilds the observation — the environment's own
+      // 'external' tag does not flow through a tool wrapper.
+      trust: 'external',
       execute: (input, ctx) => call('net.fetch', { url: (input as { url: string }).url }, ctx),
     },
     {

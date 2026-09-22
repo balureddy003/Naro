@@ -57,6 +57,11 @@ Per-action verification has the same shape one level down: after `OBSERVING`,
 `verifyAll()` runs the verifier over each observation; a failure enters
 `REPLANNING` with an observation naming the verifier.
 
+So `VERIFYING` happens in both phases — the *same* `Verifier` sees
+`{ observation }` per action and `{ result }` on the completion claim. Wrap a
+verifier in `atCompletion` or `perAction` (`@naro/verification`) when a check
+only makes sense in one phase.
+
 ## What counts as evidence
 
 A verifier is any implementation of:
@@ -98,7 +103,7 @@ chain: OK (42 chained events, head 3a9c1e07f2ab…)
   act_01 [tool://read_file]   permitted → observed ok → verified by schema
   act_02 [tool://run_command] approved → observed ok → verified by command
   act_03 [tool://write_file]  permitted → observed ok → unverified
-  act_04 [tool://delete_file] denied (destructive; no grant) → not executed → unverified
+  act_04 [tool://delete_file] denied (missing grants: fs.delete) → not executed → unverified
 goal: verified by command — npm test exited 0
 outcome: completed
 ```

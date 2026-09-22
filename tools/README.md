@@ -13,7 +13,7 @@ Schema-contracted capabilities behind the runtime policy gate.
 | `ToolExecutor` | resolve, validate input, execute, validate output, observe |
 | `createToolPolicy()` | baseline policy derived from registered metadata |
 | `SecretProvider` | resolves secret references at execution time |
-| `EnvSecretProvider`, `MapSecretProvider`, `chainSecrets()` | included secret sources and composition |
+| `EnvSecretProvider`, `FileSecretProvider`, `MapSecretProvider`, `chainSecrets()` | included secret sources and composition |
 | `SandboxedExecutor` | worker-thread execution with heap and wall-clock limits |
 
 ## Tool lifecycle
@@ -32,6 +32,26 @@ model proposes call
 Unknown `tool://` names are denied by `createToolPolicy()` by default. Non-tool
 targets return `otherwise`—`allow` by default—because another policy engine is
 expected to own those schemes. Compose policies so every target is covered.
+
+`createToolPolicy(registry, options)` options:
+
+| Option | Default | Effect |
+|---|---|---|
+| `approvalFor` | `['destructive']` | side effects that require human approval |
+| `unknownTool` | `'deny'` | verdict for `tool://` names not in the registry |
+| `otherwise` | `'allow'` | verdict for non-tool targets (abstain — another engine owns them) |
+| `denyExternalTriggered` | `[]` | side effects denied when `ctx.provenance.lowest === 'external'` |
+
+Every branch returns a `PolicyVerdict` with a `reason` (`missing grants:
+…`, `… side effect triggered by external evidence (…)`, `no registered
+tool '…'`) — the reason lands on `action.denied` and the denial
+observation, so the audit record distinguishes *why* a call was refused.
+
+`Tool.trust` declares the trust of the tool's output — set `'external'` when
+the output is authored outside the system (web pages, emails, untrusted
+files). `ToolExecutor` stamps it on the observation; wrappers over
+environments must declare it themselves — the environment's own tag does
+not flow through.
 
 ## Writing a tool
 
@@ -59,9 +79,13 @@ Actions and prompts should contain references such as `env:API_KEY` or
 `vault:path#key`, not values. The runtime passes the configured resolver through
 `ExecContext`; the executor resolves at the last responsible moment.
 
-`EnvSecretProvider` reads `env:` references. `MapSecretProvider` is useful for
-tests and small controlled deployments. `chainSecrets()` returns the first
-resolved value. A Vault or cloud-secret adapter can implement the same port.
+`EnvSecretProvider` reads `env:` references. `FileSecretProvider` reads
+`file:/abs/path` references — for mounted secret volumes (k8s, injected
+credential files); reads are cached per path with a 60-second TTL
+(configurable) so rotations are picked up without a filesystem hit per
+action. `MapSecretProvider` is useful for tests and small controlled
+deployments. `chainSecrets()` returns the first resolved value. A Vault or
+cloud-secret adapter can implement the same port.
 
 ## Worker-thread sandbox
 

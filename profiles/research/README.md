@@ -18,4 +18,4 @@ A researcher's world: fetched pages + citations. Proof that retrieval, provenanc
 
 - http/https only; no `file:`, no redirects to non-allowlisted hosts (the allowlist checks the URL you hand it — redirects are the fetch layer's concern; pin `redirect: 'error'` if your threat model requires).
 - Fetch is injectable — tests assert wire behavior offline.
-- Fetched content is untrusted data; the reasoner/prompt layer must delimit it (see `docs/learn/06` and `11`).
+- `web_fetch` / `net.fetch` observations carry `trust: 'external'` — the transcript builder delimits them automatically (`UNTRUSTED OUTPUT` banner), and `createToolPolicy({ denyExternalTriggered })` can refuse side effects triggered by fetched content. `createToolPolicy` only gates `tool://` targets; agents driving `env://research/...` directly need a capability rule such as `denyCapability` from `@naro/policy` (see `docs/learn/06` and `11`). Runnable: `npm run example:research`.

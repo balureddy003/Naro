@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAction, createGoal } from '@naro/core';
+import { createAction, createGoal, toVerdict } from '@naro/core';
 import { OpaPolicyEngine } from './opa.ts';
 
 const action = createAction('a1', { capability: 'fs.write', target: 'env://ws/x', input: {} });
@@ -16,7 +16,17 @@ function opaReturning(result: unknown): typeof fetch {
 
 test('rego decision maps to a PolicyDecision', async () => {
   const eng = new OpaPolicyEngine({ url: 'http://opa:8181', fetchImpl: opaReturning('require_approval') });
-  assert.equal(await eng.evaluate(action, ctx), 'require_approval');
+  assert.equal(toVerdict(await eng.evaluate(action, ctx)).decision, 'require_approval');
+});
+
+test('rego {decision, reason} object maps to a PolicyVerdict', async () => {
+  const eng = new OpaPolicyEngine({
+    url: 'http://opa:8181',
+    fetchImpl: opaReturning({ decision: 'deny', reason: 'violates data-residency' }),
+  });
+  const v = toVerdict(await eng.evaluate(action, ctx));
+  assert.equal(v.decision, 'deny');
+  assert.equal(v.reason, 'violates data-residency');
 });
 
 test('input document carries action + agent + goal', async () => {
@@ -37,12 +47,12 @@ test('unreachable OPA fails closed by default', async () => {
     url: 'http://opa:8181',
     fetchImpl: (async () => { throw new Error('conn refused'); }) as unknown as typeof fetch,
   });
-  assert.equal(await eng.evaluate(action, ctx), 'deny');
+  assert.equal(toVerdict(await eng.evaluate(action, ctx)).decision, 'deny');
 });
 
 test('non-decision results fail closed too', async () => {
   const eng = new OpaPolicyEngine({ url: 'http://opa:8181', fetchImpl: opaReturning({ weird: true }) });
-  assert.equal(await eng.evaluate(action, ctx), 'deny');
+  assert.equal(toVerdict(await eng.evaluate(action, ctx)).decision, 'deny');
 });
 
 test('onError=allow is an explicit, documented choice', async () => {
@@ -50,5 +60,5 @@ test('onError=allow is an explicit, documented choice', async () => {
     url: 'http://opa:8181', onError: 'allow',
     fetchImpl: (async () => ({ ok: false, status: 500 })) as unknown as typeof fetch,
   });
-  assert.equal(await eng.evaluate(action, ctx), 'allow');
+  assert.equal(toVerdict(await eng.evaluate(action, ctx)).decision, 'allow');
 });

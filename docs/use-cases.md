@@ -109,16 +109,26 @@ const env = new ResearchEnvironment({
   allowedDomains: ['docs.example.com', 'standards.example.org'],
   maxBytes: 250_000,
 });
-const tools = researchTools(env);
+const registry = new ToolRegistry();
+for (const tool of researchTools(env)) registry.register(tool);
+const policy = createToolPolicy(registry, { denyExternalTriggered: ['destructive'] });
 ```
 
 The profile separates three operations: fetch a page, add a citation, and list
 citations. A citation is refused when its URL was never fetched.
 
+Run the offline reference:
+
+```bash
+npm run example:research
+```
+
 **Required controls**
 
 - enforce domain allowlists in policy and in the environment;
-- treat fetched text as untrusted prompt data;
+- fetched text is enforced as untrusted: `web_fetch` observations carry
+  `trust: 'external'`, the transcript delimits them, and
+  `denyExternalTriggered` denies side effects the content triggered;
 - reject or re-check redirects according to the threat model;
 - cap bytes, pages, tool calls, and run duration;
 - verify that important claims map to fetched evidence.
@@ -304,14 +314,67 @@ For protocol-level discovery and JSON-RPC task exchange, use
 - send a bounded goal and selected context, not the full parent transcript;
 - authenticate and encrypt cross-process transport;
 - apply budgets and delegation-depth limits;
-- verify child output before the parent trusts it.
+- verify child output before the parent trusts it;
+- pass the parent's `traceId` (`delegationConstraints(goal).traceId`) into
+  the child's `AgentRunner.run({ traceId })` so both journals correlate —
+  each keeps its own independent hash chain, but an auditor can still walk
+  a whole delegation tree by trace.
 
 **Evidence:** delegation action, target agent identity, child result or error,
-and parent-side verification.
+parent-side verification, and — across the delegation chain — a shared
+`traceId` linking every participant's independently verifiable journal.
 
 ---
 
-## 10. Provider, policy, and operations choices
+## 10. Governing a foreign coding harness: Naro governing its own development
+
+**Goal:** get an audit trail out of a coding agent you didn't build — here,
+Claude Code sessions working on Naro's own source.
+
+**Package:** [`dogfood/`](../dogfood/README.md), built on
+`@naro/adapter-harness` (see [ADR 0009](adr/0009-governance-beneath-foreign-harnesses.md)).
+
+Unlike every other use case on this page, there is no `AgentRunner` here —
+Claude Code owns the loop entirely. `HarnessKernel` sits beneath it via
+`PreToolUse`/`PostToolUse` hooks: every `Bash` call is evaluated against a
+policy before it runs, and the verdict plus the result are journaled,
+hash-chained, exactly like an in-kernel run.
+
+```ts
+const kernel = harnessKernel({ agentId: 'claude-code-session', goal, policy });
+const hooks = claudeHooks(kernel);
+// PreToolUse  → hooks.preToolUse  → {} (allow) or a deny/ask decision
+// PostToolUse → hooks.postToolUse → journals the result, joined by call id
+```
+
+Because each hook invocation is a fresh OS process, the kernel lives behind
+a small loopback HTTP server (`dogfood/src/server.ts`) for the session's
+lifetime — the same shape as `serveEnvironment`/`HttpEnvironment` (ADR
+0008), applied to a harness adapter instead of an `Environment`.
+
+**Required controls**
+
+- gate only what's actually dangerous — here, `Bash`, matching
+  `profiles/coding`'s own "shell.exec is the dangerous one";
+- deny irreversible/security-bypassing patterns structurally (force-push,
+  hard reset, hook-bypass flags), not as a prompt instruction to remember;
+- require approval, not silent allow, for anything touching shared or
+  published state (push to the default branch, publish, merge a PR);
+- **fail open** on gate-server errors — a governance bug must never be able
+  to lock out the very session it's supposed to be observing; this makes
+  it an audit-and-advise layer today, not yet a hard security boundary;
+- keep the correlation honest: without a stable per-call id from the
+  harness, `PostToolUse` joins to the oldest pending gated action (FIFO) —
+  correct for sequential tool calls, and documented as approximate for
+  parallel ones.
+
+**Evidence:** a hash-chained `.naro/dogfood-journal.jsonl` —
+`naro verify` prints policy verdict → action → observation per Bash call,
+the same evidence record a fully in-kernel run would produce.
+
+---
+
+## 11. Provider, policy, and operations choices
 
 These choices are independent from the domain profile:
 

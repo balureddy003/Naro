@@ -161,5 +161,33 @@ model may support different capabilities and produce different decisions.
 The mature version of an agent is not the one that never fails. It is the one
 that fails visibly, limits damage, and resumes from a state you can explain.
 
-Return to [How LLMs work](00-how-llms-work.md), or move from concepts to the
-repository's runnable examples.
+## Try it
+
+```bash
+node scripts/bench-chain.mjs
+```
+
+Measures real hash-chain throughput on your machine — emit and verify
+rates for the same `EventBus` every run uses, so "the chain is cheap"
+isn't a claim you have to take on faith. Then run
+`npm run example:governed` again and read its phase-1/phase-2 split:
+phase 1 pauses a run, phase 2 calls `wake()` in a *separate* `AgentRunner`
+instance with no shared memory — the journal alone is what makes that
+work.
+
+## Check yourself
+
+- A process crashes mid-tool-execution. What does `wake()` actually
+  restore — the tool call in progress, or something else? Why does that
+  distinction matter for idempotency?
+- Why does a lost lease heartbeat emit a replan instead of forcibly
+  killing the other runner? What has to happen outside Naro to make that
+  safe?
+- Your retry policy doubles the backoff on every attempt. Name one
+  failure mode this page listed that backoff alone does *not* fix.
+
+Return to [How LLMs work](00-how-llms-work.md), or move from concepts to
+practice: [production readiness](../production-readiness.md) turns
+everything in this course into a pre-ship checklist, and the
+[documentation map](../README.md) lists every runnable example this
+course pointed at, in one place.

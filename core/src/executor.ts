@@ -9,6 +9,8 @@ export interface ExecContext {
   readonly goal: Goal;
   /** Permissions granted to this agent — nested policy evaluation needs them. */
   readonly grants: readonly string[];
+  /** This run's trace id — a tool that delegates (e.g. `delegationTool`) hands it to the child so both runs' journals correlate. */
+  readonly traceId?: string;
   readonly signal?: AbortSignal;
   /**
    * Resolves secret references ('env:NAME', 'vault:path#key') to values at

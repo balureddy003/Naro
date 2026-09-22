@@ -110,4 +110,25 @@ run, ask:
 
 This is faster than rewriting the prompt blindly.
 
+## Try it
+
+Open `context/src/engine.ts` and read `ContextEngine` top to bottom — it's
+short enough to read in one pass, and it's the pipeline diagram from
+this page turned into ~six method calls. Then open
+`context/src/engine.test.ts` to see `maxItems`/`maxChars` budgeting
+actually enforced against a fixture, not just described.
+
+## Check yourself
+
+- A context budget is set to 4000 characters and retrieval returns
+  12,000 characters of relevant material. What should happen, in what
+  order — rank first or truncate first, and why does the order matter?
+- Why is "the context window is big enough" not the same claim as "the
+  model will use the right part of it"?
+- Where does provenance (which source an item came from) actually get
+  used later? Two consumers you've already seen in this course: citation
+  trails in [RAG](04-rag.md), and the trust-level gate in
+  [security and policy](11-security-and-policy.md). Can you name a third,
+  specific to this page?
+
 Next: [Memory](07-memory.md).

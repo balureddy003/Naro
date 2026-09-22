@@ -27,9 +27,10 @@ export interface EventDataMap {
   /** Token/cost accounting for one model call, plus running totals. */
   'model.usage':                { iteration: number; usage: ModelUsage; totals: ModelUsage };
   'action.requested':           { action: Action };
-  'permission.requested':       { action: Action };
-  'action.permitted':           { action: Action };
-  'action.denied':              { action: Action; reason?: string };
+  /** `policy` names the engine that produced the verdict (PolicyEngine.id). */
+  'permission.requested':       { action: Action; policy?: string };
+  'action.permitted':           { action: Action; policy?: string };
+  'action.denied':              { action: Action; reason?: string; policy?: string };
   'action.started':             { action: Action };
   'action.completed':           { action: Action; observation: Observation };
   'observation.created':        { observation: Observation };
@@ -48,8 +49,9 @@ export interface EventDataMap {
    *  equals this event's `prev`, making the seal self-verifying — rewrite
    *  or extend the chain and the signature fails. */
   'journal.sealed':             { head: string; signature: string; publicKey: string; algorithm: 'ed25519' };
-  'human.approval.requested':   { action?: Action; question?: string };
-  'human.approval.received':    { approved: boolean; note?: string };
+  'human.approval.requested':   { action?: Action; question?: string; policy?: string };
+  /** `by` is the approver's control-plane identity, when the bridge knows it. */
+  'human.approval.received':    { approved: boolean; note?: string; by?: string };
   'agent.state_changed':        { from: AgentState; to: AgentState };
   'agent.paused':               { reason?: string };
   'agent.resumed':              { checkpointId?: string };
@@ -79,6 +81,18 @@ export type NaroEvent<T extends EventType = EventType> = T extends T ? {
   readonly goalId: string;
   /** Which execution of this agent produced it — a fresh run gets a fresh runId. */
   readonly runId: string;
+  /**
+   * Correlates this run's events with others in the same delegation chain.
+   * A root run's `traceId` equals its own `runId`; a delegated child run
+   * inherits the parent's `traceId` via `ExecContext.traceId` →
+   * goal metadata → `RunOptions.traceId` (see `@naro/multiagent`'s
+   * `delegationTool`/`delegationConstraints`). Optional and additive, like
+   * `prev`/`hash`: `EventBus.emit()` always sets it, but events built before
+   * this field existed carry none. Correlation metadata, not part of the
+   * hash chain — each run's chain is independently tamper-evident, and
+   * traceId only links two independently-verifiable chains together.
+   */
+  readonly traceId?: string;
   readonly data: EventDataMap[T];
   /**
    * Hash of the preceding event in this run's chain — `GENESIS_HASH` for the

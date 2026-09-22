@@ -124,10 +124,19 @@ Capabilities are declared and checked rather than assumed.
 Evidence produced by execution, verification, a human, or the runtime. It
 records source, success, output or error, and an optional originating action.
 
+## Principal
+
+A control-plane identity on `naro serve`: a bearer token mapped to an `id`
+plus `roles` (`viewer`, `operator`, `approver`). The principal id attributes
+HTTP actions — an approver's answer lands on `answered_by` in the approvals
+table and `by` on the journal's `human.approval.received` event.
+
 ## PolicyEngine
 
 The required authorization port called before every action. It returns
-`allow`, `deny`, `require_approval`, `limit`, or `audit`.
+`allow`, `deny`, `require_approval`, `limit`, or `audit` — bare or wrapped
+in a `PolicyVerdict` whose `reason` lands on the denial event and
+observation as evidence.
 
 ## Profile
 
@@ -186,4 +195,6 @@ available to policy as `ctx.provenance`.
 ## Verification
 
 An evidence check returning `ok`, optional evidence, and a failure reason. A
-model completion is a claim until verification establishes success.
+model completion is a claim until verification establishes success. The same
+verifier is called per action (with `observation`) and on the completion claim
+(with `result`); `atCompletion` / `perAction` scope a check to one phase.

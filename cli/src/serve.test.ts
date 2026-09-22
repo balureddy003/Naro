@@ -250,6 +250,112 @@ test('/approvals: 501 without a bridge; full approve flow with one', async () =>
   }
 });
 
+test('principals: roles gate endpoints — viewer reads, cannot write', async () => {
+  const { url, close } = await startAgentServer(factory, {
+    port: 0,
+    principals: {
+      'tok-viewer': { id: 'bob', roles: ['viewer'] },
+      'tok-ops': { id: 'carol', roles: ['operator'] },
+      'tok-appr': { id: 'alice', roles: ['approver'] },
+    },
+  });
+  try {
+    const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
+    assert.equal((await fetch(`${url}/runs`, { headers: bearer('tok-viewer') })).status, 200);
+    assert.equal((await fetch(`${url}/runs`, { headers: bearer('nope') })).status, 401);
+    assert.equal((await fetch(`${url}/runs`)).status, 401);
+
+    const denied = await fetch(`${url}/goals`, {
+      method: 'POST', headers: { ...bearer('tok-viewer'), 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'x' }),
+    });
+    assert.equal(denied.status, 403);
+    assert.deepEqual(await denied.json(), { error: 'forbidden', required: 'operator' });
+
+    // operator implies viewer
+    assert.equal((await fetch(`${url}/runs`, { headers: bearer('tok-ops') })).status, 200);
+    const ok = await fetch(`${url}/goals`, {
+      method: 'POST', headers: { ...bearer('tok-ops'), 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'x' }),
+    });
+    assert.equal(ok.status, 202);
+
+    // approver implies viewer, not operator — and vice versa.
+    assert.equal((await fetch(`${url}/runs`, { headers: bearer('tok-appr') })).status, 200);
+    const apprDenied = await fetch(`${url}/goals`, {
+      method: 'POST', headers: { ...bearer('tok-appr'), 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'x' }),
+    });
+    assert.equal(apprDenied.status, 403);
+    assert.deepEqual(await apprDenied.json(), { error: 'forbidden', required: 'operator' });
+  } finally {
+    await close();
+  }
+});
+
+test('principals: approver identity is attributed into the journal', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'naro-serve-'));
+  try {
+    const bridge = new SqliteApprovalBridge(join(dir, 'approvals.db'), { pollMs: 20 });
+    const gated = (goal: Goal) => new AgentRunner({
+      spec: createAgentSpec({ name: 'svc', goal }),
+      reasoner: new DirectReasoner((ctx) =>
+        ctx.observations.length ? { kind: 'complete', result: 'approved work' }
+          : { kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 1 } }),
+      executor: { execute: (a) => Promise.resolve(createObservation({ actionId: a.id, source: a.target, kind: 'env-change', success: true })) },
+      policy: { evaluate: () => 'require_approval' },
+      human: bridge,
+    });
+    const { url, close } = await startAgentServer(gated, {
+      port: 0,
+      principals: {
+        'tok-approver': { id: 'alice', roles: ['approver'] },
+        'tok-ops': { id: 'carol', roles: ['operator'] },
+      },
+      approvals: bridge,
+    });
+    try {
+      const bearer = { authorization: 'Bearer tok-approver' };
+      const created = await fetch(`${url}/goals`, {
+        method: 'POST', headers: { authorization: 'Bearer tok-ops', 'content-type': 'application/json' },
+        body: JSON.stringify({ description: 'needs sign-off' }),
+      });
+      assert.equal(created.status, 202);
+      const { runId } = await created.json() as { runId: string };
+
+      let pending: { id: string }[] = [];
+      for (let i = 0; i < 100 && pending.length === 0; i++) {
+        pending = await (await fetch(`${url}/approvals`, { headers: bearer })).json() as { id: string }[];
+        if (pending.length === 0) await new Promise((r) => setTimeout(r, 20));
+      }
+      assert.equal(pending.length, 1);
+
+      const answered = await fetch(`${url}/approvals/${pending[0]!.id}`, {
+        method: 'POST', headers: { ...bearer, 'content-type': 'application/json' },
+        body: JSON.stringify({ approved: true }),
+      });
+      assert.equal(answered.status, 200);
+
+      // Approver identity lands on the run's journal event.
+      for (let i = 0; i < 100; i++) {
+        const run = await (await fetch(`${url}/runs/${runId}`, { headers: bearer })).json() as { status: string };
+        if (run.status === 'completed') break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      const sse = await (await fetch(`${url}/runs/${runId}/events`, { headers: bearer })).text();
+      const events = sse.split('\n').filter((l) => l.startsWith('data: '))
+        .map((l) => JSON.parse(l.slice(6)) as NaroEvent);
+      const received = events.find((e) => e.type === 'human.approval.received');
+      assert.equal((received?.data as { by?: string }).by, 'alice');
+    } finally {
+      await close();
+      bridge.close();
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('drain cancels in-flight runs — their journals end cancelled', async () => {
   let cancelled = false;
   const slowFactory = (goal: Goal) => {

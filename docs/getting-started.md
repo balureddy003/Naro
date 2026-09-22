@@ -136,6 +136,12 @@ const verifier: Verifier = {
 The reasoner may claim completion. The verifier decides whether the claim is
 supported.
 
+The runner calls the verifier in two phases: after each action batch with
+`observation`, and on the completion claim with `result` — hence
+`result ?? observation?.output`. A verifier that only makes sense at the end
+can skip the per-action calls entirely by wrapping it in `atCompletion` (or
+`perAction` for the inverse) from `@naro/verification`.
+
 ## 6. Compose the runtime
 
 ```ts

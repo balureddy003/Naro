@@ -22,7 +22,12 @@ or a small service. Nothing else to deploy.
 
 N replicas of `naro serve` behind a load balancer, every durable port on
 Postgres (`@naro/adapter-pg` — events, checkpoints, memory, leases, limits,
-agent bus). This is the deploy/k8s manifest.
+agent bus, approvals). This is the deploy/k8s manifest. `naro serve` itself
+picks up `NARO_PG_URL` (or `--pg`) for the control-plane run registry,
+journal, and approval queue; the agent module's own `AgentDeps`
+(checkpoints, leases, limits, memory, bus) still wire their Postgres stores
+explicitly in `createRunner()` — see the
+[`@naro/adapter-pg` README](../adapters/postgres/README.md).
 
 - **Session survives pod death.** The journal is in Postgres, not memory:
   `wake(runId)` on any pod rebuilds the run — same runId, same hash chain.
@@ -59,7 +64,7 @@ gate + journal run underneath. Export the journal to SQLite/Postgres and
 
 | Surface | Transport | Auth |
 |---|---|---|
-| `naro serve` control plane | HTTP | `NARO_SERVE_TOKEN` bearer (optional); TLS at the LB/ingress |
+| `naro serve` control plane | HTTP | `--principals` file (token→`{id,roles}`) or `NARO_SERVE_TOKEN` bearer; TLS at the LB/ingress |
 | `serveEnvironment` | HTTP | shared bearer token; put it behind mTLS or a private subnet |
 | `HttpAgentBus` | HTTP | HS256 JWT or JWKS/OIDC (`multiagent/auth.ts`) |
 | Outbound fetches (tools) | HTTPS | `safe-fetch`: domain allowlist, SSRF/private-IP blocking, redirect revalidation |
@@ -71,19 +76,54 @@ safe across replicas), and the returned `runId` IS the journal `runId`, so
 events, exports, and `wake(runId)` correlate with it. `GET /runs` reads the
 registry, `GET /runs/:id`, SSE tail at `GET /runs/:id/events` — live on the
 owning replica, replayed from the shared journal elsewhere — `GET
-/approvals` + `POST /approvals/:id` when `--approvals <db>` wires a shared
-`SqliteApprovalBridge`, `GET /health` + `GET /ready` probes
+/approvals` + `POST /approvals/:id` when `--approvals <db>` (SQLite) or
+`--approvals-pg <url>` / the shared `--pg`/`NARO_PG_URL` (Postgres) wires a
+shared approval bridge, `GET /health` + `GET /ready` probes
 (unauthenticated), 64 KiB body cap, and SIGTERM drain — in-flight runs
 abort and their journals end `agent.cancelled`.
 
-With `--registry` + `--journal` (or the Pg equivalents), N-replica
-`naro serve` is real: any replica answers `/runs` and `/runs/:id/events`
-for every run, and approvals are shared. **Metrics** are OTel push
-(logs/events); a `/metrics` scrape endpoint is a reasonable next addition.
+With `--registry` + `--journal` + `--approvals` (SQLite, single host) or
+`--pg <url>` / `NARO_PG_URL` (Postgres, `--registry-pg`/`--journal-pg`/
+`--approvals-pg` to split them), N-replica `naro serve` is real: any
+replica answers `/runs`, `/runs/:id/events`, and `/approvals` for every
+run — `PgApprovalBridge` closes the last per-replica gap. **Metrics** are
+OTel push (logs/events); a `/metrics` scrape endpoint is a reasonable next
+addition.
 
 Internal rule: **never expose a Naro port without something in front of it.**
 The built-in bearer checks are a minimal gate, not an authz model — tenant
 identity is deployment-owned (ADR 0008, production-readiness §10).
+
+### Principals and roles
+
+`--principals <file.json>` upgrades the single bearer gate to named
+identities with roles:
+
+```json
+{
+  "s3cr3t-viewer":   { "id": "bob",   "roles": ["viewer"] },
+  "s3cr3t-ops":      { "id": "carol", "roles": ["operator"] },
+  "s3cr3t-approver": { "id": "alice", "roles": ["operator", "approver"] }
+}
+```
+
+| Endpoint | Required role |
+|---|---|
+| `GET /runs`, `GET /runs/:id`, `GET /runs/:id/events`, `GET /approvals` | `viewer` |
+| `POST /goals` | `operator` |
+| `POST /approvals/:id` | `approver` |
+| `GET /health`, `GET /ready` | none (probes are unauthenticated) |
+
+`operator` and `approver` each imply `viewer`. Bad or missing credentials
+get `401`; insufficient role gets `403 {error: 'forbidden', required:
+<role>}`. `--token`/`NARO_SERVE_TOKEN` remains as shorthand for one admin
+principal; `--principals` supersedes it when both are set. Neither flag →
+the control plane is open (the dev default).
+
+Attribution flows end-to-end: the principal id is written to the approval
+row (`answered_by`) and the runner stamps it on `human.approval.received.by`
+— so the bridge *and* the journal together answer "who approved this and
+under which policy" (gate events carry `policy: <engine id>`).
 
 ## Scaling dimensions
 

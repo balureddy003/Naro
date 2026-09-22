@@ -124,7 +124,7 @@ const result = await runner.run();
 | `@naro/profile-workflow` | `WorkflowEnvironment` — DAG execution through a nested executor, `$step` refs, retries | core, environment, tools |
 | `@naro/profile-robotics` | `RoboticsEnvironment` over a `RobotDriver` port; `GridSimDriver` world-model sim; latched estop | core, environment, tools |
 | `@naro/cli` | `naro run` / `bench` / `replay` / `states` | core, runtime, observability, evaluation |
-| `examples/` | `minimal-agent` (scripted) · `react-agent` (model loop) · `coding-agent` (domain profile) | all |
+| `examples/` | `minimal-agent` (scripted) · `react-agent` (model loop) · `coding-agent` (domain profile) · `governed-agent` (gates + sealed journal) · `research-agent` (provenance gate) | all |
 
 ## Learn the stack
 
@@ -157,7 +157,9 @@ Practice in three passes:
 3. Run `npm run example:coding` and read the
    [coding agent](examples/coding-agent/README.md) for a real domain profile.
 
-Documentation paths:
+Documentation paths — [docs/README.md](docs/README.md) sorts these into
+🟢 beginner / 🟡 practitioner / 🔴 expert tracks if you'd rather start from
+"what am I trying to do" than a flat list:
 
 - [Build your first safe agent](docs/getting-started.md)
 - [Documentation map](docs/README.md)
@@ -203,7 +205,9 @@ Implemented in this repository:
 - Serving: durable `RunRegistry` (SQLite/Postgres) indexes every run —
   `GET /runs` survives restarts and is shared across replicas; a shared
   journal answers cross-replica `GET /runs/:id/events`; `SqliteApprovalBridge`
-  exposes `GET`/`POST /approvals` over HTTP.
+  exposes `GET`/`POST /approvals` over HTTP. `--principals` adds
+  control-plane roles (viewer/operator/approver) with approver identity
+  journaled on `human.approval.received`.
 - Reasoning: ReAct (streaming, parallel `act-batch`), PlanExecute, Reflection,
   TreeSearch.
 - Models: OpenAI-compatible, Anthropic, Gemini adapters; `failover()`
@@ -226,6 +230,13 @@ KMS/HSM-backed key custody for journal sealing (the `sealKey` port exists —
 custody is deployment-owned), a Codex hook adapter (no documented tool-call
 hook exists today), Redis stores, container-level sandboxing, hosted control
 plane.
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR — it explains
+when a change needs an issue or an ADR first, and what a PR needs to merge.
+Found a security issue? See [SECURITY.md](SECURITY.md) — please don't file
+it as a public issue.
 
 ## License
 

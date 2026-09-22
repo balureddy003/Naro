@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createGoal, createObservation, type VerifyInput } from '@naro/core';
 import { MockModel } from '@naro/model';
-import { allOf, anyOf, CommandVerifier, LlmJudgeVerifier, PredicateVerifier, SchemaVerifier } from './index.ts';
+import { allOf, anyOf, atCompletion, CommandVerifier, LlmJudgeVerifier, perAction, PredicateVerifier, SchemaVerifier } from './index.ts';
 
 const goal = createGoal({ description: 'ship it' });
 
@@ -40,6 +40,29 @@ test('allOf requires every verifier; anyOf accepts the first pass', async () => 
   const fail = new PredicateVerifier('f', () => ({ ok: false, reason: 'nope' }));
   assert.equal((await allOf('all', pass, fail).verify({ goal })).ok, false);
   assert.equal((await anyOf('any', fail, pass).verify({ goal })).ok, true);
+});
+
+test('atCompletion scopes a verifier to the completion claim', async () => {
+  const inner = new PredicateVerifier('goal-check', (i: VerifyInput) =>
+    i.result === 'good' ? true : { ok: false, reason: 'bad result' });
+  const v = atCompletion(inner);
+  assert.equal(v.id, 'goal-check');
+  const obs = createObservation({ actionId: 'x', source: 'tool://t', kind: 'tool-result', success: true, output: 'irrelevant' });
+  assert.equal((await v.verify({ goal, observation: obs })).ok, true); // passes, never ran
+  assert.equal((await v.verify({ goal, result: 'good' })).ok, true);
+  assert.equal((await v.verify({ goal, result: 'nope' })).reason, 'bad result');
+});
+
+test('perAction scopes a verifier to action-level calls', async () => {
+  const inner = new PredicateVerifier('obs-check', (i: VerifyInput) =>
+    i.observation?.success === true ? true : { ok: false, reason: 'bad observation' });
+  const v = perAction(inner);
+  assert.equal(v.id, 'obs-check');
+  assert.equal((await v.verify({ goal, result: 'anything' })).ok, true); // passes, never ran
+  const good = createObservation({ actionId: 'x', source: 'tool://t', kind: 'tool-result', success: true });
+  const bad = createObservation({ actionId: 'x', source: 'tool://t', kind: 'tool-result', success: false });
+  assert.equal((await v.verify({ goal, observation: good })).ok, true);
+  assert.equal((await v.verify({ goal, observation: bad })).reason, 'bad observation');
 });
 
 test('LlmJudgeVerifier scores against the rubric', async () => {
