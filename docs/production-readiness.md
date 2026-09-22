@@ -91,8 +91,9 @@ Resume is at-least-once. A crash after an external side effect but before its
 observation is checkpointed can reissue the logical action. Idempotency and
 reconciliation are part of the production design.
 
-Retention splits operational stores from evidence. `SqliteApprovalBridge.prune`
-and `SqliteCheckpointStore.prune`/`PgCheckpointStore.prune` delete answered
+Retention splits operational stores from evidence.
+`SqliteApprovalBridge.prune`/`PgApprovalBridge.prune` and
+`SqliteCheckpointStore.prune`/`PgCheckpointStore.prune` delete answered
 requests and superseded checkpoints — operational records, prune freely. The
 journal is the evidence: it is exported and sealed, never deleted. Approval
 rows carry `expires_at` (`created_at + timeoutMs`), so unanswered requests
@@ -186,9 +187,12 @@ hierarchy.
 The repository provides a strong zero-infrastructure single-host substrate
 (SQLite) plus `@naro/adapter-pg`, which implements every durable port on
 Postgres for multi-host deployments: `PgCheckpointStore`, `PgEventStore`,
-`PgMemoryStore`, `PgLeaseStore`, `PgLimitStore`, and `PgAgentBus` (atomic
-`SKIP LOCKED` claims, single-statement upsert quotas). Its integration tests
-run against a real Postgres service container in CI.
+`PgMemoryStore`, `PgLeaseStore`, `PgLimitStore`, `PgAgentBus` (atomic
+`SKIP LOCKED` claims, single-statement upsert quotas), `PgRunRegistry`, and
+`PgApprovalBridge` — so `naro serve`'s run index, event journal, and
+human-in-the-loop approval queue are all answerable from any replica, not
+just the run registry and journal. Its integration tests run against a real
+Postgres service container in CI.
 
 Deployment artifacts ship in-repo: a root `Dockerfile` (Node 22-alpine,
 type-stripped — no build step), `deploy/compose.yml` (Naro + Postgres), and

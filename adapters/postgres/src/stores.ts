@@ -1,5 +1,5 @@
-import type { Goal, NaroEvent } from '@naro/core';
-import type { Checkpoint, CheckpointStore, RunRegistry, RunSummary } from '@naro/runtime';
+import type { Action, Goal, NaroEvent } from '@naro/core';
+import type { ApprovalRequest, Checkpoint, CheckpointStore, HumanBridge, RunRegistry, RunSummary } from '@naro/runtime';
 import type { LeaseStore } from '@naro/runtime';
 import type { LimitStore } from '@naro/policy';
 import type { EventExporter } from '@naro/observability';
@@ -105,6 +105,21 @@ async function migrate(q: PgQueryable): Promise<void> {
       host TEXT
     );
     CREATE INDEX IF NOT EXISTS naro_runs_started ON naro_runs(started_at DESC);
+
+    CREATE TABLE IF NOT EXISTS naro_approvals (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      question TEXT NOT NULL,
+      action JSONB,
+      created_at BIGINT NOT NULL,
+      expires_at BIGINT NOT NULL,
+      answered_at BIGINT,
+      approved BOOLEAN,
+      answer_text TEXT,
+      note TEXT,
+      answered_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS naro_approvals_pending ON naro_approvals(expires_at) WHERE answered_at IS NULL;
   `);
 }
 
@@ -481,4 +496,110 @@ function toSummary(r: RunRow): RunSummary {
     ...(r.error != null && { error: r.error }),
     ...(r.host != null && { host: r.host }),
   };
+}
+
+// --- approvals ---------------------------------------------------------
+
+interface ApprovalRow {
+  id: string; kind: 'approve' | 'ask'; question: string; action: Action | null;
+  created_at: number | string; expires_at: number | string; answered_at: number | string | null;
+  approved: boolean | null; answer_text: string | null; note: string | null; answered_by: string | null;
+}
+
+function toRequest(r: ApprovalRow): ApprovalRequest {
+  return {
+    id: r.id, kind: r.kind, question: r.question,
+    createdAt: Number(r.created_at), expiresAt: Number(r.expires_at),
+    ...(r.action != null && { action: r.action }),
+    ...(r.answered_by != null && { answeredBy: r.answered_by }),
+    ...(r.answered_at != null && {
+      answer: {
+        at: Number(r.answered_at),
+        ...(r.approved != null && { approved: r.approved }),
+        ...(r.answer_text != null && { text: r.answer_text }),
+        ...(r.note != null && { note: r.note }),
+      },
+    }),
+  };
+}
+
+/** Postgres counterpart to `SqliteApprovalBridge` — the approval queue
+ *  shared across every `naro serve` replica, so `/approvals` answers the
+ *  same pending set on any host instead of stranding requests on the
+ *  replica that happened to raise them. Same poll-and-timeout contract:
+ *  `approve`/`ask` block until `respond` answers the row or `timeoutMs`
+ *  elapses. */
+export class PgApprovalBridge implements HumanBridge {
+  private readonly q: PgQueryable;
+  private readonly pollMs: number;
+  private readonly timeoutMs: number;
+
+  private constructor(q: PgQueryable, opts: { pollMs?: number; timeoutMs?: number }) {
+    this.q = q;
+    this.pollMs = opts.pollMs ?? 1000;
+    this.timeoutMs = opts.timeoutMs ?? 30 * 60_000;
+  }
+
+  static async create(q: PgQueryable, opts: { pollMs?: number; timeoutMs?: number } = {}): Promise<PgApprovalBridge> {
+    await migrate(q);
+    return new PgApprovalBridge(q, opts);
+  }
+
+  async approve(action: Action, question?: string): Promise<{ approved: boolean; note?: string; by?: string }> {
+    const id = await this.insert('approve', question ?? `approve ${action.capability} → ${action.target}`, action);
+    const a = await this.wait(id);
+    return {
+      approved: a?.answer?.approved === true,
+      ...(a?.answer?.note !== undefined && { note: a.answer.note }),
+      ...(a?.answeredBy !== undefined && { by: a.answeredBy }),
+    };
+  }
+
+  async ask(question: string): Promise<string> {
+    const id = await this.insert('ask', question);
+    const a = await this.wait(id);
+    return a?.answer?.text ?? '';
+  }
+
+  async respond(id: string, answer: { approved?: boolean; text?: string; note?: string }, by?: string): Promise<boolean> {
+    const { rows } = await this.q.query(
+      `UPDATE naro_approvals SET answered_at=$1, approved=$2, answer_text=$3, note=$4, answered_by=$5
+       WHERE id=$6 AND answered_at IS NULL AND expires_at > $7 RETURNING id`,
+      [Date.now(), answer.approved ?? null, answer.text ?? null, answer.note ?? null, by ?? null, id, Date.now()],
+    );
+    return rows.length === 1;
+  }
+
+  async pending(): Promise<ApprovalRequest[]> {
+    const { rows } = await this.q.query(
+      'SELECT * FROM naro_approvals WHERE answered_at IS NULL AND expires_at > $1 ORDER BY created_at', [Date.now()]);
+    return rows.map((r) => toRequest(r as unknown as ApprovalRow));
+  }
+
+  async prune(opts: { olderThan: number }): Promise<number> {
+    const { rows } = await this.q.query(
+      'DELETE FROM naro_approvals WHERE answered_at IS NOT NULL AND answered_at < $1 RETURNING id', [opts.olderThan]);
+    return rows.length;
+  }
+
+  private async insert(kind: 'approve' | 'ask', question: string, action?: Action): Promise<string> {
+    const id = newId('appr');
+    const now = Date.now();
+    await this.q.query(
+      'INSERT INTO naro_approvals (id, kind, question, action, created_at, expires_at) VALUES ($1,$2,$3,$4,$5,$6)',
+      [id, kind, question, action ? JSON.stringify(action) : null, now, now + this.timeoutMs],
+    );
+    return id;
+  }
+
+  private async wait(id: string): Promise<ApprovalRequest | undefined> {
+    const deadline = Date.now() + this.timeoutMs;
+    for (;;) {
+      const { rows } = await this.q.query('SELECT * FROM naro_approvals WHERE id=$1', [id]);
+      const row = rows[0] as unknown as ApprovalRow | undefined;
+      if (row?.answered_at != null) return toRequest(row);
+      if (Date.now() >= deadline) return undefined;
+      await new Promise((resolve) => setTimeout(resolve, this.pollMs));
+    }
+  }
 }

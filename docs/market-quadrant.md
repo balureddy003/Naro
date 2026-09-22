@@ -59,8 +59,9 @@ single-vendor.
 Execute scoring notes — where Naro loses its Y: distribution 0 (packages
 unpublished, by choice — see the direction vector; `naro init` scaffolds
 to a 404 until then), hardening 3 (Postgres ports, leases, drain, probes,
-and now a durable run registry + journal all exist; `/approvals` is still
-SQLite-only on Postgres deployments), ecosystem 3, DX 3 (deep docs, but the
+a durable run registry, journal, and now approval queue all exist — the
+control plane has no remaining SQLite-only piece, but nothing here is
+distributed *across* Postgres itself), ecosystem 3, DX 3 (deep docs, but the
 end-to-end path broke at step one before this review), organization 1
 (single author, v0.1.0), language 1 (TypeScript only, Node 24+).
 
@@ -131,11 +132,10 @@ cheap; movement on Y is the whole game.
    capped at zero until packages resolve. Deliberately deferred until a
    reference use case exists to publish *for* — see item 4. (Y: 1.4 → ~2.2)
 2. ~~Durable run registry on the control plane.~~ **Done.** `naro serve
-   --pg <url>` / `NARO_PG_URL` (`--registry-pg`/`--journal-pg` to split
-   them) wires `PgRunRegistry` + `PgEventStore`, so `GET /runs` and
-   `/runs/:id/events` are real across replicas, not just SQLite-single-host.
-   Still open: `/approvals` has no `PgApprovalBridge` — the approval queue
-   stays per-replica on Postgres deployments today. (Y → ~2.6)
+   --pg <url>` / `NARO_PG_URL` (`--registry-pg`/`--journal-pg`/
+   `--approvals-pg` to split them) wires `PgRunRegistry` + `PgEventStore` +
+   `PgApprovalBridge`, so `GET /runs`, `/runs/:id/events`, and `/approvals`
+   are all real across replicas, not just SQLite-single-host. (Y → ~2.6)
 3. **Python client** for `serveEnvironment` and `HttpAgentBus`, and a
    Python harness hook for Claude Code. The kernel stays TypeScript; the
    door widens to the Python-majority market. (Y → ~3.2)
