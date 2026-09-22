@@ -32,12 +32,36 @@ application or strategy decides what is safe and useful to write.
 | Store | Persistence | Recall | Use |
 |---|---|---|---|
 | `InMemoryMemoryStore` | process only | lexical | tests and local development |
-| `FileMemoryStore` | JSONL files | lexical | zero-infrastructure persistence |
-| `SqliteMemoryStore` | transactional SQLite | FTS5/BM25 with lexical fallback | durable single-host agents |
+| `FileMemoryStore` | JSONL files | lexical + `searchByEmbedding` | zero-infrastructure persistence |
+| `SqliteMemoryStore` | transactional SQLite | FTS5/BM25 with lexical fallback + `searchByEmbedding` | durable single-host agents |
 
-`SqliteMemoryStore` supports tier-scoped search and durable deletion. Its
-embedding column preserves a future vector-recall seam; the included search is
-FTS5 rather than vector similarity.
+`SqliteMemoryStore` supports tier-scoped search and durable deletion.
+
+## Semantic recall
+
+`FileMemoryStore` and `SqliteMemoryStore` implement the optional
+`EmbeddingIndex` port:
+
+```ts
+interface EmbeddingIndex {
+  searchByEmbedding(embedding: readonly number[], limit?: number, tier?: MemoryTier): Promise<readonly MemoryHit[]>;
+}
+```
+
+Write entries with an `embedding` (from any `Model.embed()`-capable
+provider), then recall by embedding the query yourself and passing the
+vector — the store never calls a model on your behalf:
+
+```ts
+const [queryVector] = await model.embed([question]);
+const hits = await memory.searchByEmbedding(queryVector, 5, 'episodic');
+```
+
+Scoring is cosine similarity computed in application code, not a database
+vector index — the honest baseline for single-host recall over up to a few
+thousand embedded entries. A dedicated vector DB (Qdrant, pgvector) is a
+separate `MemoryStore` adapter behind the same contract when that stops
+being enough.
 
 ## Example
 

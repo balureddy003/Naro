@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { MemoryHit } from '@naro/core';
+import { cosineSimilarity, type EmbeddingIndex } from './embedding.ts';
 import {
   createMemoryEntry, textScore,
   type MemoryEntry, type MemoryInput, type MemoryStore, type MemoryTier,
@@ -18,9 +19,12 @@ interface Row {
  *
  * The same MemoryStore port: swap FileMemoryStore → SqliteMemoryStore
  * and search gets faster, forget stays durable, nothing else changes.
- * Vector recall plugs in later via the entry's `embedding` column.
+ * Vector recall (`searchByEmbedding`) reads the entry's `embedding` column —
+ * scored in application code (cosine similarity), not in SQL: node:sqlite
+ * has no vector extension, and a JS scan over persisted rows is the honest
+ * baseline before reaching for a real vector index at scale.
  */
-export class SqliteMemoryStore implements MemoryStore {
+export class SqliteMemoryStore implements MemoryStore, EmbeddingIndex {
   private readonly db: DatabaseSync;
 
   constructor(path: string) {
@@ -102,6 +106,19 @@ export class SqliteMemoryStore implements MemoryStore {
         .filter((h) => h.score > 0).sort((a, b) => b.score - a.score).slice(0, limit);
       return Promise.resolve(scored);
     }
+  }
+
+  /** Semantic recall: score every embedded row by cosine similarity to `embedding`. */
+  searchByEmbedding(embedding: readonly number[], limit = 5, tier?: MemoryTier): Promise<readonly MemoryHit[]> {
+    const rows = (tier
+      ? this.db.prepare('SELECT * FROM entries WHERE tier = ? AND embedding IS NOT NULL').all(tier)
+      : this.db.prepare('SELECT * FROM entries WHERE embedding IS NOT NULL').all()) as unknown as Row[];
+    const scored = rows
+      .map((r) => this.toEntry(r))
+      .map((e) => ({ id: e.id, key: e.key, content: e.content, score: cosineSimilarity(embedding, e.embedding!) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+    return Promise.resolve(scored);
   }
 
   private allRows(tier?: MemoryTier): MemoryEntry[] {

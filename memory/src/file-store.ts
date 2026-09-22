@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { MemoryHit } from '@naro/core';
+import { cosineSimilarity, type EmbeddingIndex } from './embedding.ts';
 import {
   createMemoryEntry,
   textScore,
@@ -15,7 +16,7 @@ import {
  * restarts, zero infrastructure. The reference for "persistence without
  * a database"; swap in SQLite/Redis/vector stores via the same interface.
  */
-export class FileMemoryStore implements MemoryStore {
+export class FileMemoryStore implements MemoryStore, EmbeddingIndex {
   private readonly dir: string;
   private cache?: Map<string, MemoryEntry>;
 
@@ -76,6 +77,17 @@ export class FileMemoryStore implements MemoryStore {
     const remaining = [...cache.values()].filter((e) => e.tier === entry.tier);
     await writeFile(this.fileFor(entry.tier), remaining.map((e) => JSON.stringify(e)).join('\n') + (remaining.length ? '\n' : ''));
     return true;
+  }
+
+  /** Semantic recall: score every embedded entry by cosine similarity to `embedding`. */
+  async searchByEmbedding(embedding: readonly number[], limit = 5, tier?: MemoryTier): Promise<readonly MemoryHit[]> {
+    const entries = [...(await this.load()).values()]
+      .filter((e): e is MemoryEntry & { embedding: readonly number[] } =>
+        e.embedding !== undefined && (tier === undefined || e.tier === tier));
+    return entries
+      .map((e) => ({ id: e.id, key: e.key, content: e.content, score: cosineSimilarity(embedding, e.embedding) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
   }
 
   private rank(entries: MemoryEntry[], query: string, limit: number): MemoryHit[] {
