@@ -114,6 +114,22 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       res.end(JSON.stringify(body));
     };
 
+    // This callback is async, so an uncaught throw anywhere below — a
+    // factory(goal) that throws synchronously, a store method that
+    // rejects, anything — becomes an unhandled promise rejection, and
+    // Node's default is to crash the whole process, taking every other
+    // in-flight run down with one bad request. One request failing must
+    // never mean the control plane failing.
+    try {
+      return await route();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (!res.headersSent) return json(500, { error: message });
+      res.end(); // a stream (SSE) was already writing — nothing left to do but close it
+      return;
+    }
+
+    async function route(): Promise<void> {
     // Probes never require auth — orchestrators can't carry credentials.
     if (req.method === 'GET' && url.pathname === '/health') return json(200, { ok: true });
     if (req.method === 'GET' && url.pathname === '/ready') {
@@ -262,6 +278,7 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
     }
 
     return json(404, { error: 'not found' });
+    }
   });
 
   const host = opts.host ?? '127.0.0.1';
