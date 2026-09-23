@@ -147,3 +147,6 @@ direction.
   still provide.
 - [Market quadrant](market-quadrant.md) — scored vision × execution field
   and the direction vector.
+- [EU AI Act Article 12 mapping](compliance/eu-ai-act-article-12.md) — what
+  the evidence architecture already gives the regulated-workload buyer
+  named above, and what's still missing.

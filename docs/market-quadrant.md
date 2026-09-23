@@ -157,10 +157,22 @@ cheap; movement on Y is the whole game.
 
 **Right (vision) — the next move that widens the moat:**
 
-- No specific candidate identified yet. The remaining vision gap is
-  breadth (domains 4/5, ecosystem depth) rather than a single missing
-  mechanism — see the "Uniqueness" section above for what's already
-  differentiated.
+- **Candidate identified: provenance for tool *definitions*, not just tool
+  *output*.** [ADR 0016](adr/0016-tool-definitions-are-provenance-pinned.md)
+  (proposed) extends ADR 0010's already-unique provenance mechanism to a
+  documented, current attack class against MCP specifically — tool
+  poisoning (a malicious description read as trusted metadata before any
+  action runs) and rug pulls (a previously-approved tool's definition
+  changing unnoticed). Independent 2026 scans find the majority of public
+  MCP servers carry exploitable flaws and name exactly these two patterns;
+  no orchestration framework, security kernel, or lab SDK in this field's
+  scored list does definition-level pinning today — this would be a
+  fourth "only Naro has" property, not an incremental one. Also found in
+  the same pass: [ADR 0015](adr/0015-mcp-server-calls-route-through-the-harness-gate.md)
+  (proposed) closes a real asymmetry where Naro's *own* tools, served
+  over MCP to an external host, bypassed the policy gate and journal
+  entirely — a correctness fix, not a moat move, but a precondition for
+  claiming "first-class treatment" in both directions honestly.
 
 ## Cautions for a buyer
 
