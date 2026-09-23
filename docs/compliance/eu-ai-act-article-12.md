@@ -16,7 +16,18 @@ that determination can be made with evidence instead of a vendor's word.
 
 ## Why this article, specifically
 
-The EU AI Act's high-risk obligations become enforceable August 2, 2026.
+**Correction (2026-09-23):** an earlier version of this document stated
+the high-risk obligations become enforceable August 2, 2026. That date
+has since moved: the Digital Omnibus on AI (Regulation (EU) 2026/1744,
+in force from 27 July 2026) deferred standalone high-risk systems
+(Annex III — the category an autonomous agent typically falls under) to
+**December 2, 2027**, and product-embedded high-risk AI (Annex I) to
+August 2, 2028. Article 5's prohibited-practices regime and Article 50's
+transparency/labeling duties were *not* deferred and remain in force on
+their original schedule. Verify the current date for your specific
+classification before treating any date here as authoritative — this
+regulation has already moved once.
+
 Article 12 ("Record-keeping") requires high-risk AI systems to be
 "designed and developed with capabilities enabling the automatic
 recording of events ('logs') over the duration of the system's
@@ -97,6 +108,23 @@ reuses the hash chain's existing `expectPrev` mechanism and the same
 Ed25519 seal primitive Phase 1 already ships, rather than inventing new
 cryptography. Proposed, not yet implemented.
 
+## Adjacent: Article 14 (human oversight)
+
+Not this document's primary scope, but one finding from the same
+code-reading pass is concrete enough to note here rather than in a
+separate document: Article 14 requires oversight personnel have "the
+ability to halt the system through a stop button or comparable
+procedure." Naro has per-action human oversight today
+(`require_approval` policy verdicts gate a *specific future* action) and
+bounded budgets (`maxIterations`, `budgets.maxCostUsd`/`maxTotalTokens`
+on `AgentDeps`), but no way for an operator to halt an *already-running*
+run without shutting down the entire `naro serve` process — confirmed by
+reading `cli/src/serve.ts`'s route table: no `POST /runs/:id/cancel`
+exists, even though the per-run `AbortController` the drain path already
+uses is right there, unexposed. [ADR 0022](../adr/0022-attributed-run-cancellation-endpoint.md)
+(proposed) closes this: an attributed, role-gated cancel endpoint reusing
+the existing cancellation mechanism, not a new one.
+
 ## What this document is not
 
 - Not a claim that any specific Naro deployment is Article 12 compliant
@@ -118,6 +146,10 @@ cryptography. Proposed, not yet implemented.
 - [Evidence-gated completion](../concepts/evidence-gated-completion.md) —
   why a run isn't done until the kernel has proof.
 - [ADR 0005](../adr/0005-hash-chain-in-the-event-bus.md) — the hash chain.
+- [ADR 0018](../adr/0018-attested-retention-pruning.md) — the retention
+  mechanism this document names as a gap.
+- [ADR 0022](../adr/0022-attributed-run-cancellation-endpoint.md) — the
+  Article 14 stop-button gap noted above.
 - [Production readiness](../production-readiness.md) — what a deployment
   must still provide beyond the kernel.
 - [Market quadrant](../market-quadrant.md) — "Cautions for a buyer" on the
