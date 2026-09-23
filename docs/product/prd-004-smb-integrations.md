@@ -2,7 +2,7 @@
 
 Status: proposed
 Owner: unassigned
-Depends on: [PRD-002](prd-002-outcome-templates.md), `@naro/tools` (`Tool`, `SecretProvider`)
+Depends on: [PRD-002](prd-002-outcome-templates.md), `@naro/tools` (`Tool`, `SecretProvider`); milestone 4 specifically depends on [PRD-006](prd-006-chat-interface.md) (the approval UI, not PRD-003 — see that milestone)
 
 ## Summary
 
@@ -57,10 +57,13 @@ those systems.
 | Shopify/Square | Review response drafter (order context), future templates | read orders, read reviews if API exposes them | none in v1 |
 | CSV import | Any template, as a fallback data source requiring no OAuth integration at all | parse upload | n/a |
 
-**Recommended first two:** bank/card feed and document source — no
-send-capable write path in either, which keeps the first connectors
-free of the approval-UI dependency PRD-002 flags for the customer-facing
-templates.
+**Recommended first two *real* connectors:** bank/card feed and document
+source — no send-capable write path in either, which keeps them free of
+the approval-UI dependency PRD-002 flags for the customer-facing
+templates. This is not the same claim as "ships first" — CSV import
+ships ahead of both (see Risks and Milestones below); "first two" scopes
+which OAuth-integrated connectors to build, once CSV import has already
+de-risked the templates against connector-partnership delays.
 
 ## Functional requirements
 
@@ -116,9 +119,10 @@ templates.
   connector, specifically, ships to real customer data.
 - **CSV import is the unglamorous fallback that might matter most.** It
   requires no OAuth partnership, no approval process, and no compliance
-  review, and it unblocks every template immediately. It may be worth
-  shipping first, ahead of the "recommended first two," purely to
-  de-risk PRD-002's benchmark work from connector-partnership delays.
+  review, and it unblocks every template immediately. Resolved, not just
+  flagged: the Milestones section below ships it first (milestone 1),
+  ahead of the "recommended first two" real connectors — see the note
+  on that line in Candidate connectors.
 
 ## Milestones
 
@@ -127,5 +131,7 @@ templates.
 2. Document source connector (email attachment or direct upload) for
    the invoice/receipt extractor.
 3. Bank/card feed connector, gated on the compliance review above.
-4. Gmail/Outlook, once an approval UI exists (PRD-003) to gate the send
-   path.
+4. Gmail/Outlook, once an approval UI exists ([PRD-006](prd-006-chat-interface.md)
+   — its approval cards, `client.answerApproval()`, functional
+   requirement 2 — not PRD-003, which is the hosted control plane, a
+   different PRD) to gate the send path.
