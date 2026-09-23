@@ -30,6 +30,7 @@ Read these when you want to know *why* the code is shaped the way it is. Read
 | [0018](0018-attested-retention-pruning.md) | Retention pruning is an attested chain re-anchor (`journal.retention.pruned`), not silent deletion | proposed |
 | [0019](0019-memory-writes-are-provenance-tagged.md) | `MemoryEntry`/`MemoryInput` carry `trust`, extending provenance to persistent memory (OWASP ASI06 memory poisoning) | proposed |
 | [0020](0020-tool-source-collisions-are-not-silent.md) | Tool name collisions across sources are surfaced and require resolution, not silently overwritten (cross-server tool shadowing) | proposed |
+| [0021](0021-otel-span-mapping-for-the-genai-semantic-conventions.md) | `@naro/adapter-otel` gains span export using the OTel GenAI semantic conventions, alongside the existing log export | proposed |
 
 ## Template
 
