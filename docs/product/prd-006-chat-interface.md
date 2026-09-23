@@ -229,6 +229,26 @@ in Success metrics below: a first-time user completes the approval flow
 with zero instructions, in under a minute. Everything in this section
 exists to make that bar checkable, not just aspirational.
 
+**Design review, round one.** A structured heuristic pass (WCAG contrast
+math, keyboard operability, Nielsen's visibility-of-system-status) against
+the mockup found and fixed six concrete defects, not impressions:
+`--ink-faint` measured 3.09:1 against `--surface` — below WCAG AA's
+4.5:1 — and is now 4.77:1 in both themes; the wizard's cost-tier and
+role-picker cards were `<div onclick>`, invisible to a screen reader and
+unreachable by keyboard, now real `<button>`s with `aria-pressed`; the
+toggle switches had no accessible name at all (the label text lived in a
+sibling element, never inside the `<label>`), now carry explicit
+`aria-label`s; the ops chain-status banner wasn't actually
+`position: sticky` despite this document saying "pinned" — it scrolled
+away like ordinary content; every approval/admin resolution was an
+instant `innerHTML` replace with zero transition, precisely at the
+moment a user most needs visual confirmation an action landed; and the
+icon set carried seven different stroke-widths (1.1–1.8) with border-
+radius spread across ten arbitrary values where three would do. All six
+are fixed in the current mockup revision — this is a record of what a
+rigorous pass actually finds, not a claim that a further pass with real
+design expertise won't find more. It should.
+
 **A conversation-history sidebar is in scope; search is not.** A plain,
 reverse-chronological list of past runs — template name, one-line
 status, relative time — is exposed already by `GET /runs`/`client.listRuns()`;
