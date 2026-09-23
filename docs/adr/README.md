@@ -26,6 +26,8 @@ Read these when you want to know *why* the code is shaped the way it is. Read
 | [0014](0014-cost-aware-escalation-is-a-reasoner.md) | Cost-aware model escalation is a `Reasoner`, not a new kernel primitive | accepted |
 | [0015](0015-mcp-server-calls-route-through-the-harness-gate.md) | `McpRegistryServer` routes inbound tool calls through the harness gate, not `tool.execute()` directly | proposed |
 | [0016](0016-tool-definitions-are-provenance-pinned.md) | Tool definitions from untrusted sources are provenance-pinned (MCP tool poisoning / rug-pull defense) | proposed |
+| [0017](0017-delegated-principal-is-a-policy-input.md) | Delegated principal identity (`PolicyContext.principal`) is a policy input, distinct from grants and provenance | proposed |
+| [0018](0018-attested-retention-pruning.md) | Retention pruning is an attested chain re-anchor (`journal.retention.pruned`), not silent deletion | proposed |
 
 ## Template
 

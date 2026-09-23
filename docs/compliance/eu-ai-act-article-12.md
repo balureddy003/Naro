@@ -88,16 +88,14 @@ today. Two things are missing, and they're different problems:
    pruning the middle of a hash chain without breaking `naro verify` is
    a real design problem this document does not solve.
 
-A natural, bounded addition — not proposed as an ADR here because it
-does not touch a kernel state transition or public contract, only an
-export/storage operational concern — is a `naro prune --before <date>`
-CLI command backed by each event store's existing schema, paired with a
-documented procedure for re-anchoring the chain (a `journal.sealed`-style
-marker recording "events before this point were pruned under retention
-policy X, chain integrity from this point forward is unaffected") so
-`naro verify` can still validate the retained portion honestly instead
-of silently accepting a gap. This is flagged as open work, not
-committed to a timeline.
+[ADR 0018](../adr/0018-attested-retention-pruning.md) (proposed) closes
+this: a `naro prune --before <date>` command that removes events but
+leaves behind an attested `journal.retention.pruned` marker — recomputing
+`naro verify`'s starting point from that marker's disclosed hash rather
+than silently accepting a gap or reporting what looks like tampering. It
+reuses the hash chain's existing `expectPrev` mechanism and the same
+Ed25519 seal primitive Phase 1 already ships, rather than inventing new
+cryptography. Proposed, not yet implemented.
 
 ## What this document is not
 

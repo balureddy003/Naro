@@ -173,6 +173,17 @@ cheap; movement on Y is the whole game.
   over MCP to an external host, bypassed the policy gate and journal
   entirely — a correctness fix, not a moat move, but a precondition for
   claiming "first-class treatment" in both directions honestly.
+- **Second candidate: delegated principal identity as a policy input.**
+  [ADR 0017](adr/0017-delegated-principal-is-a-policy-input.md) (proposed)
+  gives `PolicyContext` a `principal` field — "whose authority is this
+  action under," distinct from `grants` (what the agent can do) and
+  `provenance` (how trustworthy the evidence is). This tracks a real 2026
+  market move (Cross App Access adopted into MCP's own auth spec,
+  Microsoft Entra Agent ID reaching GA) without Naro reimplementing OAuth
+  — the gateway resolves identity, Naro's contribution is giving that
+  identity a seat at the same structural gate every action already passes
+  through. Complements 0016 rather than competing with it: one closes a
+  content-trust gap, the other an authority gap.
 
 ## Cautions for a buyer
 
