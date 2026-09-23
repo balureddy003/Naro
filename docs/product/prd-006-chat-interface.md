@@ -185,9 +185,17 @@ correctly declined to make alone).
 
 ## Interface design
 
-*Reference mockup:* [claude.ai/artifact/4FrvR54yYwkoo8vQyjVEnt](https://claude.ai/artifact/4FrvR54yYwkoo8vQyjVEnt)
-— a working, interactive HTML prototype of the full app shell, not one
-screen or one role.
+*Reference mockup:* [`prd-006-mockup.html`](prd-006-mockup.html), checked
+into this directory so an implementer can open it directly (no external
+account needed) — same file also live at
+[claude.ai/artifact/4FrvR54yYwkoo8vQyjVEnt](https://claude.ai/artifact/4FrvR54yYwkoo8vQyjVEnt)
+for interactive review. It's a working, interactive HTML prototype of
+the full app shell, not one screen or one role, and a design reference
+for implementation, not shippable code itself — static sample data
+throughout (see its own `RUN_META`/`TEMPLATE_INFO` objects), no real
+`@naro/client` calls. Keep the two in sync by hand until this PRD ships;
+neither is authoritative over the other, both should describe the same
+IA.
 
 **The sidebar lists objects, not modes.** One list, grouped by
 "Templates" (each an expandable group — icon, name, a gear icon that
