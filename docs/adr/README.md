@@ -33,6 +33,7 @@ Read these when you want to know *why* the code is shaped the way it is. Read
 | [0021](0021-otel-span-mapping-for-the-genai-semantic-conventions.md) | `@naro/adapter-otel` gains span export using the OTel GenAI semantic conventions, alongside the existing log export | accepted |
 | [0022](0022-attributed-run-cancellation-endpoint.md) | `naro serve` gains an attributed `POST /runs/:id/cancel` (the Article 14 stop button), reusing the existing per-run `AbortController` | accepted |
 | [0023](0023-console-renders-the-evidence-record-not-a-log.md) | The console/`@naro/client` render `buildEvidence()` directly — no separate telemetry pipeline that could disagree with `naro verify` | accepted |
+| [0024](0024-admin-api-surface-for-registry-and-retention.md) | `naro serve` gains `admin`-gated endpoints for tool-collision resolution, definition acknowledgment, and retention pruning — HTTP wiring onto ADR 0016/0018/0020's existing decisions | proposed |
 
 ## Template
 

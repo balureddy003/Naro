@@ -1,9 +1,23 @@
-# PRD-006 — Chat Interface: Self-Deployable, Verifiable
+# PRD-006 — One Interface, Three Roles: End User, Ops, Admin
 
 Status: proposed
 Owner: unassigned
-Depends on: `@naro/client`, [ADR 0023](../adr/0023-console-renders-the-evidence-record-not-a-log.md), [PRD-002](prd-002-outcome-templates.md)
+Depends on: `@naro/client`, [ADR 0023](../adr/0023-console-renders-the-evidence-record-not-a-log.md), [ADR 0024](../adr/0024-admin-api-surface-for-registry-and-retention.md), [PRD-002](prd-002-outcome-templates.md)
 Depended on by: closes a gap PRD-002 already flagged (human-approval templates "still need a UI")
+
+**Revision note:** the original version of this PRD scoped a chat
+interface for end users only, and its Non-goals explicitly excluded
+replacing the ops console ("different persona, different job"). That
+exclusion is revised here, not silently dropped: end user, ops, and
+admin turn out to share one design system and one data source
+(`@naro/client`'s wire types, `buildEvidence()`), and building three
+separate products for three views of the same evidence was more
+duplication than the difference in persona actually justified. This
+version is one app shell with a role switch, not three apps. The
+existing standalone ops console (`GET /console`, ADR 0023) is unaffected
+and remains the CLI-adjacent, zero-JS-framework reference; this PRD's
+ops and admin views are additive, a richer surface for a deployment that
+wants one.
 
 ## Summary
 
@@ -76,19 +90,25 @@ own sake.
 
 ## Non-goals
 
-- Replacing the ops console. Different persona, different job — an
-  operator auditing a fleet of runs still wants the console's list/tree
-  view, not a chat transcript.
 - A general-purpose LLM chat product (model picker, file uploads, chat
-  history search, multi-modal input). Scoped to what a Naro-run agent's
-  goal-submission → streaming → approval → evidence loop already is —
-  not a ChatGPT clone with agent features bolted on.
+  history search, multi-modal input). The end-user view is scoped to
+  what a Naro-run agent's goal-submission → streaming → approval →
+  evidence loop already is — not a ChatGPT clone with agent features
+  bolted on.
 - A hosted product. This is a self-deployable static bundle, same
-  posture as the console; a hosted, multi-tenant chat surface is PRD-003's
+  posture as the console; a hosted, multi-tenant surface is PRD-003's
   territory if it's ever built there.
-- New backend/wire surface. Every field this PRD needs already exists in
-  `@naro/client`'s types — if implementation reveals a real gap, that's a
-  separate, explicitly-scoped follow-up, not silently absorbed here.
+- Live CRUD over principals/roles. ADR 0012's principals are a token-file
+  map the deployment configures, not a database this UI writes to — the
+  admin view can *show* configured principals (read-only) but does not
+  manage them; changing who has what role remains a deployment-config
+  change, not an HTTP call.
+- New backend/wire surface beyond what ADR 0024 already specifies. Every
+  field the end-user and ops views need already exists in `@naro/client`'s
+  types; the admin view's three write actions (collision resolve,
+  definition acknowledge, prune) are exactly ADR 0024's three endpoints,
+  no more. A capability that needs a fourth endpoint is out of scope
+  until it has its own ADR.
 
 ## Users and scenario
 
@@ -105,20 +125,67 @@ there. They tap expand once, out of curiosity, and see: policy allowed
 this read, the extraction verifier flagged low confidence, nothing was
 written yet. They answer. The conversation continues.
 
+**Ops user:** a bookkeeper or contracted admin assistant who supports
+more than one small-business client through the same deployment — not a
+developer, but comfortable auditing rather than just approving.
+**Scenario:** they switch to the Ops view and see every run across every
+tenant this principal can see (ADR 0013), each tagged by business —
+Riverside Supply, Cedar Bakery — with a persistent chain-status banner
+above the transcript confirming what they're looking at is the same
+record `naro verify` would print, not a paraphrase. They can still
+answer a pending approval from here; they cannot submit a new goal —
+that's the end-user view's job, not theirs.
+
+**Admin user:** whoever this deployment trusts with fleet-wide and
+registry-level authority — often the same person as the technical
+contact who set up `naro serve` in the first place. **Scenario:** an MCP
+server the business connected starts advertising a tool description that
+changed since it was last reviewed. The admin view surfaces it under
+"Definition changes" with the old and new description side by side, and
+a plain choice: acknowledge it, or leave the tool forced to
+destructive-requires-approval until someone verifies the source. No
+scrollback through a log to find this — it's a queue with a count badge,
+the same pattern as the end-user's approval queue, because it's the same
+underlying idea (a human decision a machine correctly declined to make
+alone).
+
 ## Interface design
 
 *Reference mockup:* [claude.ai/artifact/4FrvR54yYwkoo8vQyjVEnt](https://claude.ai/artifact/4FrvR54yYwkoo8vQyjVEnt)
 — a working, interactive HTML prototype of the full app shell, not one
-screen: a conversation-history sidebar plus five states covering the
-distinct capabilities this PRD and PRD-002 actually claim — a numeric
-correction approval (invoice total), a text-draft approval (customer
-email reply, showing the draft was influenced by `trust: 'external'`
-content but never acted on it directly), a fully-automated run with no
-approval needed (transaction categorizer, verifier passed on all 14),
-a run *blocked by policy* (a destructive action refused before it ran —
-proof the gate really says no, not just that it says yes), and a live
-run with the stop control active. Built against the real `@naro/client`
-wire shapes so its interaction model, not just its look, is the actual
+screen or one role. A segmented control at the top of the sidebar
+switches between the three views this PRD now covers:
+
+- **End user** — the conversation-history sidebar plus five states
+  covering the distinct capabilities this PRD and PRD-002 actually
+  claim: a numeric-correction approval (invoice total), a text-draft
+  approval (customer email reply, showing the draft was influenced by
+  `trust: 'external'` content but never acted on it directly), a
+  fully-automated run with no approval needed (transaction categorizer,
+  verifier passed on all 14), a run *blocked by policy* (a destructive
+  action refused before it ran), and a live run with the stop control
+  active.
+- **Ops** — the same evidence, widened: every run across every tenant
+  this principal can see, each entry tagged by tenant, with a
+  chain-status banner pinned above the transcript on every run
+  ("Chain OK · sealed (ed25519) · seq 340" or, on the denied run,
+  "sealed · action denied, chain still OK" — the denial doesn't break
+  the proof, it's recorded *by* it). Composer is hidden; this role reads
+  and answers approvals, it doesn't submit goals.
+- **Admin** — a fixed nav (not a conversation list) covering exactly
+  [ADR 0024](../adr/0024-admin-api-surface-for-registry-and-retention.md)'s
+  three write endpoints plus the fleet-halt endpoint ADR 0022 already
+  shipped: a collision case (two sources claiming the tool name
+  `search`, shown side by side with their definition hashes, one button
+  per outcome), a definition-change case (an MCP tool's description
+  grew a capability nobody approved, shown as old-vs-new text), a
+  retention form (run, cutoff sequence, policy citation), and a
+  fleet-wide halt requiring a reason before it's enabled.
+
+Every capability shown maps to a named, real endpoint or an explicitly
+proposed one (ADR 0024) — nothing in the admin view implies HTTP surface
+that isn't specified somewhere. Built against the real `@naro/client`
+wire shapes so the interaction model, not just the look, is the actual
 spec. "Intuitive" is not a design-taste adjective here — it is the bar
 in Success metrics below: a first-time user completes the approval flow
 with zero instructions, in under a minute. Everything in this section
@@ -231,6 +298,28 @@ helped, by an interface that performs busyness.
    serve`'s existing `GET /client/*.js` asset route serves this UI's
    compiled output too; no bundler dependency introduced into `cli`,
    consistent with the console's own "no build step" precedent.
+7. **The role switch reflects the caller's actual roles, not a UI
+   preference.** A principal without `admin` in `ADR 0012`'s role set
+   never sees the Admin tab rendered at all — not disabled, not visible-
+   but-403, absent — the same fail-toward-least-privilege default ADR
+   0022 already chose for the `admin` role itself. Ops and end-user tabs
+   render for any principal holding `viewer`/`operator`/`approver`
+   respectively; a principal with only `viewer` sees Ops but not the
+   end-user composer (no `operator` grant to submit goals with).
+8. **Ops view is `GET /runs` (unscoped by the caller's own runs) plus the
+   chain banner from `GET /runs/:id/evidence`.** No new endpoint — this
+   is the same data `GET /runs` already returns across tenants per ADR
+   0013's visibility rules, rendered as a list instead of a table, with
+   `client.answerApproval()` still live (matching the existing console's
+   "read-only except answering approvals" posture, [`cli/src/console.ts`](../../cli/src/console.ts)).
+9. **Admin view's three write actions call exactly ADR 0024's three
+   endpoints** — `POST /admin/tool-collisions/resolve`, `POST
+   /admin/tool-definitions/acknowledge`, `POST /admin/runs/:id/prune` —
+   plus the already-shipped `POST /runs/cancel-all` for fleet halt. Every
+   action requires the justification field its backend ADR already
+   requires (a `policy` citation for prune, an implicit "which source
+   wins" for collision resolve); the UI does not accept a write with that
+   field empty.
 
 ## Success metrics
 
@@ -245,15 +334,25 @@ helped, by an interface that performs busyness.
 - % of users who ever expand an evidence card — a genuine curiosity/trust
   signal (not a target to maximize — a business owner who never needs to
   check is not a failure state).
+- Time from a pending tool-collision or definition-change detection to
+  admin resolution — a queue that never empties is worse than no queue;
+  this is the operational health signal for the admin view specifically.
+- Zero admin actions taken with an empty justification field — a
+  correctness bar for requirement 9, not an aspiration.
 
 ## Dependencies
 
-- `@naro/client` — no changes required; every type this PRD needs already
-  ships (`ApprovalRequest`, `EvidenceRecord`, `ActionEvidence`,
-  `watchRun`, `pollApprovals`).
+- `@naro/client` — no changes required for the end-user and ops views;
+  every type they need already ships (`ApprovalRequest`, `EvidenceRecord`,
+  `ActionEvidence`, `watchRun`, `pollApprovals`, `listRuns`).
 - [ADR 0022](../adr/0022-attributed-run-cancellation-endpoint.md)
-  (accepted, implemented) for the in-chat stop control specifically —
-  `POST /runs/:id/cancel` is real and callable today.
+  (accepted, implemented) for the in-chat stop control and the admin
+  fleet-halt control — both call `POST /runs/:id/cancel`/`POST
+  /runs/cancel-all`, real and callable today.
+- [ADR 0024](../adr/0024-admin-api-surface-for-registry-and-retention.md)
+  (proposed) for the admin view's three write actions — this PRD's admin
+  view cannot ship ahead of that ADR being accepted and implemented; the
+  end-user and ops views have no such dependency and can ship first.
 - `naro serve`'s static-asset serving pattern (`cli/src/serve.ts`'s
   `GET /client/*.js` route) as the precedent for how this bundle gets
   served without a new backend endpoint shape.
@@ -295,3 +394,13 @@ helped, by an interface that performs busyness.
 5. One real PRD-002 template (the invoice extractor or transaction
    categorizer) run end-to-end through this interface with a real
    business-shaped test scenario, not a synthetic one.
+6. Role switch + Ops view — read-only run list across tenants plus the
+   chain-status banner, reusing `GET /runs` and `GET /runs/:id/evidence`.
+   No new backend work; this milestone is UI-only and can start as soon
+   as milestone 3 lands.
+7. ADR 0024 accepted and its three endpoints implemented — a hard
+   prerequisite for milestone 8, tracked separately from this PRD's own
+   work since it's kernel/control-plane surface, not UI.
+8. Admin view — fleet halt (reuses milestone 4's mechanism), then
+   collision resolution, definition acknowledgment, and retention
+   pruning against ADR 0024's real endpoints once milestone 7 ships.
