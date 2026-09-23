@@ -157,6 +157,22 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       res.end(JSON.stringify(body));
     };
 
+    // This callback is async, so an uncaught throw anywhere below — a
+    // factory(goal) that throws synchronously, a store method that
+    // rejects, anything — becomes an unhandled promise rejection, and
+    // Node's default is to crash the whole process, taking every other
+    // in-flight run down with one bad request. One request failing must
+    // never mean the control plane failing.
+    try {
+      return await route();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (!res.headersSent) return json(500, { error: message });
+      res.end(); // a stream (SSE) was already writing — nothing left to do but close it
+      return;
+    }
+
+    async function route(): Promise<void> {
     // Probes never require auth — orchestrators can't carry credentials.
     if (req.method === 'GET' && url.pathname === '/health') return json(200, { ok: true });
     if (req.method === 'GET' && url.pathname === '/ready') {
@@ -173,7 +189,8 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
     // probes. Every call the page itself makes is gated normally below.
     if (req.method === 'GET' && url.pathname === '/console' && opts.console !== false) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      return res.end(CONSOLE_HTML);
+      res.end(CONSOLE_HTML);
+      return;
     }
 
     // @naro/client's compiled module graph, served as-is — the console's
@@ -186,7 +203,8 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
         const body = await readFile(join(resolveClientDist(), clientAsset[1]!), 'utf8');
         const isMap = clientAsset[1]!.endsWith('.map');
         res.writeHead(200, { 'content-type': isMap ? 'application/json' : 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' });
-        return res.end(body);
+        res.end(body);
+        return;
       } catch {
         return json(404, { error: 'not found' });
       }
@@ -377,6 +395,7 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
     }
 
     return json(404, { error: 'not found' });
+    }
   });
 
   const host = opts.host ?? '127.0.0.1';

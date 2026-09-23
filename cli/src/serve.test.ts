@@ -190,6 +190,31 @@ test('a run\'s traceId defaults to its own runId and GET /runs?traceId filters b
   }
 });
 
+test('a factory that throws returns 500 and the server survives for the next request', async () => {
+  const throwingFactory = (goal: Goal): AgentRunner => {
+    if (goal.description === 'boom') throw new Error('createRunner: misconfigured — no model available');
+    return factory(goal);
+  };
+  const { url, close } = await startAgentServer(throwingFactory, { port: 0 });
+  try {
+    const failed = await fetch(`${url}/goals`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'boom' }),
+    });
+    assert.equal(failed.status, 500);
+    assert.match(((await failed.json()) as { error: string }).error, /misconfigured/);
+
+    // The process — and this server — must still be up for the next request.
+    const created = await fetch(`${url}/goals`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'a real goal' }),
+    });
+    assert.equal(created.status, 202);
+  } finally {
+    await close();
+  }
+});
+
 test('/ready reflects the probe and the drain state', async () => {
   let ready = true;
   const { url, close } = await startAgentServer(factory, { port: 0, ready: () => ready });

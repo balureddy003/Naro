@@ -101,6 +101,9 @@
       "path": "examples/research-agent"
     },
     {
+      "path": "examples/production-agent"
+    },
+    {
       "path": "./adapters/gemini"
     },
     {

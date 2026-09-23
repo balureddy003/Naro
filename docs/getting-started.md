@@ -235,13 +235,24 @@ Restore `b: 2` before continuing.
 
 ## Next steps
 
+This tutorial is deliberately the smallest possible slice — one tool, one
+verifier, no network, no durability. It exists to show the control path
+clearly, not to be a template for a real deployment. For that:
+
+- **Run the [production agent](../examples/production-agent/README.md)** —
+  the reference deployment: a real model (not MockModel), a policy that
+  requires human approval for destructive actions, a verifier that actually
+  runs your tests, durable checkpoints and an exclusivity lease (SQLite or
+  Postgres), a shared approval queue, and evidence export — wired together
+  as one thing you can run against a real repository. This is what today's
+  tutorial was building toward.
 - Run the larger [minimal agent](../examples/minimal-agent/README.md) to add
-  context, environment actions, and checkpoints.
+  context, environment actions, and checkpoints, one concern at a time.
 - Run the [ReAct agent](../examples/react-agent/README.md) to let a model choose
   the tool.
 - Read [Agent loops and state machines](learn/08-agent-loops.md) to understand
   the states you observed.
 - Read the [`@naro/runtime` reference](../runtime/README.md) for checkpoints,
   leases, batches, and recovery.
-- Review [Production readiness](production-readiness.md) before connecting an
-  agent to a real system.
+- Review [Production readiness](production-readiness.md) for the full
+  checklist the production agent example above is one concrete answer to.
