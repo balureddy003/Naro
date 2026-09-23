@@ -23,6 +23,9 @@
     },
     {
       "path": "../adapters/postgres"
+    },
+    {
+      "path": "../client"
     }
   ],
   "exclude": [

@@ -468,3 +468,47 @@ test('token budget fails the run fast when usage crosses the cap', async () => {
   // the second model call never happened — budget stopped the loop
   assert.equal(res.events.filter((e) => e.type === 'model.usage').length, 1);
 });
+
+test('history() is a read-only snapshot, matching RunResult.events at completion', async () => {
+  const goal = createGoal({ description: 'snapshot' });
+  const runner = new AgentRunner({
+    spec: createAgentSpec({ name: 't', goal }),
+    reasoner: new DirectReasoner(() => ({ kind: 'complete', result: 'done' })),
+    executor: echoExecutor,
+    policy: allowAllPolicy,
+  });
+  assert.equal(runner.history().length, 0); // nothing happened yet
+  const res = await runner.run();
+  assert.deepEqual(runner.history().map((e) => e.type), res.events.map((e) => e.type));
+});
+
+test('run({runId}) without an explicit traceId still makes traceId equal that runId', async () => {
+  // Regression: EventBus defaults traceId from its OWN auto-generated
+  // runId at construction, before run({runId}) overrides the runId —
+  // without runner.ts also updating traceId, every event's traceId would
+  // point at an id nobody uses, breaking "a root run's traceId equals its
+  // own runId" (core/src/events.ts) for every caller-assigned runId.
+  const goal = createGoal({ description: 'trace' });
+  const runner = new AgentRunner({
+    spec: createAgentSpec({ name: 't', goal }),
+    reasoner: new DirectReasoner(() => ({ kind: 'complete', result: 'done' })),
+    executor: echoExecutor,
+    policy: allowAllPolicy,
+  });
+  const res = await runner.run({ runId: 'run_explicit_123' });
+  assert.ok(res.events.length > 0);
+  assert.ok(res.events.every((e) => e.runId === 'run_explicit_123'));
+  assert.ok(res.events.every((e) => e.traceId === 'run_explicit_123'));
+});
+
+test('run({runId, traceId}) — an explicit traceId still wins', async () => {
+  const goal = createGoal({ description: 'trace' });
+  const runner = new AgentRunner({
+    spec: createAgentSpec({ name: 't', goal }),
+    reasoner: new DirectReasoner(() => ({ kind: 'complete', result: 'done' })),
+    executor: echoExecutor,
+    policy: allowAllPolicy,
+  });
+  const res = await runner.run({ runId: 'run_child_1', traceId: 'trace_parent_1' });
+  assert.ok(res.events.every((e) => e.traceId === 'trace_parent_1'));
+});

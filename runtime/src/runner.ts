@@ -155,6 +155,16 @@ export class AgentRunner {
   on: EventBus['on'] = (type, handler) => this.bus.on(type, handler);
 
   /**
+   * A snapshot of this run's events so far — the same list `.run()`
+   * returns as `RunResult.events` at completion, readable mid-run for
+   * read-only inspection (e.g. `naro serve`'s `GET /runs/:id/evidence`).
+   * Not a subscription; use `events()` for that.
+   */
+  history(): readonly NaroEvent[] {
+    return this.bus.history();
+  }
+
+  /**
    * Live event stream as an async iterable — seeded with history so a
    * subscriber that arrives late sees the whole run, and closes on a
    * terminal event (completed / failed / cancelled / paused).
@@ -253,6 +263,13 @@ export class AgentRunner {
     // fresh run carries it. Resumes ignore it: the journal's runId wins.
     if (options.runId !== undefined && !options.resume) {
       this.bus.resumeJournal(options.runId, this.bus.nextSeq());
+      // The bus already defaulted traceId to its OWN auto-generated runId
+      // at construction, before this override — so without this, a root
+      // run given an explicit runId but no explicit traceId would carry a
+      // traceId that matches neither. Keep the "root run's traceId equals
+      // its own runId" invariant (core/src/events.ts) intact through the
+      // override, unless the caller explicitly set traceId themselves.
+      if (options.traceId === undefined) this.bus.traceId = options.runId;
     }
     if (options.traceId !== undefined && !options.resume) {
       this.bus.traceId = options.traceId;

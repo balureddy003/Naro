@@ -84,8 +84,10 @@ Actions and prompts should contain references such as `env:API_KEY` or
 credential files); reads are cached per path with a 60-second TTL
 (configurable) so rotations are picked up without a filesystem hit per
 action. `MapSecretProvider` is useful for tests and small controlled
-deployments. `chainSecrets()` returns the first resolved value. A Vault or
-cloud-secret adapter can implement the same port.
+deployments. `chainSecrets()` returns the first resolved value.
+`@naro/adapter-vault`'s `VaultSecretProvider` implements `vault:path#key`
+against HashiCorp Vault KV v2 with the same TTL-cached posture; a
+cloud-KMS adapter can implement the same port the same way.
 
 ## Worker-thread sandbox
 
@@ -103,4 +105,7 @@ boundary through structured clone.
 
 This protects the host from crashes, runaway heaps, and stuck workers. It is
 not an OS security sandbox: workers share the process filesystem and network
-authority. Use a container or stronger isolation for hostile code.
+authority. `@naro/adapter-docker`'s `DockerSandboxExecutor` implements the
+same `ActionExecutor` contract with real namespace/cgroup isolation via
+`docker run` for hostile code; stronger isolation still (gVisor, Kata,
+Firecracker) is a deployment choice behind that same seam.

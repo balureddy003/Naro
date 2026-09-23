@@ -109,6 +109,12 @@ assumes 00–07, and 11–12 assume 08–10:
   hooks. See use case 10 in [use-cases.md](use-cases.md).
 - [Documentation style](documentation-style.md) — page types, voice, claim
   standards, and maintenance checklist.
+- [EU AI Act Article 12 mapping](compliance/eu-ai-act-article-12.md) — what
+  the evidence architecture already gives a regulated buyer, and the one
+  gap (retention policy) it doesn't yet.
+- [Enterprise/regulated-buyer roadmap](enterprise/README.md) — the other
+  named buyer's product layer (MCP trust, delegated identity), separate
+  from the SMB product layer below.
 
 ## Operations and production (🟡 practitioner: pre-ship checklist)
 

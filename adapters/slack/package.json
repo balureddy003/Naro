@@ -1,0 +1,17 @@
+{
+  "name": "@naro/adapter-slack",
+  "version": "0.1.0",
+  "description": "Slack Web API tools — post messages, list channels, read channel history, governed by policy like any other tool.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": { ".": "./dist/index.js" },
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@naro/tools": "0.1.0"
+  }
+}

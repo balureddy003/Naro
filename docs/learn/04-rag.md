@@ -75,8 +75,11 @@ sources → merge → rank → select → truncate → budget
 ```
 
 Each `ContextItem` carries `id`, `source`, `content`, and an optional `score`.
-`KeywordSource` is the in-memory reference source. SQL, vector, file, or API
-sources can implement the same retrieval contract without changing the runner.
+`KeywordSource` is the lexical in-memory reference source; `EmbeddingSource`
+is its semantic counterpart, scoring documents by cosine similarity against
+a query embedded through any `Model` that declares `'embeddings'`. SQL, a
+real vector database, file, or API sources can implement the same
+retrieval contract without changing the runner.
 
 The default budget is expressed in items and characters. A token-aware adapter
 can be more exact, but a hard character cap is still better than an unbounded

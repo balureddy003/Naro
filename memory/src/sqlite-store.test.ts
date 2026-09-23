@@ -47,5 +47,23 @@ test('searchTier confines recall to one tier', async () => {
   assert.deepEqual(hits.map((h) => h.key), ['s']);
 });
 
+test('searchByEmbedding ranks by cosine similarity and ignores unembedded entries', async () => {
+  const s = await store();
+  await s.write({ tier: 'semantic', key: 'close', content: 'near', embedding: [1, 0, 0] });
+  await s.write({ tier: 'semantic', key: 'far', content: 'distant', embedding: [0, 1, 0] });
+  await s.write({ tier: 'semantic', key: 'unembedded', content: 'no vector' });
+  const hits = await s.searchByEmbedding([1, 0, 0]);
+  assert.deepEqual(hits.map((h) => h.key), ['close', 'far']);
+  assert.ok(hits[0]!.score! > hits[1]!.score!);
+});
+
+test('searchByEmbedding confines recall to one tier', async () => {
+  const s = await store();
+  await s.write({ tier: 'working', key: 'w', content: 'x', embedding: [1, 0] });
+  await s.write({ tier: 'semantic', key: 's', content: 'x', embedding: [1, 0] });
+  const hits = await s.searchByEmbedding([1, 0], 5, 'semantic');
+  assert.deepEqual(hits.map((h) => h.key), ['s']);
+});
+
 import { memoryStoreContract } from '@naro/contract-tests';
 memoryStoreContract('SqliteMemoryStore', store);

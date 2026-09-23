@@ -40,8 +40,23 @@ performs one non-streaming `generateContent` request and emits a single final
 `ChatChunk`. It does not call Gemini's streaming endpoint or provide token-by-
 token progress.
 
+## Embeddings
+
+`embed(texts)` calls `batchEmbedContents` and requires `'embeddings'` in the
+declared capabilities. Construct a separate `GeminiModel` for it — Gemini has
+no single model that both chats and embeds:
+
+```ts
+const embedder = new GeminiModel('gemini-embedding-001', {
+  apiKey: process.env.GEMINI_API_KEY,
+  capabilities: ['embeddings'],
+});
+const [vector] = await embedder.embed(['hello world']);
+```
+
 ## Failure behavior
 
 - non-2xx responses become `NaroError`;
-- a response without candidates fails instead of becoming an empty answer;
+- a response without candidates (or, for `embed`, without embeddings) fails
+  instead of becoming an empty answer;
 - `fetchImpl` is injectable for offline tests.

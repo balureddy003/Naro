@@ -43,6 +43,14 @@ test('streaming yields chunks ending with done', async () => {
   assert.ok(done);
 });
 
+test('default embed is deterministic and rewards shared vocabulary', async () => {
+  const model = new MockModel({ capabilities: ['chat', 'embeddings'] });
+  const [a, b] = await model.embed(['deploy the service', 'deploy the app']);
+  const [again] = await model.embed(['deploy the service']);
+  assert.deepEqual(a, again); // deterministic
+  assert.notDeepEqual(a, b); // different text, different vector
+});
+
 test('streaming on a non-streaming model is refused', async () => {
   const model = new MockModel({ capabilities: ['chat'] });
   await assert.rejects(async () => {

@@ -95,6 +95,34 @@ describePg('pg integration (requires NARO_PG_URL)', async () => {
     assert.equal(await reg.get('nope'), undefined);
   });
 
+  test('run registry: list({tenantId}) scopes across replicas (ADR 0013)', async () => {
+    const reg = await PgRunRegistry.create(pool);
+    const stamp = Date.now();
+    const acme = { runId: `pg-tenant-acme-${stamp}`, agentId: 'a1', status: 'completed' as const,
+      goal: 'g', startedAt: stamp, updatedAt: stamp, tenantId: 'acme' };
+    const globex = { runId: `pg-tenant-globex-${stamp}`, agentId: 'a1', status: 'completed' as const,
+      goal: 'g', startedAt: stamp, updatedAt: stamp, tenantId: 'globex' };
+    await reg.upsert(acme);
+    await reg.upsert(globex);
+    const scoped = await reg.list({ tenantId: 'acme' });
+    assert.ok(scoped.some((r) => r.runId === acme.runId));
+    assert.ok(!scoped.some((r) => r.runId === globex.runId));
+    assert.equal((await reg.get(acme.runId))?.tenantId, 'acme');
+  });
+
+  test('run registry: list({traceId}) scopes to a delegation tree', async () => {
+    const reg = await PgRunRegistry.create(pool);
+    const stamp = Date.now();
+    const root = { runId: `pg-trace-root-${stamp}`, agentId: 'a1', status: 'completed' as const,
+      goal: 'g', startedAt: stamp, updatedAt: stamp, traceId: `pg-tree-${stamp}` };
+    const childRun = { runId: `pg-trace-child-${stamp}`, agentId: 'a2', status: 'completed' as const,
+      goal: 'g', startedAt: stamp, updatedAt: stamp, traceId: `pg-tree-${stamp}` };
+    await reg.upsert(root);
+    await reg.upsert(childRun);
+    const tree = await reg.list({ traceId: `pg-tree-${stamp}` });
+    assert.deepEqual(tree.map((r) => r.runId).sort(), [childRun.runId, root.runId].sort());
+  });
+
   test('approvals: request blocks until a second store answers, then resolves', async () => {
     const asker = await PgApprovalBridge.create(pool, { pollMs: 25, timeoutMs: 5000 });
     const responder = await PgApprovalBridge.create(pool, { pollMs: 25, timeoutMs: 5000 });
