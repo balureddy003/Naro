@@ -108,19 +108,48 @@ written yet. They answer. The conversation continues.
 ## Interface design
 
 *Reference mockup:* [claude.ai/artifact/4FrvR54yYwkoo8vQyjVEnt](https://claude.ai/artifact/4FrvR54yYwkoo8vQyjVEnt)
-— a working, interactive HTML prototype of the scenario above (the
-invoice extractor's low-confidence total), built against the real
-`@naro/client` wire shapes so its interaction model, not just its look,
-is the actual spec. "Intuitive" is not a design-taste adjective here —
-it is the bar in Success metrics below: a first-time user completes the
-approval flow with zero instructions, in under a minute. Everything in
-this section exists to make that bar checkable, not just aspirational.
+— a working, interactive HTML prototype of the full app shell, not one
+screen: a conversation-history sidebar plus five states covering the
+distinct capabilities this PRD and PRD-002 actually claim — a numeric
+correction approval (invoice total), a text-draft approval (customer
+email reply, showing the draft was influenced by `trust: 'external'`
+content but never acted on it directly), a fully-automated run with no
+approval needed (transaction categorizer, verifier passed on all 14),
+a run *blocked by policy* (a destructive action refused before it ran —
+proof the gate really says no, not just that it says yes), and a live
+run with the stop control active. Built against the real `@naro/client`
+wire shapes so its interaction model, not just its look, is the actual
+spec. "Intuitive" is not a design-taste adjective here — it is the bar
+in Success metrics below: a first-time user completes the approval flow
+with zero instructions, in under a minute. Everything in this section
+exists to make that bar checkable, not just aspirational.
 
-**Layout.** Single-column transcript, centered, ~720px max width, 16px+
-side gutters at every width down to phone. A sticky, minimal header
-names the *template* ("Riverside Supply — Invoice Assistant"), never the
-kernel — no `Reasoner`, no `PolicyEngine`, matching requirement 5. A
-sticky composer stays at the bottom; nothing else is chrome.
+**A conversation-history sidebar is in scope; search is not.** A plain,
+reverse-chronological list of past runs — template name, one-line
+status, relative time — is exposed already by `GET /runs`/`client.listRuns()`;
+showing it in a sidebar is not the "chat history search" this PRD's
+Non-goals excludes (a search box, filters, full-text query). The
+distinction matters: a list an owner can scan is core to any multi-run
+tool; a search feature is scope this PRD deliberately isn't taking on.
+
+**Layout.** Sidebar (fixed width, collapses to an off-canvas drawer under
+~780px, per the responsive requirement every artifact and this UI both
+follow) plus a single-column transcript, centered, ~720px max width,
+16px+ side gutters at every width down to phone. A sticky, minimal
+header names the *template* ("Riverside Supply — Invoice Assistant"),
+never the kernel — no `Reasoner`, no `PolicyEngine`, matching
+requirement 5. A sticky composer stays at the bottom; nothing else is
+chrome.
+
+**A policy denial is a first-class state, not an edge case to hide.**
+The mockup's "Archive cleanup — blocked by policy" conversation exists
+deliberately: a UI that only ever shows successful, approved actions
+proves nothing about enforcement — it could just as easily be a UI with
+no gate behind it at all. Showing the system *refuse* something, with
+the reason visible on request, is the stronger proof, and requirement 3
+already implies it: `ActionEvidence.policy === 'denied'` renders with
+the same chip-and-expand pattern as everything else, in the danger
+color, never suppressed from the transcript.
 
 **Turn-taking, not bubbles-everywhere.** User messages are compact,
 right-aligned, visually set apart (a filled pill). Assistant responses
