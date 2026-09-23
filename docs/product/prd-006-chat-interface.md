@@ -2,7 +2,7 @@
 
 Status: proposed
 Owner: unassigned
-Depends on: `@naro/client`, [ADR 0023](../adr/0023-console-renders-the-evidence-record-not-a-log.md), [ADR 0024](../adr/0024-admin-api-surface-for-registry-and-retention.md), [PRD-002](prd-002-outcome-templates.md)
+Depends on: `@naro/client`, [ADR 0023](../adr/0023-console-renders-the-evidence-record-not-a-log.md), [ADR 0024](../adr/0024-admin-api-surface-for-registry-and-retention.md), [ADR 0025](../adr/0025-live-principal-store.md), [PRD-002](prd-002-outcome-templates.md)
 Depended on by: closes a gap PRD-002 already flagged (human-approval templates "still need a UI")
 
 **Revision note:** the original version of this PRD scoped a chat
@@ -98,17 +98,26 @@ own sake.
 - A hosted product. This is a self-deployable static bundle, same
   posture as the console; a hosted, multi-tenant surface is PRD-003's
   territory if it's ever built there.
-- Live CRUD over principals/roles. ADR 0012's principals are a token-file
-  map the deployment configures, not a database this UI writes to — the
-  admin view can *show* configured principals (read-only) but does not
-  manage them; changing who has what role remains a deployment-config
-  change, not an HTTP call.
-- New backend/wire surface beyond what ADR 0024 already specifies. Every
-  field the end-user and ops views need already exists in `@naro/client`'s
-  types; the admin view's three write actions (collision resolve,
-  definition acknowledge, prune) are exactly ADR 0024's three endpoints,
-  no more. A capability that needs a fourth endpoint is out of scope
-  until it has its own ADR.
+- New backend/wire surface beyond what ADR 0024 and ADR 0025 already
+  specify. Every field the end-user and ops views need already exists in
+  `@naro/client`'s types; the admin view's write actions are exactly
+  those two ADRs' endpoints, no more. A capability that needs a further
+  endpoint is out of scope until it has its own ADR.
+- **Persisting the setup wizard's template, data-connection, and policy
+  choices.** The wizard's team-invite step is real (ADR 0025) because
+  principal identity already has a durable, kernel-level shape to write
+  to. Template selection, data connections, and per-template approval
+  toggles don't yet — PRD-002 and PRD-004 are still documentation, with
+  no persisted config shape defined in code. The wizard demonstrates the
+  intended *flow* end to end (this PRD's whole point, per the direct ask
+  that it "cover all aspects"), but wiring steps 2–5 to something that
+  actually persists across a restart is explicitly PRD-002/004's follow-
+  on work, once those PRDs have a real template-config store to target —
+  not silently assumed to already exist here.
+  <!-- Superseded: this PRD's first version excluded live principal
+       management entirely, citing ADR 0012's static token-file map as a
+       hard constraint. ADR 0025 revises that constraint directly; this
+       line is intentionally not a non-goal anymore. -->
 
 ## Users and scenario
 
@@ -172,7 +181,22 @@ switches between the three views this PRD now covers:
   "sealed · action denied, chain still OK" — the denial doesn't break
   the proof, it's recorded *by* it). Composer is hidden; this role reads
   and answers approvals, it doesn't submit goals.
-- **Admin** — a fixed nav (not a conversation list) covering exactly
+- **Admin** — a fixed nav (not a conversation list), leading with
+  **Setup** — a seven-step wizard, the direct answer to "someone setting
+  up Naro needs a fully no-code experience": welcome (naming the one
+  technical prerequisite honestly — someone gets `naro serve` running
+  once), pick a template, connect data (a real client-side CSV
+  parse-and-preview, no upload endpoint needed — the wizard reads the
+  file locally; OAuth connectors shown, correctly, as "coming soon" per
+  PRD-004's own milestone order), cost vs. care (plain-language framing
+  of ADR 0014's escalation tiers), approval defaults (plain-language
+  toggles — one of them, "always ask before a customer-facing send,"
+  rendered locked *on*, not just defaulted on, because PRD-002
+  requirement 2 doesn't allow turning it off), invite your team (four
+  plain-language roles — "can use it," "can approve things," "can see
+  everything," "runs the whole thing" — mapped to
+  viewer/operator/approver/admin without ever showing those words), and
+  done. The rest of the admin nav covers
   [ADR 0024](../adr/0024-admin-api-surface-for-registry-and-retention.md)'s
   three write endpoints plus the fleet-halt endpoint ADR 0022 already
   shipped: a collision case (two sources claiming the tool name
@@ -182,9 +206,23 @@ switches between the three views this PRD now covers:
   retention form (run, cutoff sequence, policy citation), and a
   fleet-wide halt requiring a reason before it's enabled.
 
+**The team-invite step is real, not a copy-this-into-a-config-file
+placeholder — that distinction is the point.** The reference this PRD
+was built against, LibreChat, can offer in-app "add a person, done"
+because it has a database backing that state; the first version of this
+section didn't, because ADR 0012's principals were a static token-file
+map the running process reads once. [ADR 0025](../adr/0025-live-principal-store.md)
+closes exactly that gap — the wizard's "Generate access" button calls a
+real `POST /admin/principals`, returns a token shown once (the same
+"shown once" discipline any credential-issuance UI needs), and the new
+principal authenticates on their very next request. No file edit, no
+restart. Template and connection choices in the same wizard are, for
+now, honestly UI-only — see Non-goals.
+
 Every capability shown maps to a named, real endpoint or an explicitly
-proposed one (ADR 0024) — nothing in the admin view implies HTTP surface
-that isn't specified somewhere. Built against the real `@naro/client`
+proposed one (ADR 0024, ADR 0025) — nothing in the admin view implies
+HTTP surface that isn't specified somewhere. Built against the real
+`@naro/client`
 wire shapes so the interaction model, not just the look, is the actual
 spec. "Intuitive" is not a design-taste adjective here — it is the bar
 in Success metrics below: a first-time user completes the approval flow
@@ -320,6 +358,21 @@ helped, by an interface that performs busyness.
    requires (a `policy` citation for prune, an implicit "which source
    wins" for collision resolve); the UI does not accept a write with that
    field empty.
+10. **The setup wizard's team-invite step calls ADR 0025's endpoints**
+    (`POST /admin/principals`, `GET /admin/principals`, `DELETE
+    /admin/principals/:id`) and nothing else new — no live persistence
+    for the wizard's template/data/cost/approval steps until PRD-002/004
+    define one (Non-goals). The generated token is displayed exactly
+    once, matching ADR 0025's own "shown once, never re-displayed"
+    requirement — the UI must not cache it client-side past that single
+    render either, or the "shown once" property is theater.
+11. **The setup wizard's plain-language copy has a one-way mapping to
+    real roles/policy, documented, not improvised per-implementation.**
+    "Can use it" → `operator`+`viewer`; "can approve things" →
+    `approver`+`viewer`; "can see everything" → `viewer`; "runs the
+    whole thing" → `admin`. A future template or role that doesn't fit
+    this mapping needs the mapping extended deliberately, not a
+    developer guessing a label at implementation time.
 
 ## Success metrics
 
@@ -350,9 +403,14 @@ helped, by an interface that performs busyness.
   fleet-halt control — both call `POST /runs/:id/cancel`/`POST
   /runs/cancel-all`, real and callable today.
 - [ADR 0024](../adr/0024-admin-api-surface-for-registry-and-retention.md)
-  (proposed) for the admin view's three write actions — this PRD's admin
-  view cannot ship ahead of that ADR being accepted and implemented; the
-  end-user and ops views have no such dependency and can ship first.
+  (proposed) for the admin view's registry/retention actions — this PRD's
+  admin view cannot ship those specific panels ahead of that ADR being
+  accepted and implemented; the end-user and ops views have no such
+  dependency and can ship first.
+- [ADR 0025](../adr/0025-live-principal-store.md) (proposed) — the setup
+  wizard's team-invite step specifically depends on this; nothing else in
+  the wizard does (template/cost/approval steps are UI-only until
+  PRD-002/004 exist to persist against, per Non-goals).
 - `naro serve`'s static-asset serving pattern (`cli/src/serve.ts`'s
   `GET /client/*.js` route) as the precedent for how this bundle gets
   served without a new backend endpoint shape.
@@ -381,6 +439,19 @@ helped, by an interface that performs busyness.
   the shared SDK layer, UIs built on it (console, this) stay separate
   consumers, consistent with the "logic here, rendering there" split
   `client/README.md` already documents.
+- **The setup wizard demonstrates a flow ahead of the templates it
+  configures actually existing.** This is deliberate — showing the
+  intended end-to-end shape is the point of a mockup — but it means the
+  wizard's own Milestone (below) is gated on PRD-002 shipping at least
+  one real template, or the wizard's step 2 has nothing real to point at
+  beyond its own UI. Sequencing this after PRD-002's first template, not
+  before, is the safer order even though the wizard was designed first.
+- **A generated principal token is a real credential the moment ADR 0025
+  ships.** The wizard's copy ("share it with your teammate") is doing a
+  lot of trust-model work in four words — a business owner needs to
+  understand a token is as sensitive as a password before this ships,
+  not just be shown a copy button. Onboarding copy for *that* specific
+  point is unwritten and should not be treated as obvious.
 
 ## Milestones
 
@@ -404,3 +475,12 @@ helped, by an interface that performs busyness.
 8. Admin view — fleet halt (reuses milestone 4's mechanism), then
    collision resolution, definition acknowledgment, and retention
    pruning against ADR 0024's real endpoints once milestone 7 ships.
+9. ADR 0025 accepted and `PrincipalStore` implemented (in-memory + SQLite
+   at minimum) — a hard prerequisite for milestone 10, same reasoning as
+   milestone 7.
+10. Setup wizard — welcome, cost/care choice, and approval-defaults
+    steps first (pure UI, no backend dependency); template selection and
+    data connection wired to PRD-002/004's real config shape once those
+    exist; team-invite step wired to milestone 9's real endpoints. The
+    wizard's steps can and should ship independently as each dependency
+    clears — this is not a single all-or-nothing milestone.
