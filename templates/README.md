@@ -53,6 +53,7 @@ trust mechanism, not a nice-to-have.
 | id | version | outcome | verifier |
 |---|---|---|---|
 | `transaction-categorizer` | 0.1.0 | bank/card transaction → chart of accounts | category ∈ allowed set + confidence floor |
+| `invoice-extractor` | 0.1.0 | document text → {vendor, date, lineItems, total} | schema-valid **and** arithmetically reconciled |
 
 Templates version independently — improving one never forces re-testing
 the others (PRD-002 req 4).
