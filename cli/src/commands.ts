@@ -310,7 +310,7 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
 
       const file = args.find((a) => !a.startsWith('-'));
       if (!file) { io.err('usage: naro serve <module.ts> [--port N] [--host h]'); return 2; }
-      const mod = await import(pathToFileURL(resolve(file)).href) as { createRunner?: RunnerFactory };
+      const mod = await import(pathToFileURL(resolve(file)).href) as { createRunner?: RunnerFactory; chatTemplates?: ServeOptions['chatTemplates'] };
       if (typeof mod.createRunner !== 'function') {
         io.err(`${file} must export createRunner(goal): AgentRunner`);
         return 2;
@@ -323,6 +323,7 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
         ...(noConsole && { console: false }),
         ...(noChat && { chat: false }),
         ...(principalsStorePath !== undefined && { principalStore: new SqlitePrincipalStore(resolve(principalsStorePath)) }),
+        ...(mod.chatTemplates !== undefined && { chatTemplates: mod.chatTemplates }),
         ...(registry !== undefined && { registry }),
         ...(journal !== undefined && { journal }),
         ...(approvals !== undefined && { approvals }),
