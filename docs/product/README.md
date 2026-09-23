@@ -45,6 +45,7 @@ is cost predictability, which is what PRD-001 closes.
 | [PRD-002](prd-002-outcome-templates.md) — Outcome Templates Library | 2 | proposed | PRD-001 |
 | [PRD-003](prd-003-managed-control-plane.md) — Managed Control Plane | 3 | proposed | PRD-002, `naro serve`, `@naro/client` |
 | [PRD-004](prd-004-smb-integrations.md) — SMB Integrations | 4 | proposed | PRD-002 |
+| [PRD-005](prd-005-ollama-small-models.md) — Ollama Small Models | 1 | proposed | PRD-001, `@naro/adapter-openai` |
 
 "Proposed" means written and reviewable, not committed to a timeline —
 none of this has a team assigned or a ship date. Phase 5 (optional,
