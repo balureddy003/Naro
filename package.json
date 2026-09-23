@@ -24,6 +24,7 @@
     "contract-tests",
     "cli",
     "client",
+    "chat-ui",
     "profiles/*",
     "examples/*",
     "dogfood"

@@ -25,6 +25,9 @@ export interface RunSummary {
   /** This run's delegation-tree correlator — a root run's traceId equals
    *  its own runId; a delegated child's matches its parent's. */
   readonly traceId?: string;
+  /** The agent spec's declared name (agent.created) — how a UI groups
+   *  runs under the template that produced them (PRD-006). */
+  readonly specName?: string;
 }
 
 /** Loosely typed on purpose: a generic client renders `type`/`data` without

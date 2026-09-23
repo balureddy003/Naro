@@ -41,8 +41,64 @@ export class NaroClient {
     this.fetchImpl = opts.fetchImpl ?? fetch.bind(globalThis);
   }
 
-  async submitGoal(input: { description: string; successCriteria?: readonly string[]; idempotencyKey?: string }): Promise<{ runId: string; status?: string; deduplicated?: boolean }> {
+  async submitGoal(input: { description: string; successCriteria?: readonly string[]; idempotencyKey?: string; template?: string }): Promise<{ runId: string; status?: string; deduplicated?: boolean }> {
     return this.request('POST', '/goals', input);
+  }
+
+  /** ADR 0026: the caller's own identity + effective roles — what a UI
+   *  renders against when deciding which surfaces are visible. */
+  async me(): Promise<{ id: string; roles: readonly string[]; tenantId?: string; open?: boolean }> {
+    return this.request('GET', '/me');
+  }
+
+  /** ADR 0022: stop one run. `reason` is required server-side. */
+  async cancelRun(runId: string, reason: string): Promise<{ ok: boolean; runId: string; status: string }> {
+    return this.request('POST', `/runs/${encodeURIComponent(runId)}/cancel`, { reason });
+  }
+
+  /** ADR 0022: fleet-wide halt — admin only. */
+  async cancelAllRuns(reason: string): Promise<{ ok: boolean; cancelled: number }> {
+    return this.request('POST', '/runs/cancel-all', { reason });
+  }
+
+  // ---- ADR 0024: admin surface ----
+
+  async listToolCollisions(): Promise<readonly { name: string; heldBy?: string; claimedBy: string }[]> {
+    return this.request('GET', '/admin/tool-collisions');
+  }
+
+  async resolveToolCollision(name: string, sourceId: string): Promise<{ ok: boolean }> {
+    return this.request('POST', '/admin/tool-collisions/resolve', { name, sourceId });
+  }
+
+  async listChangedDefinitions(): Promise<readonly { name: string; sourceId: string; previous: string; current: string }[]> {
+    return this.request('GET', '/admin/tool-definitions/changed');
+  }
+
+  async acknowledgeDefinition(name: string, sourceId?: string): Promise<{ ok: boolean }> {
+    return this.request('POST', '/admin/tool-definitions/acknowledge', { name, ...(sourceId !== undefined && { sourceId }) });
+  }
+
+  /** ADR 0018 via ADR 0024: attested retention prune. `policy` is the
+   *  justification recorded on the journal.retention.pruned marker. */
+  async pruneRun(runId: string, throughSeq: number, policy?: string): Promise<{ ok: boolean; pruned: number; anchorHash: string }> {
+    return this.request('POST', `/admin/runs/${encodeURIComponent(runId)}/prune`, { throughSeq, ...(policy !== undefined && { policy }) });
+  }
+
+  // ---- ADR 0025: live principal administration ----
+
+  async listPrincipals(): Promise<readonly { id: string; roles: readonly string[]; tenantId?: string; tokenLast4: string; createdAt: number }[]> {
+    return this.request('GET', '/admin/principals');
+  }
+
+  /** Returns the raw token exactly once — the server stores only its
+   *  hash + last-4, so this response is the only place it exists. */
+  async createPrincipal(input: { id?: string; roles: readonly string[]; tenantId?: string }): Promise<{ token: string; id: string; roles: readonly string[]; tenantId?: string }> {
+    return this.request('POST', '/admin/principals', input);
+  }
+
+  async revokePrincipal(id: string): Promise<{ ok: boolean }> {
+    return this.request('DELETE', `/admin/principals/${encodeURIComponent(id)}`);
   }
 
   /** `traceId` restricts to one delegation tree — see `RunSummary.traceId`. */
@@ -106,7 +162,7 @@ export class NaroClient {
     }
   }
 
-  private async request<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+  private async request<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<T> {
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method,
       headers: body !== undefined ? { ...this.headers(), 'content-type': 'application/json' } : this.headers(),

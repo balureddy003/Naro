@@ -57,7 +57,7 @@ export interface EventDataMap {
    * an Ed25519 key (signs the canonical {anchorHash, prunedThroughSeq,
    * prunedAt, policy} tuple).
    */
-  'journal.retention.pruned':   { prunedThroughSeq: number; anchorHash: string; prunedAt: number; policy?: string; signature?: string; publicKey?: string };
+  'journal.retention.pruned':   { prunedThroughSeq: number; anchorHash: string; prunedAt: number; policy?: string; by?: string; signature?: string; publicKey?: string };
   'human.approval.requested':   { action?: Action; question?: string; policy?: string };
   /** `by` is the approver's control-plane identity, when the bridge knows it. */
   'human.approval.received':    { approved: boolean; note?: string; by?: string };

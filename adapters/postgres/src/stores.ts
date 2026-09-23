@@ -111,6 +111,8 @@ async function migrate(q: PgQueryable): Promise<void> {
     -- Tables created before ADR 0013 lack tenant_id — add it.
     ALTER TABLE naro_runs ADD COLUMN IF NOT EXISTS tenant_id TEXT;
     ALTER TABLE naro_runs ADD COLUMN IF NOT EXISTS trace_id TEXT;
+    -- Tables created before spec_name (PRD-006 run→template grouping) lack it.
+    ALTER TABLE naro_runs ADD COLUMN IF NOT EXISTS spec_name TEXT;
     CREATE INDEX IF NOT EXISTS naro_runs_started ON naro_runs(started_at DESC);
     CREATE INDEX IF NOT EXISTS naro_runs_tenant ON naro_runs(tenant_id, started_at DESC);
     CREATE INDEX IF NOT EXISTS naro_runs_trace ON naro_runs(trace_id);
@@ -486,6 +488,7 @@ interface RunRow {
   started_at: number | string; updated_at: number | string;
   result: unknown; error: string | null; host: string | null;
   tenant_id: string | null; trace_id: string | null;
+  spec_name: string | null;
 }
 
 /** The shared run index: every replica's `naro serve` writes here, so
@@ -500,13 +503,14 @@ export class PgRunRegistry implements RunRegistry {
 
   async upsert(run: RunSummary): Promise<void> {
     await this.q.query(
-      `INSERT INTO naro_runs (run_id, agent_id, status, goal, started_at, updated_at, result, error, host, tenant_id, trace_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      `INSERT INTO naro_runs (run_id, agent_id, status, goal, started_at, updated_at, result, error, host, tenant_id, trace_id, spec_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT (run_id) DO UPDATE SET
-         status=$3, updated_at=$6, result=$7, error=$8, host=$9, tenant_id=$10, trace_id=$11`,
+         status=$3, updated_at=$6, result=$7, error=$8, host=$9, tenant_id=$10, trace_id=$11, spec_name=$12`,
       [run.runId, run.agentId, run.status, run.goal, run.startedAt, run.updatedAt,
         run.result === undefined ? null : JSON.stringify(run.result),
-        run.error ?? null, run.host ?? null, run.tenantId ?? null, run.traceId ?? null],
+        run.error ?? null, run.host ?? null, run.tenantId ?? null, run.traceId ?? null,
+        run.specName ?? null],
     );
   }
 
@@ -539,6 +543,7 @@ function toSummary(r: RunRow): RunSummary {
     ...(r.host != null && { host: r.host }),
     ...(r.tenant_id != null && { tenantId: r.tenant_id }),
     ...(r.trace_id != null && { traceId: r.trace_id }),
+    ...(r.spec_name != null && { specName: r.spec_name }),
   };
 }
 

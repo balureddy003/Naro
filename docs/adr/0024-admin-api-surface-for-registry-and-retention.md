@@ -1,6 +1,6 @@
 # 0024 — Admin API surface for registry resolution and retention
 
-Status: proposed
+Status: accepted
 Date: 2026-09-23
 
 ## Context

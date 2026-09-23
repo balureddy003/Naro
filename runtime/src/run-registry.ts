@@ -20,6 +20,9 @@ export interface RunSummary {
    *  run's traceId equals its own runId; a delegated child's matches its
    *  parent's. Lets a client list every run in one delegation tree. */
   readonly traceId?: string;
+  /** The spec's declared name (agent.created's name field — e.g.
+   *  'tpl:invoice-extractor') — how a UI groups runs by template/object. */
+  readonly specName?: string;
 }
 
 /**
@@ -62,7 +65,7 @@ interface Row {
   run_id: string; agent_id: string; status: string; goal: string;
   started_at: number; updated_at: number; result: string | null;
   error: string | null; host: string | null; tenant_id: string | null;
-  trace_id: string | null;
+  trace_id: string | null; spec_name: string | null;
 }
 
 /** Durable run index on node:sqlite — survives restarts, shareable. */
@@ -99,19 +102,22 @@ export class SqliteRunRegistry implements RunRegistry {
       this.db.exec('ALTER TABLE runs ADD COLUMN trace_id TEXT');
       this.db.exec('CREATE INDEX IF NOT EXISTS idx_runs_trace ON runs(trace_id)');
     }
+    if (!cols.has('spec_name')) this.db.exec('ALTER TABLE runs ADD COLUMN spec_name TEXT');
   }
 
   async upsert(run: RunSummary): Promise<void> {
     await this.db.prepare(`
-      INSERT INTO runs (run_id, agent_id, status, goal, started_at, updated_at, result, error, host, tenant_id, trace_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO runs (run_id, agent_id, status, goal, started_at, updated_at, result, error, host, tenant_id, trace_id, spec_name)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(run_id) DO UPDATE SET
         status = excluded.status, updated_at = excluded.updated_at,
         result = excluded.result, error = excluded.error, host = excluded.host,
-        tenant_id = excluded.tenant_id, trace_id = excluded.trace_id
+        tenant_id = excluded.tenant_id, trace_id = excluded.trace_id,
+        spec_name = excluded.spec_name
     `).run(run.runId, run.agentId, run.status, run.goal, run.startedAt, run.updatedAt,
       run.result === undefined ? null : JSON.stringify(run.result),
-      run.error ?? null, run.host ?? null, run.tenantId ?? null, run.traceId ?? null);
+      run.error ?? null, run.host ?? null, run.tenantId ?? null, run.traceId ?? null,
+      run.specName ?? null);
   }
 
   async get(runId: string): Promise<RunSummary | undefined> {
@@ -144,5 +150,6 @@ function toSummary(r: Row): RunSummary {
     ...(r.host !== null && { host: r.host }),
     ...(r.tenant_id !== null && { tenantId: r.tenant_id }),
     ...(r.trace_id !== null && { traceId: r.trace_id }),
+    ...(r.spec_name !== null && { specName: r.spec_name }),
   };
 }

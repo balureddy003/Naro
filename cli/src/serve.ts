@@ -6,8 +6,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { newId, createGoal, type NaroEvent } from '@naro/core';
 import { InMemoryRunRegistry, type AgentRunner, type ApprovalRequest, type RunRegistry } from '@naro/runtime';
-import { buildEvidence } from '@naro/observability';
+import { buildEvidence, type PrunableEventStore } from '@naro/observability';
+import type { ToolRegistry } from '@naro/tools';
+import { generateToken, type PrincipalStore } from './principals.ts';
 import { CONSOLE_HTML } from './console.ts';
+import { CHAT_UI_HTML } from '@naro/chat-ui';
 
 // Resolved once per process — @naro/client's compiled dist/ is plain,
 // dependency-free ESM (fetch + AbortController + ReadableStream only), so
@@ -19,6 +22,16 @@ function resolveClientDist(): string {
     clientDistDir = dirname(fileURLToPath(import.meta.resolve('@naro/client')));
   }
   return clientDistDir;
+}
+
+// Same pattern for @naro/chat-ui's compiled ESM — GET /chat-ui/* serves
+// its dist directory, allowlisted to module files only.
+let chatDistDir: string | undefined;
+function resolveChatDist(): string {
+  if (chatDistDir === undefined) {
+    chatDistDir = dirname(fileURLToPath(import.meta.resolve('@naro/chat-ui')));
+  }
+  return chatDistDir;
 }
 
 /**
@@ -44,9 +57,21 @@ function resolveClientDist(): string {
  *   POST /runs/cancel-all    {reason} → 202 — fleet-wide halt (admin role)
  *   GET  /approvals          → pending human-in-the-loop requests
  *   POST /approvals/:id      {approved?|text?|note?} → {ok}
+ *   GET  /me                 → the caller's principal (ADR 0026)
+ *   GET  /admin/tool-collisions          → pending name collisions (ADR 0024)
+ *   POST /admin/tool-collisions/resolve  {name, sourceId} → promote a source
+ *   GET  /admin/tool-definitions/changed → definitions changed since review
+ *   POST /admin/tool-definitions/acknowledge {name, sourceId?} → restore
+ *   POST /admin/runs/:id/prune           {throughSeq, policy?} → attested
+ *                                        retention prune (ADR 0018)
+ *   GET  /admin/principals    → principals, tokens shown as last-4 (ADR 0025)
+ *   POST /admin/principals    {id?, roles, tenantId?} → {token} shown once
+ *   DELETE /admin/principals/:id         → revoke
  *   GET  /health             → {ok: true}        (liveness — process up)
  *   GET  /ready              → {ready: bool}     (readiness — deps reachable)
  *   GET  /console            → the ops console (static HTML; see console.ts)
+ *   GET  /chat               → the chat interface (PRD-006; @naro/chat-ui)
+ *   GET  /chat-ui/*.js       → the chat UI's compiled module graph
  *
  * The console page itself carries no data and needs no auth to load (like
  * /health) — it's static HTML/JS. Every API call *it* makes goes through
@@ -78,7 +103,7 @@ function resolveClientDist(): string {
  */
 export type RunnerFactory = (
   goal: ReturnType<typeof createGoal>,
-  info?: { principal?: Principal },
+  info?: { principal?: Principal; template?: string },
 ) => AgentRunner;
 
 /** A control-plane identity: an id, the roles it holds, and — see ADR
@@ -103,13 +128,16 @@ function requiredRole(method: string, path: string): Role | undefined {
   if (method === 'POST' && path === '/runs/cancel-all') return 'admin';
   if (method === 'POST' && /^\/runs\/[^/]+\/cancel$/.test(path)) return 'operator';
   if (method === 'POST' && /^\/approvals\/[^/]+$/.test(path)) return 'approver';
+  // ADR 0024/0025: every /admin/* route is admin-only — registry writes
+  // and principal issuance are the widest blast radius on the surface.
+  if (path.startsWith('/admin/')) return 'admin';
   if (method === 'GET' && (path === '/runs' || path === '/approvals' || /^\/runs\/[^/]+(\/events|\/evidence)?$/.test(path))) return 'viewer';
   return undefined;
 }
 
 /** operator/approver imply viewer; admin implies all —
  *  expand so checks are a single has(). */
-function expandRoles(roles: readonly string[]): ReadonlySet<string> {
+function expandRoles(roles: Iterable<string>): ReadonlySet<string> {
   const s = new Set(roles);
   if (s.has('operator') || s.has('approver')) s.add('viewer');
   if (s.has('admin')) { s.add('operator'); s.add('approver'); s.add('viewer'); }
@@ -135,13 +163,34 @@ export interface ServeOptions {
   readonly maxBodyBytes?: number;
   /** Durable run index backing /runs. Default: in-memory. */
   readonly registry?: RunRegistry;
-  /** Journal source for runs a peer replica owns (cross-replica events). */
-  readonly journal?: { history(filter: { runId?: string }): Promise<readonly NaroEvent[]> | readonly NaroEvent[] };
+  /** Journal source for runs a peer replica owns (cross-replica events).
+   *  When it also implements `PrunableEventStore` (ADR 0018),
+   *  POST /admin/runs/:id/prune works; otherwise that route 501s. */
+  readonly journal?: {
+    history(filter: { runId?: string }): Promise<readonly NaroEvent[]> | readonly NaroEvent[];
+    prune?: PrunableEventStore['prune'];
+  };
   /** Shared approval queue — e.g. SqliteApprovalBridge. Enables /approvals. */
   readonly approvals?: {
     pending(): ApprovalRequest[] | Promise<ApprovalRequest[]>;
     respond(id: string, answer: { approved?: boolean; text?: string; note?: string }, by?: string): boolean | Promise<boolean>;
   };
+  /** ADR 0024: the tool registry the admin collision/definition endpoints
+   *  inspect and resolve against. Absent → those routes 501. Named
+   *  `toolRegistry` because `registry` is already the run index. */
+  readonly toolRegistry?: ToolRegistry;
+  /** Ed25519 private key (PEM) used to attest admin prune markers. */
+  readonly pruneSealKey?: string;
+  /** ADR 0025: a live principal store — resolves bearer tokens per request
+   *  instead of the static `principals` map, and backs /admin/principals. */
+  readonly principalStore?: PrincipalStore;
+  /** Serve the chat UI at GET /chat and its assets under /chat-ui/*.
+   *  Default true — same static, auth-free-page posture as /console. */
+  readonly chat?: boolean;
+  /** The template objects the chat sidebar lists — the deployment's
+   *  declared manifest, injected into the shell page (no endpoint). A
+   *  run groups under a template when its specName is `tpl:<id>`. */
+  readonly chatTemplates?: readonly { id: string; name: string; icon?: string; tagline?: string; configured?: boolean }[];
 }
 
 interface RunRecord {
@@ -230,18 +279,57 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       }
     }
 
+    // PRD-006: the chat interface — same static-page posture as /console
+    // (no auth to load the shell; every API call it makes is gated below).
+    if (req.method === 'GET' && url.pathname === '/chat' && opts.chat !== false) {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(CHAT_UI_HTML.replace('__NARO_CHAT_CONFIG__',
+        // '<' escaped so a template name containing '</script>' can't
+        // break out of the inline config block.
+        JSON.stringify({ templates: opts.chatTemplates ?? [] }).replace(/</g, '\\u003c')));
+      return;
+    }
+    const chatAsset = /^\/chat-ui\/([a-z0-9_-]+\.js(?:\.map)?)$/i.exec(url.pathname);
+    if (req.method === 'GET' && chatAsset && opts.chat !== false) {
+      try {
+        const body = await readFile(join(resolveChatDist(), chatAsset[1]!), 'utf8');
+        const isMap = chatAsset[1]!.endsWith('.map');
+        res.writeHead(200, { 'content-type': isMap ? 'application/json' : 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' });
+        res.end(body);
+        return;
+      } catch {
+        return json(404, { error: 'not found' });
+      }
+    }
+
     // Authn: bearer token → principal. Authz: the route's required role.
-    // Neither configured → the control plane is open (dev default).
+    // ADR 0025: a configured principalStore resolves per request (a write
+    // is live on the next request); the static map is the gateway-fronted
+    // path. Neither configured → the control plane is open (dev default).
     let principal: Principal | undefined;
-    if (principals !== undefined) {
+    if (opts.principalStore !== undefined || principals !== undefined) {
       const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1];
-      const p = bearer !== undefined ? principals[bearer] : undefined;
+      let p: { id: string; roles: Iterable<string>; tenantId?: string } | undefined;
+      if (bearer !== undefined) {
+        p = opts.principalStore !== undefined
+          ? await opts.principalStore.get(bearer)
+          : principals?.[bearer];
+      }
       if (p === undefined) return json(401, { error: 'unauthorized' });
       principal = { id: p.id, roles: expandRoles(p.roles), ...(p.tenantId !== undefined && { tenantId: p.tenantId }) };
       const required = requiredRole(req.method ?? '', url.pathname);
       if (required !== undefined && !principal.roles.has(required)) {
         return json(403, { error: 'forbidden', required });
       }
+    }
+
+    // ADR 0026: authenticated self-description — the caller's own identity
+    // and effective roles, so a UI renders what this principal can see.
+    // No auth configured → open dev mode, reported honestly.
+    if (req.method === 'GET' && url.pathname === '/me') {
+      return json(200, principal !== undefined
+        ? { id: principal.id, roles: [...principal.roles], ...(principal.tenantId !== undefined && { tenantId: principal.tenantId }) }
+        : { id: 'anonymous', roles: ['viewer', 'operator', 'approver', 'admin'], open: true });
     }
 
     if (req.method === 'GET' && url.pathname === '/runs') {
@@ -258,6 +346,8 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
         startedAt: r.startedAt, updatedAt: r.updatedAt,
         ...(r.host !== undefined && { host: r.host }),
         ...(r.traceId !== undefined && { traceId: r.traceId }),
+        ...(r.specName !== undefined && { specName: r.specName }),
+        ...(r.tenantId !== undefined && { tenantId: r.tenantId }),
       })));
     }
 
@@ -392,9 +482,123 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       return json(202, { ok: true, cancelled: targets.length });
     }
 
+    // ---- ADR 0024: admin surface for registry + retention decisions ----
+    // These mutate registry/store state directly — operator decisions
+    // ABOUT the gate's data, not actions a goal is requesting. The admin
+    // role check at the HTTP layer is the entire authorization boundary.
+
+    if (req.method === 'GET' && url.pathname === '/admin/tool-collisions') {
+      if (!opts.toolRegistry) return json(501, { error: 'no tool registry configured' });
+      return json(200, opts.toolRegistry.collisions());
+    }
+    if (req.method === 'POST' && url.pathname === '/admin/tool-collisions/resolve') {
+      if (!opts.toolRegistry) return json(501, { error: 'no tool registry configured' });
+      let body: { name?: string; sourceId?: string };
+      try { body = JSON.parse(await readBody(req, maxBody)); }
+      catch (e) {
+        return json(e instanceof Error && e.message === 'too-large' ? 413 : 400,
+          { error: e instanceof Error && e.message === 'too-large' ? 'body too large' : 'invalid JSON' });
+      }
+      if (!body.name || !body.sourceId) return json(400, { error: 'name and sourceId required — resolving means picking the winning source' });
+      return opts.toolRegistry.resolve(body.name, body.sourceId)
+        ? json(200, { ok: true, resolved: { name: body.name, sourceId: body.sourceId }, by: principal?.id })
+        : json(404, { error: 'no pending collision for that name/sourceId pair' });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/admin/tool-definitions/changed') {
+      if (!opts.toolRegistry) return json(501, { error: 'no tool registry configured' });
+      return json(200, opts.toolRegistry.changedDefinitions());
+    }
+    if (req.method === 'POST' && url.pathname === '/admin/tool-definitions/acknowledge') {
+      if (!opts.toolRegistry) return json(501, { error: 'no tool registry configured' });
+      let body: { name?: string; sourceId?: string };
+      try { body = JSON.parse(await readBody(req, maxBody)); }
+      catch (e) {
+        return json(e instanceof Error && e.message === 'too-large' ? 413 : 400,
+          { error: e instanceof Error && e.message === 'too-large' ? 'body too large' : 'invalid JSON' });
+      }
+      if (!body.name) return json(400, { error: 'name required' });
+      return opts.toolRegistry.acknowledgeDefinition(body.name, body.sourceId)
+        ? json(200, { ok: true, acknowledged: body.name, by: principal?.id })
+        : json(404, { error: 'no pending definition change for that tool' });
+    }
+
+    const pruneMatch = /^\/admin\/runs\/([^/]+)\/prune$/.exec(url.pathname);
+    if (req.method === 'POST' && pruneMatch) {
+      const prune = opts.journal?.prune;
+      if (prune === undefined) {
+        return json(501, { error: "this deployment's event store is not prunable (ADR 0018 — needs a PrunableEventStore)" });
+      }
+      let body: { throughSeq?: number; policy?: string };
+      try { body = JSON.parse(await readBody(req, maxBody)); }
+      catch (e) {
+        return json(e instanceof Error && e.message === 'too-large' ? 413 : 400,
+          { error: e instanceof Error && e.message === 'too-large' ? 'body too large' : 'invalid JSON' });
+      }
+      if (!Number.isInteger(body.throughSeq) || body.throughSeq! < 0) {
+        return json(400, { error: 'throughSeq must be a non-negative integer' });
+      }
+      try {
+        const result = await prune(pruneMatch[1]!, body.throughSeq!, {
+          ...(body.policy !== undefined && { policy: body.policy }),
+          ...(principal !== undefined && { by: principal.id }),
+          ...(opts.pruneSealKey !== undefined && { sealKey: opts.pruneSealKey }),
+        });
+        return json(200, { ok: true, ...result });
+      } catch (e) {
+        // planPrune's own validation (non-terminal run, bad cutoff,
+        // nothing to anchor on) is a caller error, not a server fault.
+        return json(400, { error: e instanceof Error ? e.message : 'prune refused' });
+      }
+    }
+
+    // ---- ADR 0025: live principal administration ----
+
+    if (req.method === 'GET' && url.pathname === '/admin/principals') {
+      if (!opts.principalStore) return json(501, { error: 'no principal store configured — principals are a static map' });
+      const list = await opts.principalStore.list();
+      // tokenLast4 for display, never the raw token — it's a hash at rest
+      // and shown once at issuance, nowhere else.
+      return json(200, list.map((p) => ({
+        id: p.id, roles: [...p.roles], tokenLast4: p.tokenLast4, createdAt: p.createdAt,
+        ...(p.tenantId !== undefined && { tenantId: p.tenantId }),
+      })));
+    }
+    if (req.method === 'POST' && url.pathname === '/admin/principals') {
+      if (!opts.principalStore) return json(501, { error: 'no principal store configured — principals are a static map' });
+      let body: { id?: string; roles?: string[]; tenantId?: string };
+      try { body = JSON.parse(await readBody(req, maxBody)); }
+      catch (e) {
+        return json(e instanceof Error && e.message === 'too-large' ? 413 : 400,
+          { error: e instanceof Error && e.message === 'too-large' ? 'body too large' : 'invalid JSON' });
+      }
+      if (!Array.isArray(body.roles) || body.roles.length === 0 || !body.roles.every((r) => typeof r === 'string')) {
+        return json(400, { error: 'roles (non-empty string array) required' });
+      }
+      const token = generateToken();
+      const principal_: Principal = {
+        id: body.id ?? newId('principal'), roles: new Set(body.roles),
+        ...(body.tenantId !== undefined && { tenantId: body.tenantId }),
+      };
+      await opts.principalStore.upsert(token, principal_);
+      // Shown once — the store holds only the hash + last-4, so this
+      // response is the only place the raw token ever exists.
+      return json(201, {
+        token, id: principal_.id, roles: [...principal_.roles],
+        ...(principal_.tenantId !== undefined && { tenantId: principal_.tenantId }),
+      });
+    }
+    const principalMatch = /^\/admin\/principals\/([^/]+)$/.exec(url.pathname);
+    if (req.method === 'DELETE' && principalMatch) {
+      if (!opts.principalStore) return json(501, { error: 'no principal store configured — principals are a static map' });
+      return await opts.principalStore.revokeById(principalMatch[1]!)
+        ? json(200, { ok: true, revoked: principalMatch[1]!, by: principal?.id })
+        : json(404, { error: 'unknown principal' });
+    }
+
     if (req.method === 'POST' && url.pathname === '/goals') {
       if (draining) return json(503, { error: 'draining — not accepting new runs' });
-      let body: { description?: string; successCriteria?: string[]; idempotencyKey?: string };
+      let body: { description?: string; successCriteria?: string[]; idempotencyKey?: string; template?: string };
       try { body = JSON.parse(await readBody(req, maxBody)); }
       catch (e) {
         return json(e instanceof Error && e.message === 'too-large' ? 413 : 400,
@@ -416,7 +620,7 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
 
       const goal = createGoal({ description: body.description, successCriteria: body.successCriteria ?? [] });
       const rec: RunRecord = {
-        id, runner: factory(goal, { ...(principal !== undefined && { principal }) }),
+        id, runner: factory(goal, { ...(principal !== undefined && { principal }), ...(typeof body.template === 'string' && { template: body.template }) }),
         status: 'running', signal: new AbortController(),
         ...(principal?.tenantId !== undefined && { tenantId: principal.tenantId }),
       };
@@ -424,6 +628,7 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       const startedAt = Date.now();
       let agentId = '';
       let traceId: string | undefined;
+      let specName: string | undefined;
       // goal.started carries the agent's identity and the goal text —
       // index the run the moment its journal begins. Its own traceId is a
       // root run's own runId unless a caller passed one in (delegation —
@@ -436,7 +641,13 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
           startedAt, updatedAt: Date.now(), host: hostName,
           ...(principal?.tenantId !== undefined && { tenantId: principal.tenantId }),
           ...(traceId !== undefined && { traceId }),
+          ...(specName !== undefined && { specName }),
         });
+      });
+      // agent.created fires first and carries the spec's declared name —
+      // how a UI groups runs under the template that produced them.
+      rec.runner.on('agent.created', (e) => {
+        specName = e.data.name;
       });
       // The API runId IS the journal runId — events, exports, and wake(runId)
       // all correlate with the id this endpoint returned.
@@ -449,6 +660,7 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
           startedAt, updatedAt: Date.now(), host: hostName,
           ...(principal?.tenantId !== undefined && { tenantId: principal.tenantId }),
           ...(traceId !== undefined && { traceId }),
+          ...(specName !== undefined && { specName }),
           ...(r.result !== undefined && { result: r.result }),
           ...(r.error !== undefined && { error: r.error }),
         });
@@ -458,6 +670,7 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
           runId: rec.id, agentId, status: 'failed', goal: goal.description,
           startedAt, updatedAt: Date.now(), host: hostName, error: rec.error,
           ...(traceId !== undefined && { traceId }),
+          ...(specName !== undefined && { specName }),
         });
       });
       return json(202, { runId: rec.id });

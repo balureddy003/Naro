@@ -13,6 +13,7 @@ import { SqliteApprovalBridge, SqliteRunRegistry } from '@naro/runtime';
 // flags never requires 'pg' to be installed.
 import { pgPool, PgApprovalBridge, PgEventStore, PgRunRegistry } from '@naro/adapter-pg';
 import { startAgentServer, type RunnerFactory, type ServeOptions } from './serve.ts';
+import { SqlitePrincipalStore } from './principals.ts';
 
 export interface CliIO {
   out: (s: string) => void;
@@ -53,7 +54,11 @@ const HELP = `naro — universal agent foundation CLI
                              [--principals <file.json>] — token→{id,roles,tenantId?}
                                map; roles: viewer, operator, approver;
                                tenantId scopes GET /runs visibility (ADR 0013)
+                             [--principals-store <file.db>] — live identity store
+                               (ADR 0025): /admin/principals issues + revokes
+                               without restart; supersedes --principals
                              [--no-console] — disable GET /console (on by default)
+                             [--no-chat] — disable GET /chat (on by default)
                              [--registry <file.db>] — durable run index (SQLite)
                              [--journal <file.db>]  — shared event store for
                                cross-replica GET /runs/:id/events (SQLite)
@@ -268,9 +273,15 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
       }
       const noConsole = args.includes('--no-console');
       if (noConsole) args.splice(args.indexOf('--no-console'), 1);
+      const noChat = args.includes('--no-chat');
+      if (noChat) args.splice(args.indexOf('--no-chat'), 1);
       const registryPath = flag('--registry');
       const journalPath = flag('--journal');
       const approvalsPath = flag('--approvals');
+      // ADR 0025: --principals-store <file.db> swaps the static
+      // --principals map for a live SqlitePrincipalStore — writes via
+      // /admin/principals are live on the next request, no restart.
+      const principalsStorePath = flag('--principals-store');
       // A shared --pg/NARO_PG_URL backs all three stores; --registry-pg/
       // --journal-pg/--approvals-pg override it per-store; see
       // resolveServeStore() for the precedence.
@@ -310,6 +321,8 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
         ...(token !== undefined && { token }),
         ...(principals !== undefined && { principals }),
         ...(noConsole && { console: false }),
+        ...(noChat && { chat: false }),
+        ...(principalsStorePath !== undefined && { principalStore: new SqlitePrincipalStore(resolve(principalsStorePath)) }),
         ...(registry !== undefined && { registry }),
         ...(journal !== undefined && { journal }),
         ...(approvals !== undefined && { approvals }),
