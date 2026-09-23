@@ -33,6 +33,31 @@ test('goals → runs → result round-trip over HTTP', async () => {
   }
 });
 
+test('GET /console serves the static page without auth, even when principals are configured', async () => {
+  const { url, close } = await startAgentServer(factory, {
+    port: 0, principals: { tok: { id: 'x', roles: ['viewer'] } },
+  });
+  try {
+    const res = await fetch(`${url}/console`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type') ?? '', /text\/html/);
+    const body = await res.text();
+    assert.match(body, /Naro — Ops Console/);
+    assert.match(body, /Authorization/); // documents that it sends the header itself
+  } finally {
+    await close();
+  }
+});
+
+test('console: false disables the route (404, not auth-gated)', async () => {
+  const { url, close } = await startAgentServer(factory, { port: 0, console: false });
+  try {
+    assert.equal((await fetch(`${url}/console`)).status, 404);
+  } finally {
+    await close();
+  }
+});
+
 test('/ready reflects the probe and the drain state', async () => {
   let ready = true;
   const { url, close } = await startAgentServer(factory, { port: 0, ready: () => ready });
@@ -288,6 +313,63 @@ test('principals: roles gate endpoints — viewer reads, cannot write', async ()
     });
     assert.equal(apprDenied.status, 403);
     assert.deepEqual(await apprDenied.json(), { error: 'forbidden', required: 'operator' });
+  } finally {
+    await close();
+  }
+});
+
+test('ADR 0013: a tenant-scoped principal only sees its own tenant\'s runs', async () => {
+  const { url, close } = await startAgentServer(factory, {
+    port: 0,
+    principals: {
+      'tok-acme': { id: 'alice', roles: ['operator'], tenantId: 'acme' },
+      'tok-globex': { id: 'bob', roles: ['operator'], tenantId: 'globex' },
+      'tok-admin': { id: 'root', roles: ['operator'] }, // no tenant — sees everything
+    },
+  });
+  try {
+    const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
+    const submit = async (token: string, description: string) => {
+      const res = await fetch(`${url}/goals`, {
+        method: 'POST', headers: { ...bearer(token), 'content-type': 'application/json' },
+        body: JSON.stringify({ description }),
+      });
+      return (await res.json() as { runId: string }).runId;
+    };
+
+    const acmeRun = await submit('tok-acme', 'acme goal');
+    const globexRun = await submit('tok-globex', 'globex goal');
+    await new Promise((r) => setTimeout(r, 50)); // let goal.started land in the registry
+
+    const listAs = async (token: string) =>
+      (await (await fetch(`${url}/runs`, { headers: bearer(token) })).json() as { runId: string }[])
+        .map((r) => r.runId);
+
+    assert.deepEqual(await listAs('tok-acme'), [acmeRun]);
+    assert.deepEqual(await listAs('tok-globex'), [globexRun]);
+    const seenByAdmin = await listAs('tok-admin');
+    assert.ok(seenByAdmin.includes(acmeRun) && seenByAdmin.includes(globexRun));
+
+    // Cross-tenant direct reads are 404, not 403 — no confirmation the run exists.
+    assert.equal((await fetch(`${url}/runs/${globexRun}`, { headers: bearer('tok-acme') })).status, 404);
+    assert.equal((await fetch(`${url}/runs/${acmeRun}`, { headers: bearer('tok-acme') })).status, 200);
+    assert.equal((await fetch(`${url}/runs/${globexRun}/events`, { headers: bearer('tok-acme') })).status, 404);
+  } finally {
+    await close();
+  }
+});
+
+test('ADR 0013: a principal with no tenantId is unaffected (full visibility, as before)', async () => {
+  const { url, close } = await startAgentServer(factory, { token: 'tok', port: 0 });
+  try {
+    const created = await fetch(`${url}/goals`, {
+      method: 'POST', headers: { authorization: 'Bearer tok', 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'untenanted goal' }),
+    });
+    const { runId } = await created.json() as { runId: string };
+    await new Promise((r) => setTimeout(r, 50));
+    const list = await (await fetch(`${url}/runs`, { headers: { authorization: 'Bearer tok' } })).json() as { runId: string }[];
+    assert.ok(list.some((r) => r.runId === runId));
   } finally {
     await close();
   }

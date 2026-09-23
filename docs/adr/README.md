@@ -22,6 +22,7 @@ Read these when you want to know *why* the code is shaped the way it is. Read
 | [0010](0010-provenance-is-a-policy-input.md) | `Observation.trust` and `ctx.provenance` make evidence origin a policy input | accepted |
 | [0011](0011-policy-verdicts-carry-reasons.md) | `PolicyVerdict` adds a reason to every gate outcome | accepted |
 | [0012](0012-control-plane-identity.md) | Principals + roles on `naro serve`; approver and policy identity land in the journal | accepted |
+| [0013](0013-tenant-scoped-run-visibility.md) | Optional `tenantId` on principals scopes `/runs` visibility; approvals explicitly out of scope | accepted |
 
 ## Template
 

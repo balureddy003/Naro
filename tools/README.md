@@ -105,4 +105,7 @@ boundary through structured clone.
 
 This protects the host from crashes, runaway heaps, and stuck workers. It is
 not an OS security sandbox: workers share the process filesystem and network
-authority. Use a container or stronger isolation for hostile code.
+authority. `@naro/adapter-docker`'s `DockerSandboxExecutor` implements the
+same `ActionExecutor` contract with real namespace/cgroup isolation via
+`docker run` for hostile code; stronger isolation still (gVisor, Kata,
+Firecracker) is a deployment choice behind that same seam.

@@ -95,6 +95,21 @@ describePg('pg integration (requires NARO_PG_URL)', async () => {
     assert.equal(await reg.get('nope'), undefined);
   });
 
+  test('run registry: list({tenantId}) scopes across replicas (ADR 0013)', async () => {
+    const reg = await PgRunRegistry.create(pool);
+    const stamp = Date.now();
+    const acme = { runId: `pg-tenant-acme-${stamp}`, agentId: 'a1', status: 'completed' as const,
+      goal: 'g', startedAt: stamp, updatedAt: stamp, tenantId: 'acme' };
+    const globex = { runId: `pg-tenant-globex-${stamp}`, agentId: 'a1', status: 'completed' as const,
+      goal: 'g', startedAt: stamp, updatedAt: stamp, tenantId: 'globex' };
+    await reg.upsert(acme);
+    await reg.upsert(globex);
+    const scoped = await reg.list({ tenantId: 'acme' });
+    assert.ok(scoped.some((r) => r.runId === acme.runId));
+    assert.ok(!scoped.some((r) => r.runId === globex.runId));
+    assert.equal((await reg.get(acme.runId))?.tenantId, 'acme');
+  });
+
   test('approvals: request blocks until a second store answers, then resolves', async () => {
     const asker = await PgApprovalBridge.create(pool, { pollMs: 25, timeoutMs: 5000 });
     const responder = await PgApprovalBridge.create(pool, { pollMs: 25, timeoutMs: 5000 });

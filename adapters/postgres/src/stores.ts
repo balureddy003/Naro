@@ -104,7 +104,10 @@ async function migrate(q: PgQueryable): Promise<void> {
       error TEXT,
       host TEXT
     );
+    -- Tables created before ADR 0013 lack tenant_id — add it.
+    ALTER TABLE naro_runs ADD COLUMN IF NOT EXISTS tenant_id TEXT;
     CREATE INDEX IF NOT EXISTS naro_runs_started ON naro_runs(started_at DESC);
+    CREATE INDEX IF NOT EXISTS naro_runs_tenant ON naro_runs(tenant_id, started_at DESC);
 
     CREATE TABLE IF NOT EXISTS naro_approvals (
       id TEXT PRIMARY KEY,
@@ -451,6 +454,7 @@ interface RunRow {
   run_id: string; agent_id: string; status: string; goal: string;
   started_at: number | string; updated_at: number | string;
   result: unknown; error: string | null; host: string | null;
+  tenant_id: string | null;
 }
 
 /** The shared run index: every replica's `naro serve` writes here, so
@@ -465,13 +469,13 @@ export class PgRunRegistry implements RunRegistry {
 
   async upsert(run: RunSummary): Promise<void> {
     await this.q.query(
-      `INSERT INTO naro_runs (run_id, agent_id, status, goal, started_at, updated_at, result, error, host)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      `INSERT INTO naro_runs (run_id, agent_id, status, goal, started_at, updated_at, result, error, host, tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        ON CONFLICT (run_id) DO UPDATE SET
-         status=$3, updated_at=$6, result=$7, error=$8, host=$9`,
+         status=$3, updated_at=$6, result=$7, error=$8, host=$9, tenant_id=$10`,
       [run.runId, run.agentId, run.status, run.goal, run.startedAt, run.updatedAt,
         run.result === undefined ? null : JSON.stringify(run.result),
-        run.error ?? null, run.host ?? null],
+        run.error ?? null, run.host ?? null, run.tenantId ?? null],
     );
   }
 
@@ -480,9 +484,13 @@ export class PgRunRegistry implements RunRegistry {
     return rows[0] ? toSummary(rows[0] as unknown as RunRow) : undefined;
   }
 
-  async list(opts: { limit?: number } = {}): Promise<readonly RunSummary[]> {
-    const { rows } = await this.q.query(
-      'SELECT * FROM naro_runs ORDER BY started_at DESC LIMIT $1', [opts.limit ?? 10_000]);
+  async list(opts: { limit?: number; tenantId?: string } = {}): Promise<readonly RunSummary[]> {
+    const { rows } = opts.tenantId === undefined
+      ? await this.q.query('SELECT * FROM naro_runs ORDER BY started_at DESC LIMIT $1', [opts.limit ?? 10_000])
+      : await this.q.query(
+        'SELECT * FROM naro_runs WHERE tenant_id=$1 ORDER BY started_at DESC LIMIT $2',
+        [opts.tenantId, opts.limit ?? 10_000],
+      );
     return rows.map((r) => toSummary(r as unknown as RunRow));
   }
 }
@@ -495,6 +503,7 @@ function toSummary(r: RunRow): RunSummary {
     ...(r.result != null && { result: r.result }),
     ...(r.error != null && { error: r.error }),
     ...(r.host != null && { host: r.host }),
+    ...(r.tenant_id != null && { tenantId: r.tenant_id }),
   };
 }
 

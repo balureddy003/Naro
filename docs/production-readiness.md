@@ -18,12 +18,22 @@ permissions and side effects. Its default `otherwise: 'allow'` means “this
 engine does not own non-tool schemes,” not “all environments are safe.”
 
 The `naro serve` control plane has its own authorization: `--principals`
-maps bearer tokens to `{id, roles}` — `viewer` reads runs and the approval
-queue, `operator` submits goals, `approver` answers approvals
+maps bearer tokens to `{id, roles, tenantId?}` — `viewer` reads runs and the
+approval queue, `operator` submits goals, `approver` answers approvals
 (operator/approver imply viewer). `--token` is shorthand for one admin
-principal. Missing or bad credentials get 401; insufficient role gets 403.
-This is a control-plane role check, not tenant authz — that still belongs
-to the deployment in front.
+principal (no tenant — full visibility). Missing or bad credentials get
+401; insufficient role gets 403. This is a control-plane role check, not
+full tenant authz — that still belongs to the deployment in front.
+
+A principal's optional `tenantId` (ADR 0013) scopes `GET /runs`,
+`GET /runs/:id`, and `GET /runs/:id/events` to runs stamped with that
+tenant; a cross-tenant direct read is `404`, not `403`. This is
+*visibility* scoping within one process, not isolation: tenants sharing a
+`naro serve` process still share its policy engine, budgets, and crash
+blast radius, and `GET /approvals`/`POST /approvals/:id` are **not**
+tenant-scoped — any `approver` principal sees and can answer every pending
+approval regardless of tenant. A deployment needing real isolation still
+needs separate processes or a gateway, not just this field.
 
 ## 2. Secrets
 
@@ -50,7 +60,15 @@ heap exhaustion.
 
 It does **not** isolate operating-system authority. A worker can use the host
 filesystem and network available to the Node process. Run hostile code in a
-container, VM, or external sandbox service behind `ActionExecutor`.
+container, VM, or external sandbox service behind `ActionExecutor` —
+`@naro/adapter-docker`'s `DockerSandboxExecutor` is the included option:
+real namespace/cgroup isolation via `docker run --network=none --read-only
+--cap-drop=ALL` plus resource limits, honestly documented as a step up
+from a worker thread and *not* equivalent to a hardware-VM boundary.
+For genuinely hostile, adversarial code, gVisor, Kata Containers, or
+Firecracker microVMs remain the stronger answer — this adapter delegates
+to whichever container runtime `docker run` reaches, not to one of those
+directly.
 
 Domain profiles add their own controls:
 

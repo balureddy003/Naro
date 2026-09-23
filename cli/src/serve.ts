@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { hostname } from 'node:os';
 import { newId, createGoal, type NaroEvent } from '@naro/core';
 import { InMemoryRunRegistry, type AgentRunner, type ApprovalRequest, type RunRegistry } from '@naro/runtime';
+import { CONSOLE_HTML } from './console.ts';
 
 /**
  * `naro serve <agent-module>` — a Naro agent as a service.
@@ -19,13 +20,24 @@ import { InMemoryRunRegistry, type AgentRunner, type ApprovalRequest, type RunRe
  *   POST /approvals/:id      {approved?|text?|note?} → {ok}
  *   GET  /health             → {ok: true}        (liveness — process up)
  *   GET  /ready              → {ready: bool}     (readiness — deps reachable)
+ *   GET  /console            → the ops console (static HTML; see console.ts)
+ *
+ * The console page itself carries no data and needs no auth to load (like
+ * /health) — it's static HTML/JS. Every API call *it* makes goes through
+ * the same bearer-token gate as any other client; the token lives in the
+ * viewer's browser, never in this response. Disable the route entirely
+ * with `console: false`.
  *
  * Deployment notes: `principals` maps bearer tokens to identities + roles
  * (viewer / operator / approver); `token` is the legacy shorthand for one
  * admin principal. Either gates everything except the probes (orchestrators
  * probe without auth). `close()` drains — it cancels in-flight runs so
  * their journals end with `agent.cancelled`, then stops accepting
- * connections. TLS and tenant authz belong to the deployment in front of it.
+ * connections. TLS and full tenant authorization still belong to the
+ * deployment in front of this process — a principal's `tenantId` (see ADR
+ * 0013) only scopes `/runs` visibility within one process; it is not
+ * tenant isolation (shared policy engine, shared budgets, shared blast
+ * radius) and it does not scope `/approvals`.
  *
  * `registry` is the durable run index — every run is upserted there, so
  * /runs survives a replica restart and is shared between replicas pointed
@@ -35,10 +47,12 @@ import { InMemoryRunRegistry, type AgentRunner, type ApprovalRequest, type RunRe
 
 export type RunnerFactory = (goal: ReturnType<typeof createGoal>) => AgentRunner;
 
-/** A control-plane identity: an id plus the roles it holds. */
+/** A control-plane identity: an id, the roles it holds, and — see ADR
+ *  0013 — the tenant its `/runs` visibility is scoped to, if any. */
 export interface Principal {
   readonly id: string;
   readonly roles: ReadonlySet<string>;
+  readonly tenantId?: string;
 }
 
 /**
@@ -67,8 +81,14 @@ export interface ServeOptions {
   readonly host?: string;
   /** Shared bearer token required on all endpoints except /health and /ready. */
   readonly token?: string;
-  /** Token→principal map: {id, roles}. supersedes `token` (which maps to one admin principal). */
-  readonly principals?: Readonly<Record<string, { id: string; roles: readonly string[] }>>;
+  /** Token→principal map: {id, roles, tenantId?}. supersedes `token` (which
+   *  maps to one admin principal with no tenant). `tenantId` scopes that
+   *  principal's `/runs` visibility — see ADR 0013. */
+  readonly principals?: Readonly<Record<string, { id: string; roles: readonly string[]; tenantId?: string }>>;
+  /** Serve the read-only ops console at GET /console. Default true — the
+   *  page itself needs no auth to load; every call it makes is gated
+   *  normally. */
+  readonly console?: boolean;
   /** Readiness probe — throw or return false when a dependency is down. */
   readonly ready?: () => Promise<boolean> | boolean;
   /** POST /goals body cap in bytes — goals are small. Default 64 KiB. */
@@ -101,8 +121,9 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
   const maxBody = opts.maxBodyBytes ?? 65_536;
   let draining = false;
 
-  // `principals` supersedes `token`; the legacy flag is one admin principal.
-  const principals: Readonly<Record<string, { id: string; roles: readonly string[] }>> | undefined =
+  // `principals` supersedes `token`; the legacy flag is one admin principal
+  // with no tenant (full visibility, matching its pre-ADR-0013 behavior).
+  const principals: Readonly<Record<string, { id: string; roles: readonly string[]; tenantId?: string }>> | undefined =
     opts.principals ?? (opts.token !== undefined
       ? { [opts.token]: { id: 'token', roles: ['viewer', 'operator', 'approver'] } }
       : undefined);
@@ -126,6 +147,13 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       }
     }
 
+    // Static, carries no data, needs no auth to load — same posture as the
+    // probes. Every call the page itself makes is gated normally below.
+    if (req.method === 'GET' && url.pathname === '/console' && opts.console !== false) {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end(CONSOLE_HTML);
+    }
+
     // Authn: bearer token → principal. Authz: the route's required role.
     // Neither configured → the control plane is open (dev default).
     let principal: Principal | undefined;
@@ -133,7 +161,7 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1];
       const p = bearer !== undefined ? principals[bearer] : undefined;
       if (p === undefined) return json(401, { error: 'unauthorized' });
-      principal = { id: p.id, roles: expandRoles(p.roles) };
+      principal = { id: p.id, roles: expandRoles(p.roles), ...(p.tenantId !== undefined && { tenantId: p.tenantId }) };
       const required = requiredRole(req.method ?? '', url.pathname);
       if (required !== undefined && !principal.roles.has(required)) {
         return json(403, { error: 'forbidden', required });
@@ -141,7 +169,8 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
     }
 
     if (req.method === 'GET' && url.pathname === '/runs') {
-      const list = await registry.list({ limit: 200 });
+      // No tenant on the caller → unscoped (every run) — see ADR 0013.
+      const list = await registry.list({ limit: 200, ...(principal?.tenantId !== undefined && { tenantId: principal.tenantId }) });
       return json(200, list.map((r) => ({
         runId: r.runId, status: r.status, agentId: r.agentId, goal: r.goal,
         startedAt: r.startedAt, updatedAt: r.updatedAt, ...(r.host !== undefined && { host: r.host }),
@@ -150,6 +179,14 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
 
     const runMatch = /^\/runs\/([^/]+)(\/events)?$/.exec(url.pathname);
     if (req.method === 'GET' && runMatch) {
+      // A run outside the caller's tenant is a 404, not a 403 — a
+      // cross-tenant probe learns nothing about whether it exists. Only
+      // pay for the extra registry read when tenant scoping is configured
+      // at all; the untenanted default path is unaffected.
+      if (principal?.tenantId !== undefined) {
+        const owned = await registry.get(runMatch[1]!);
+        if (owned && owned.tenantId !== principal.tenantId) return json(404, { error: 'unknown run' });
+      }
       const rec = runs.get(runMatch[1]!);
 
       if (runMatch[2] === '/events') {
@@ -237,6 +274,7 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
         void registry.upsert({
           runId: rec.id, agentId, status: 'running', goal: e.data.goal.description,
           startedAt, updatedAt: Date.now(), host: hostName,
+          ...(principal?.tenantId !== undefined && { tenantId: principal.tenantId }),
         });
       });
       // The API runId IS the journal runId — events, exports, and wake(runId)
@@ -248,6 +286,7 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
         void registry.upsert({
           runId: rec.id, agentId, status: r.status, goal: goal.description,
           startedAt, updatedAt: Date.now(), host: hostName,
+          ...(principal?.tenantId !== undefined && { tenantId: principal.tenantId }),
           ...(r.result !== undefined && { result: r.result }),
           ...(r.error !== undefined && { error: r.error }),
         });

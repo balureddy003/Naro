@@ -50,8 +50,10 @@ const HELP = `naro — universal agent foundation CLI
   naro serve <module.ts>   expose an agent as a service [--port N] [--host h]
                              [--token t | NARO_SERVE_TOKEN] — bearer gate on
                              all non-probe endpoints
-                             [--principals <file.json>] — token→{id,roles}
-                               map; roles: viewer, operator, approver
+                             [--principals <file.json>] — token→{id,roles,tenantId?}
+                               map; roles: viewer, operator, approver;
+                               tenantId scopes GET /runs visibility (ADR 0013)
+                             [--no-console] — disable GET /console (on by default)
                              [--registry <file.db>] — durable run index (SQLite)
                              [--journal <file.db>]  — shared event store for
                                cross-replica GET /runs/:id/events (SQLite)
@@ -205,7 +207,7 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
       const host = flag('--host');
       const token = flag('--token') ?? process.env['NARO_SERVE_TOKEN'];
       const principalsPath = flag('--principals');
-      let principals: Record<string, { id: string; roles: readonly string[] }> | undefined;
+      let principals: Record<string, { id: string; roles: readonly string[]; tenantId?: string }> | undefined;
       if (principalsPath !== undefined) {
         try {
           const parsed: unknown = JSON.parse(await readFile(resolve(principalsPath), 'utf8'));
@@ -213,8 +215,10 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
           for (const [tok, p] of Object.entries(parsed)) {
             const bad = typeof p !== 'object' || p === null
               || typeof (p as { id?: unknown }).id !== 'string'
-              || !Array.isArray((p as { roles?: unknown }).roles);
-            if (bad) throw new Error(`entry for token '${tok}' must be {id: string, roles: string[]}`);
+              || !Array.isArray((p as { roles?: unknown }).roles)
+              // tenantId (ADR 0013) is optional but must be a string when present.
+              || ('tenantId' in p && typeof (p as { tenantId?: unknown }).tenantId !== 'string');
+            if (bad) throw new Error(`entry for token '${tok}' must be {id: string, roles: string[], tenantId?: string}`);
           }
           principals = parsed as typeof principals;
         } catch (e) {
@@ -222,6 +226,8 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
           return 2;
         }
       }
+      const noConsole = args.includes('--no-console');
+      if (noConsole) args.splice(args.indexOf('--no-console'), 1);
       const registryPath = flag('--registry');
       const journalPath = flag('--journal');
       const approvalsPath = flag('--approvals');
@@ -263,6 +269,7 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
         ...(host !== undefined && { host }),
         ...(token !== undefined && { token }),
         ...(principals !== undefined && { principals }),
+        ...(noConsole && { console: false }),
         ...(registry !== undefined && { registry }),
         ...(journal !== undefined && { journal }),
         ...(approvals !== undefined && { approvals }),

@@ -113,6 +113,12 @@
       "path": "./adapters/vault"
     },
     {
+      "path": "./adapters/docker"
+    },
+    {
+      "path": "./adapters/slack"
+    },
+    {
       "path": "./dogfood"
     }
   ],

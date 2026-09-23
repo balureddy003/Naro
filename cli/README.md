@@ -89,20 +89,39 @@ Additional flags:
   `GET /approvals` (pending queue) and `POST /approvals/:id
   {approved?|text?|note?}` so operators approve over HTTP — including
   cross-process, since the bridge is durable.
-- `--principals <file.json>` — maps bearer tokens to `{id, roles}`. Roles:
-  `viewer` (GET endpoints), `operator` (`POST /goals`), `approver`
+- `--principals <file.json>` — maps bearer tokens to `{id, roles, tenantId?}`.
+  Roles: `viewer` (GET endpoints), `operator` (`POST /goals`), `approver`
   (`POST /approvals/:id`); operator and approver imply viewer. Insufficient
   role → `403 {error: 'forbidden', required: <role>}`. The principal id is
   written to the approval (`answered_by`) and journaled on
   `human.approval.received.by` — who approved is evidence. Supersedes
   `--token`/`NARO_SERVE_TOKEN`, which remains as shorthand for one admin
-  principal.
+  principal (no `tenantId` — full visibility).
+- `tenantId` on a principal ([ADR 0013](../docs/adr/0013-tenant-scoped-run-visibility.md))
+  scopes `GET /runs`, `GET /runs/:id`, and `GET /runs/:id/events` to runs
+  submitted under that tenant; a cross-tenant direct read is `404`. This is
+  visibility scoping for a single process, not tenant isolation — it does
+  not cover `GET /approvals`, and a deployment needing real isolation still
+  needs separate processes or a gateway in front.
 
 Production surface: `GET /health` + `GET /ready` probes (unauthenticated),
 optional bearer gate via `--token` or `NARO_SERVE_TOKEN`, 64 KiB body cap on
 `POST /goals`, and SIGINT/SIGTERM graceful drain — in-flight runs are
 aborted and their journals end with `agent.cancelled`. See
 [docs/deploy.md](../docs/deploy.md).
+
+### Ops console
+
+`GET /console` serves a static, dependency-free HTML page (`console.ts` —
+no build step, matches this package's own "runs straight from TypeScript
+source" shape) for browsing runs, tailing a run's events live, and
+answering pending approvals. The page itself needs no auth to load; you
+paste a bearer token into it, and every API call it makes goes through the
+same role-gated endpoints a script would use. Read-only except for
+`POST /approvals/:id`, which already requires the `approver` role. Disable
+it with `--no-console` / `console: false` if you'd rather not serve it at
+all — this is not a replacement for a real operations dashboard, just
+enough to look at a run without writing a client.
 
 ### `approvals` / `approve`
 
