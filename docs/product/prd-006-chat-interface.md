@@ -1,23 +1,47 @@
-# PRD-006 — One Interface, Three Roles: End User, Ops, Admin
+# PRD-006 — One Interface, One Object: Templates Unify Runs, Settings, Access
 
 Status: proposed
 Owner: unassigned
 Depends on: `@naro/client`, [ADR 0023](../adr/0023-console-renders-the-evidence-record-not-a-log.md), [ADR 0024](../adr/0024-admin-api-surface-for-registry-and-retention.md), [ADR 0025](../adr/0025-live-principal-store.md), [PRD-002](prd-002-outcome-templates.md)
 Depended on by: closes a gap PRD-002 already flagged (human-approval templates "still need a UI")
 
-**Revision note:** the original version of this PRD scoped a chat
+**Revision note (1).** The original version of this PRD scoped a chat
 interface for end users only, and its Non-goals explicitly excluded
 replacing the ops console ("different persona, different job"). That
 exclusion is revised here, not silently dropped: end user, ops, and
 admin turn out to share one design system and one data source
 (`@naro/client`'s wire types, `buildEvidence()`), and building three
 separate products for three views of the same evidence was more
-duplication than the difference in persona actually justified. This
-version is one app shell with a role switch, not three apps. The
+duplication than the difference in persona actually justified. The
 existing standalone ops console (`GET /console`, ADR 0023) is unaffected
 and remains the CLI-adjacent, zero-JS-framework reference; this PRD's
 ops and admin views are additive, a richer surface for a deployment that
 wants one.
+
+**Revision note (2) — supersedes this doc's own title and IA from
+revision note 1.** Revision 1's fix was a role switch atop three
+separate app-shells (End user / Ops / Admin), each a different sidebar
+and layout. That is not "one interface" — it's three interfaces wearing
+one skin, and it forces the same object (an outcome template) to live in
+three unrelated places depending who's looking: its conversation in the
+end-user shell, its audit trail in Ops, its config in Admin. The fix
+borrows two specific, named precedents: **GitHub's repo model** (Code,
+Actions, and Settings are tabs on one repo object, never separate apps)
+and **Stripe's dashboard** (Payments, Customers, and webhooks share one
+object model and one navigation, not a role-gated app switch). Applied
+here: a template is one object, with **Runs**, **Settings**, and
+**Access** as tabs on it — the same object a GitHub repo's Code/Actions/
+Settings tabs are, not three destinations. Role no longer switches which
+app-shell you're in; it gates which tabs and sidebar sections are
+visible on the one shell everyone shares (a `viewer`-only principal sees
+a template's Runs tab and not its Settings tab; an `admin` additionally
+sees the fleet-wide System section, which — unlike a template's tabs —
+genuinely has no per-object home, since it isn't scoped to any one
+template). The former "invite your team" wizard step is gone; inviting
+someone is now a per-template act on that template's own Access tab
+(GitHub/Notion/Linear's own pattern: grant access from the object you're
+granting access *to*, not from a one-time setup flow disconnected from
+it). See Interface design below for the reworked mockup this produced.
 
 ## Summary
 
@@ -137,87 +161,128 @@ written yet. They answer. The conversation continues.
 **Ops user:** a bookkeeper or contracted admin assistant who supports
 more than one small-business client through the same deployment — not a
 developer, but comfortable auditing rather than just approving.
-**Scenario:** they switch to the Ops view and see every run across every
-tenant this principal can see (ADR 0013), each tagged by business —
-Riverside Supply, Cedar Bakery — with a persistent chain-status banner
+**Scenario:** opening any template's Runs tab shows every run across
+every tenant this principal can see (ADR 0013), each tagged by business
+— Riverside Supply, Cedar Bakery — with a persistent chain-status banner
 above the transcript confirming what they're looking at is the same
 record `naro verify` would print, not a paraphrase. They can still
-answer a pending approval from here; they cannot submit a new goal —
-that's the end-user view's job, not theirs.
+answer a pending approval from a Runs tab; they cannot submit a new
+goal there — that composer needs `operator`, which this principal
+doesn't hold.
 
 **Admin user:** whoever this deployment trusts with fleet-wide and
 registry-level authority — often the same person as the technical
 contact who set up `naro serve` in the first place. **Scenario:** an MCP
 server the business connected starts advertising a tool description that
-changed since it was last reviewed. The admin view surfaces it under
-"Definition changes" with the old and new description side by side, and
-a plain choice: acknowledge it, or leave the tool forced to
-destructive-requires-approval until someone verifies the source. No
-scrollback through a log to find this — it's a queue with a count badge,
-the same pattern as the end-user's approval queue, because it's the same
-underlying idea (a human decision a machine correctly declined to make
-alone).
+changed since it was last reviewed. The sidebar's System section
+surfaces it under "Definition changes" with the old and new description
+side by side, and a plain choice: acknowledge it, or leave the tool
+forced to destructive-requires-approval until someone verifies the
+source. No scrollback through a log to find this — it's a queue with a
+count badge, the same pattern as a template's own approval queue,
+because it's the same underlying idea (a human decision a machine
+correctly declined to make alone).
 
 ## Interface design
 
 *Reference mockup:* [claude.ai/artifact/4FrvR54yYwkoo8vQyjVEnt](https://claude.ai/artifact/4FrvR54yYwkoo8vQyjVEnt)
 — a working, interactive HTML prototype of the full app shell, not one
-screen or one role. A segmented control at the top of the sidebar
-switches between the three views this PRD now covers:
+screen or one role.
 
-- **End user** — the conversation-history sidebar plus five states
-  covering the distinct capabilities this PRD and PRD-002 actually
-  claim: a numeric-correction approval (invoice total), a text-draft
-  approval (customer email reply, showing the draft was influenced by
-  `trust: 'external'` content but never acted on it directly), a
-  fully-automated run with no approval needed (transaction categorizer,
-  verifier passed on all 14), a run *blocked by policy* (a destructive
-  action refused before it ran), and a live run with the stop control
-  active.
-- **Ops** — the same evidence, widened: every run across every tenant
-  this principal can see, each entry tagged by tenant, with a
-  chain-status banner pinned above the transcript on every run
-  ("Chain OK · sealed (ed25519) · seq 340" or, on the denied run,
-  "sealed · action denied, chain still OK" — the denial doesn't break
-  the proof, it's recorded *by* it). Composer is hidden; this role reads
-  and answers approvals, it doesn't submit goals.
-- **Admin** — a fixed nav (not a conversation list), leading with
-  **Setup** — a seven-step wizard, the direct answer to "someone setting
-  up Naro needs a fully no-code experience": welcome (naming the one
-  technical prerequisite honestly — someone gets `naro serve` running
-  once), pick a template, connect data (a real client-side CSV
-  parse-and-preview, no upload endpoint needed — the wizard reads the
-  file locally; OAuth connectors shown, correctly, as "coming soon" per
-  PRD-004's own milestone order), cost vs. care (plain-language framing
-  of ADR 0014's escalation tiers), approval defaults (plain-language
-  toggles — one of them, "always ask before a customer-facing send,"
-  rendered locked *on*, not just defaulted on, because PRD-002
-  requirement 2 doesn't allow turning it off), invite your team (four
-  plain-language roles — "can use it," "can approve things," "can see
-  everything," "runs the whole thing" — mapped to
-  viewer/operator/approver/admin without ever showing those words), and
-  done. The rest of the admin nav covers
-  [ADR 0024](../adr/0024-admin-api-surface-for-registry-and-retention.md)'s
-  three write endpoints plus the fleet-halt endpoint ADR 0022 already
-  shipped: a collision case (two sources claiming the tool name
-  `search`, shown side by side with their definition hashes, one button
-  per outcome), a definition-change case (an MCP tool's description
-  grew a capability nobody approved, shown as old-vs-new text), a
-  retention form (run, cutoff sequence, policy citation), and a
-  fleet-wide halt requiring a reason before it's enabled.
+**The sidebar lists objects, not modes.** One list, grouped by
+"Templates" (each an expandable group — icon, name, a gear icon that
+jumps straight to that template's Settings tab — with its own runs
+nested under it) then "General" (ad-hoc, not-template-scoped runs, like
+a one-off request that was blocked by policy) then, only for an `admin`
+principal, "System" (fleet control, tool collisions, definition changes,
+retention — the genuinely fleet-wide pages that have no single template
+to live under). There is no top-level End user/Ops/Admin switch to find
+first; what a given principal sees in this one list *is* what their
+role permits, per requirement 7 below.
 
-**The team-invite step is real, not a copy-this-into-a-config-file
+**Opening a template opens the object, with three tabs on it:**
+
+- **Runs** — the conversation-shaped view revision 1 already designed
+  well and this revision keeps unchanged: a numeric-correction approval
+  (invoice total), a text-draft approval (customer email reply, showing
+  the draft was influenced by `trust: 'external'` content but never
+  acted on it directly), a fully-automated run with no approval needed
+  (transaction categorizer, verifier passed on all 14), a run *blocked
+  by policy*, and a live run with the stop control active. For a
+  principal whose role spans tenants (ADR 0013), Runs also carries the
+  chain-status banner pinned above the transcript ("Chain OK · sealed
+  (ed25519) · seq 340," or on the denied run, "sealed · action denied,
+  chain still OK" — the denial doesn't break the proof, it's recorded
+  *by* it) and cross-tenant runs tagged by tenant name.
+- **Settings** — the template's cost tier (plain-language framing of ADR
+  0014's escalation tiers) and its approval rules (plain-language
+  toggles — a customer-facing send is rendered locked *on*, not just
+  defaulted on, because PRD-002 requirement 2 doesn't allow turning it
+  off). Changes save in place with a small confirmation ("Saved — takes
+  effect on the next run"); this is a persistent settings page a
+  principal revisits anytime, not a wizard step that only runs once at
+  creation.
+- **Access** — who can use *this* template and at what level, plus an
+  "invite someone" affordance scoped to it, reusing the same
+  `POST /admin/principals` flow revision 1 put in the wizard — moved
+  here because access has always actually been a property of the
+  template being granted, not of a one-time setup flow. A template with
+  no other grantees yet shows that plainly rather than an empty table.
+
+**A template that isn't configured yet** shows a "Set up →" link instead
+of an expandable group, and opening it directly shows one honest empty
+state (no Runs/Settings/Access tabs to fake content for) with a "Set up
+now" button into the wizard. **A template that was just activated but
+hasn't run yet** — the wizard's actual completion state — lands on an
+"on, waiting for its first trigger" state instead: no faked first run,
+the same convention Zapier and GitHub Actions both use for "the
+automation exists and is live, nothing has invoked it yet."
+
+**Setup is a six-step wizard**, unchanged in spirit from revision 1's
+"fully no-code" goal but one step shorter: welcome (naming the one
+technical prerequisite honestly — someone gets `naro serve` running
+once), pick a template, connect data (a real client-side CSV
+parse-and-preview, no upload endpoint needed — the wizard reads the file
+locally; OAuth connectors shown, correctly, as "coming soon" per PRD-004's
+own milestone order), cost vs. care, approval defaults, and done. The
+"invite your team" step revision 1 had here is gone — access is now
+granted from each template's own Access tab, per the IA change above —
+so the wizard configures the template and stops, instead of also trying
+to be where every future access grant happens.
+
+**System pages** (Fleet control, Tool collisions, Definition changes,
+Retention) are the one thing that genuinely isn't a template object, so
+they keep their own nav rows rather than pretending to be a tab on
+something: a collision case (two sources claiming the tool name
+`search`, shown side by side with their definition hashes, one button
+per outcome), a definition-change case (an MCP tool's description grew a
+capability nobody approved, shown as old-vs-new text), a retention form
+(run, cutoff sequence, policy citation), and a fleet-wide halt requiring
+a reason before it's enabled — [ADR 0024](../adr/0024-admin-api-surface-for-registry-and-retention.md)'s
+three write endpoints plus the fleet-halt endpoint ADR 0022 already
+shipped.
+
+**Per-template access is real, not a copy-this-into-a-config-file
 placeholder — that distinction is the point.** The reference this PRD
 was built against, LibreChat, can offer in-app "add a person, done"
 because it has a database backing that state; the first version of this
 section didn't, because ADR 0012's principals were a static token-file
 map the running process reads once. [ADR 0025](../adr/0025-live-principal-store.md)
-closes exactly that gap — the wizard's "Generate access" button calls a
-real `POST /admin/principals`, returns a token shown once (the same
+closes exactly that gap — an Access tab's "Generate access" button calls
+a real `POST /admin/principals`, returns a token shown once (the same
 "shown once" discipline any credential-issuance UI needs), and the new
 principal authenticates on their very next request. No file edit, no
-restart. Template and connection choices in the same wizard are, for
+restart. Template and connection choices made in the wizard are, for
 now, honestly UI-only — see Non-goals.
+
+**A mockup's static sidebar can't actually mutate itself when a template
+is created mid-demo, and it says so rather than faking it.** The demo
+ships a clearly-labeled "Demo only — viewing as" switcher (dashed
+border, small uppercase caption — deliberately *not* styled like real
+product chrome, because no real product lets one signed-in person
+pretend to be someone else) so a reviewer can see what each role's view
+of the *same* sidebar actually contains, without the mockup claiming
+that's a real account-switching feature.
 
 Every capability shown maps to a named, real endpoint or an explicitly
 proposed one (ADR 0024, ADR 0025) — nothing in the admin view implies
@@ -356,43 +421,51 @@ helped, by an interface that performs busyness.
    serve`'s existing `GET /client/*.js` asset route serves this UI's
    compiled output too; no bundler dependency introduced into `cli`,
    consistent with the console's own "no build step" precedent.
-7. **The role switch reflects the caller's actual roles, not a UI
-   preference.** A principal without `admin` in `ADR 0012`'s role set
-   never sees the Admin tab rendered at all — not disabled, not visible-
-   but-403, absent — the same fail-toward-least-privilege default ADR
-   0022 already chose for the `admin` role itself. Ops and end-user tabs
-   render for any principal holding `viewer`/`operator`/`approver`
-   respectively; a principal with only `viewer` sees Ops but not the
-   end-user composer (no `operator` grant to submit goals with).
-8. **Ops view is `GET /runs` (unscoped by the caller's own runs) plus the
-   chain banner from `GET /runs/:id/evidence`.** No new endpoint — this
-   is the same data `GET /runs` already returns across tenants per ADR
-   0013's visibility rules, rendered as a list instead of a table, with
-   `client.answerApproval()` still live (matching the existing console's
-   "read-only except answering approvals" posture, [`cli/src/console.ts`](../../cli/src/console.ts)).
-9. **Admin view's three write actions call exactly ADR 0024's three
-   endpoints** — `POST /admin/tool-collisions/resolve`, `POST
+7. **Sidebar and tab visibility reflect the caller's actual roles, not a
+   UI preference or a mode switch.** A principal without `admin` in ADR
+   0012's role set never sees the sidebar's "System" section rendered at
+   all — not disabled, not visible-but-403, absent — the same
+   fail-toward-least-privilege default ADR 0022 already chose for the
+   `admin` role itself. Within a template a principal can see, its
+   Settings and Access tabs render only for a principal with write
+   access to that specific template (per its own Access tab, ADR 0025);
+   a `viewer`-only principal sees that template's Runs tab and not the
+   other two. A principal with only `viewer` on a template sees its Runs
+   tab read-only (no composer — no `operator` grant to submit goals
+   with).
+8. **A template's Runs tab is `GET /runs` (unscoped by the caller's own
+   runs) plus the chain banner from `GET /runs/:id/evidence`.** No new
+   endpoint — this is the same data `GET /runs` already returns across
+   tenants per ADR 0013's visibility rules, rendered as a list instead of
+   a table, with `client.answerApproval()` still live (matching the
+   existing console's "read-only except answering approvals" posture,
+   [`cli/src/console.ts`](../../cli/src/console.ts)).
+9. **The System section's three write actions call exactly ADR 0024's
+   three endpoints** — `POST /admin/tool-collisions/resolve`, `POST
    /admin/tool-definitions/acknowledge`, `POST /admin/runs/:id/prune` —
    plus the already-shipped `POST /runs/cancel-all` for fleet halt. Every
    action requires the justification field its backend ADR already
    requires (a `policy` citation for prune, an implicit "which source
    wins" for collision resolve); the UI does not accept a write with that
    field empty.
-10. **The setup wizard's team-invite step calls ADR 0025's endpoints**
-    (`POST /admin/principals`, `GET /admin/principals`, `DELETE
+10. **Each template's Access tab calls ADR 0025's endpoints** (`POST
+    /admin/principals`, `GET /admin/principals`, `DELETE
     /admin/principals/:id`) and nothing else new — no live persistence
     for the wizard's template/data/cost/approval steps until PRD-002/004
     define one (Non-goals). The generated token is displayed exactly
     once, matching ADR 0025's own "shown once, never re-displayed"
     requirement — the UI must not cache it client-side past that single
     render either, or the "shown once" property is theater.
-11. **The setup wizard's plain-language copy has a one-way mapping to
-    real roles/policy, documented, not improvised per-implementation.**
-    "Can use it" → `operator`+`viewer`; "can approve things" →
-    `approver`+`viewer`; "can see everything" → `viewer`; "runs the
-    whole thing" → `admin`. A future template or role that doesn't fit
-    this mapping needs the mapping extended deliberately, not a
-    developer guessing a label at implementation time.
+11. **Access-tab plain-language copy has a one-way mapping to real
+    roles/policy, documented, not improvised per-implementation.** "Can
+    use it" → `operator`+`viewer`; "can use it + approve" →
+    `approver`+`viewer`; "can see everything" → `viewer`; the deployment-
+    wide "runs the whole thing" (`admin`) is granted only from the
+    System section, never from a single template's Access tab, since
+    `admin` is fleet-wide by definition and no per-template grant should
+    imply it. A future template or role that doesn't fit this mapping
+    needs the mapping extended deliberately, not a developer guessing a
+    label at implementation time.
 
 ## Success metrics
 
@@ -485,14 +558,15 @@ helped, by an interface that performs busyness.
 5. One real PRD-002 template (the invoice extractor or transaction
    categorizer) run end-to-end through this interface with a real
    business-shaped test scenario, not a synthetic one.
-6. Role switch + Ops view — read-only run list across tenants plus the
-   chain-status banner, reusing `GET /runs` and `GET /runs/:id/evidence`.
-   No new backend work; this milestone is UI-only and can start as soon
-   as milestone 3 lands.
+6. Cross-tenant Runs visibility — the chain-status banner and
+   tenant-tagged runs for a principal whose role spans tenants (ADR
+   0013), reusing `GET /runs` and `GET /runs:id/evidence`. No new
+   backend work; this milestone is UI-only and can start as soon as
+   milestone 3 lands.
 7. ADR 0024 accepted and its three endpoints implemented — a hard
    prerequisite for milestone 8, tracked separately from this PRD's own
    work since it's kernel/control-plane surface, not UI.
-8. Admin view — fleet halt (reuses milestone 4's mechanism), then
+8. System pages — fleet halt (reuses milestone 4's mechanism), then
    collision resolution, definition acknowledgment, and retention
    pruning against ADR 0024's real endpoints once milestone 7 ships.
 9. ADR 0025 accepted and `PrincipalStore` implemented (in-memory + SQLite
@@ -501,6 +575,9 @@ helped, by an interface that performs busyness.
 10. Setup wizard — welcome, cost/care choice, and approval-defaults
     steps first (pure UI, no backend dependency); template selection and
     data connection wired to PRD-002/004's real config shape once those
-    exist; team-invite step wired to milestone 9's real endpoints. The
-    wizard's steps can and should ship independently as each dependency
-    clears — this is not a single all-or-nothing milestone.
+    exist. Per-template Settings and Access tabs (the latter wired to
+    milestone 9's real endpoints) ship alongside the wizard's completion
+    state, since a template needs somewhere to send the user once setup
+    finishes. The wizard's steps can and should ship independently as
+    each dependency clears — this is not a single all-or-nothing
+    milestone.
