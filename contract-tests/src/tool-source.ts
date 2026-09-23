@@ -6,6 +6,9 @@ export interface ToolLike {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: unknown;
+  /** ADR 0016/PRD-001 — provenance fields a remote source should carry. */
+  readonly trust?: string;
+  readonly definitionHash?: string;
   execute(input: unknown, ctx: unknown): Promise<unknown>;
 }
 export interface ToolSourceLike {
@@ -30,6 +33,22 @@ export function toolSourceContract(name: string, make: () => ToolSourceLike | Pr
     const tools = await src.discover();
     const names = tools.map((t) => t.name);
     assert.equal(new Set(names).size, names.length, `duplicate names: ${names.join(', ')}`);
+  });
+
+  // ADR 0016 / PRD-001 req 3: a tool that *says* its output is
+  // external-authored must also carry a definition pin — trust without
+  // provenance is a label, not a guarantee.
+  test(`${name}: trust 'external' implies definitionHash`, async () => {
+    const src = await make();
+    for (const t of await src.discover()) {
+      if (t.trust === 'external') {
+        assert.ok(
+          typeof t.definitionHash === 'string' && t.definitionHash.length > 0,
+          `tool '${t.name}' is marked trust:'external' but carries no definitionHash — ` +
+          'rug pulls on it would be undetectable',
+        );
+      }
+    }
   });
 
   // ADR 0020: a second source claiming a name this source already serves
