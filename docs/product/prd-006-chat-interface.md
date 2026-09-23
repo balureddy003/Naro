@@ -3,7 +3,7 @@
 Status: proposed
 Owner: unassigned
 Depends on: `@naro/client`, [ADR 0023](../adr/0023-console-renders-the-evidence-record-not-a-log.md), [ADR 0024](../adr/0024-admin-api-surface-for-registry-and-retention.md), [ADR 0025](../adr/0025-live-principal-store.md), [PRD-002](prd-002-outcome-templates.md)
-Depended on by: closes a gap PRD-002 already flagged (human-approval templates "still need a UI")
+Depended on by: closes a gap PRD-002 already flagged (human-approval templates "still need a UI"); [PRD-003](prd-003-managed-control-plane.md) FR4/milestone 3 (the business-facing UI it hosts multi-tenant, not a UI it separately designs); [PRD-004](prd-004-smb-integrations.md) milestone 4 (the approval UI its Gmail/Outlook send path is gated on)
 
 **Revision note (1).** The original version of this PRD scoped a chat
 interface for end users only, and its Non-goals explicitly excluded
