@@ -1,6 +1,6 @@
 # 0019 — Memory writes are provenance-tagged
 
-Status: proposed
+Status: accepted
 Date: 2026-09-23
 
 ## Context

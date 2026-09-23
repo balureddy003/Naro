@@ -1,6 +1,6 @@
 # 0022 — `naro serve` exposes an attributed cancel endpoint (the Article 14 stop button)
 
-Status: proposed
+Status: accepted
 Date: 2026-09-23
 
 ## Context
