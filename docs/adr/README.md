@@ -22,6 +22,16 @@ Read these when you want to know *why* the code is shaped the way it is. Read
 | [0010](0010-provenance-is-a-policy-input.md) | `Observation.trust` and `ctx.provenance` make evidence origin a policy input | accepted |
 | [0011](0011-policy-verdicts-carry-reasons.md) | `PolicyVerdict` adds a reason to every gate outcome | accepted |
 | [0012](0012-control-plane-identity.md) | Principals + roles on `naro serve`; approver and policy identity land in the journal | accepted |
+| [0013](0013-tenant-scoped-run-visibility.md) | Optional `tenantId` on principals scopes `/runs` visibility; approvals explicitly out of scope | accepted |
+| [0014](0014-cost-aware-escalation-is-a-reasoner.md) | Cost-aware model escalation is a `Reasoner`, not a new kernel primitive | accepted |
+| [0015](0015-mcp-server-calls-route-through-the-harness-gate.md) | `McpRegistryServer` routes inbound tool calls through the harness gate, not `tool.execute()` directly | proposed |
+| [0016](0016-tool-definitions-are-provenance-pinned.md) | Tool definitions from untrusted sources are provenance-pinned (MCP tool poisoning / rug-pull defense) | proposed |
+| [0017](0017-delegated-principal-is-a-policy-input.md) | Delegated principal identity (`PolicyContext.principal`) is a policy input, distinct from grants and provenance | proposed |
+| [0018](0018-attested-retention-pruning.md) | Retention pruning is an attested chain re-anchor (`journal.retention.pruned`), not silent deletion | proposed |
+| [0019](0019-memory-writes-are-provenance-tagged.md) | `MemoryEntry`/`MemoryInput` carry `trust`, extending provenance to persistent memory (OWASP ASI06 memory poisoning) | proposed |
+| [0020](0020-tool-source-collisions-are-not-silent.md) | Tool name collisions across sources are surfaced and require resolution, not silently overwritten (cross-server tool shadowing) | proposed |
+| [0021](0021-otel-span-mapping-for-the-genai-semantic-conventions.md) | `@naro/adapter-otel` gains span export using the OTel GenAI semantic conventions, alongside the existing log export | proposed |
+| [0022](0022-attributed-run-cancellation-endpoint.md) | `naro serve` gains an attributed `POST /runs/:id/cancel` (the Article 14 stop button), reusing the existing per-run `AbortController` | proposed |
 
 ## Template
 

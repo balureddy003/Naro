@@ -75,7 +75,8 @@ export class FileSecretProvider implements SecretProvider {
   }
 }
 
-/** Chains providers — first hit wins. 'vault:…' adapters slot in here. */
+/** Chains providers — first hit wins. `@naro/adapter-vault`'s
+ * `VaultSecretProvider` ('vault:…') and similar adapters slot in here. */
 export function chainSecrets(...providers: readonly SecretProvider[]): SecretProvider {
   return {
     async resolve(ref) {

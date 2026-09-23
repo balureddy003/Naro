@@ -60,8 +60,13 @@ may recall memories, but the store does not decide what deserves to be written.
 const hits = await ctx.memory?.search('previous deployment failures', 5);
 ```
 
-Database and vector-store implementations can provide the same contract. They
-are adapter opportunities, not built-in stores today.
+`FileMemoryStore` and `SqliteMemoryStore` also implement the optional
+`EmbeddingIndex` port — `searchByEmbedding(embedding, limit, tier?)` — so an
+entry written with an `embedding` (from any `Model.embed()`) can be recalled
+by semantic similarity, not just lexical match. Scoring is cosine similarity
+in application code; a dedicated vector database (Qdrant, pgvector) is a
+separate `MemoryStore` adapter behind the same contract once a store
+outgrows an in-process scan.
 
 ## Memory is not RAG with a new label
 

@@ -12,6 +12,7 @@
     "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {
-    "@naro/core": "0.1.0"
+    "@naro/core": "0.1.0",
+    "@naro/model": "0.1.0"
   }
 }

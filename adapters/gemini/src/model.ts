@@ -84,6 +84,30 @@ export class GeminiModel implements Model {
     };
   }
 
+  /**
+   * Requires 'embeddings'. Construct this model with an embedding model id
+   * (e.g. 'gemini-embedding-001', 'text-embedding-004') — Gemini has no
+   * single model that does both chat and embed.
+   */
+  async embed(texts: readonly string[]): Promise<readonly number[][]> {
+    const base = this.opts.baseUrl ?? 'https://generativelanguage.googleapis.com';
+    const key = this.opts.apiKey ? `?key=${this.opts.apiKey}` : '';
+    const res = await this.fetchImpl(`${base}/v1beta/models/${this.id}:batchEmbedContents${key}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        requests: texts.map((text) => ({
+          model: `models/${this.id}`,
+          content: { parts: [{ text }] },
+        })),
+      }),
+    });
+    if (!res.ok) throw new NaroError('provider-error', `${res.status} from Gemini: ${await res.text()}`);
+    const body = await res.json() as { embeddings?: { values?: number[] }[] };
+    if (!body.embeddings) throw new NaroError('provider-error', 'Gemini returned no embeddings');
+    return body.embeddings.map((e) => e.values ?? []);
+  }
+
   private body(request: ChatRequest): Record<string, unknown> {
     const { system, rest } = splitSystem(request.messages);
     return {

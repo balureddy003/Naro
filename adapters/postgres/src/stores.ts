@@ -104,7 +104,12 @@ async function migrate(q: PgQueryable): Promise<void> {
       error TEXT,
       host TEXT
     );
+    -- Tables created before ADR 0013 lack tenant_id — add it.
+    ALTER TABLE naro_runs ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+    ALTER TABLE naro_runs ADD COLUMN IF NOT EXISTS trace_id TEXT;
     CREATE INDEX IF NOT EXISTS naro_runs_started ON naro_runs(started_at DESC);
+    CREATE INDEX IF NOT EXISTS naro_runs_tenant ON naro_runs(tenant_id, started_at DESC);
+    CREATE INDEX IF NOT EXISTS naro_runs_trace ON naro_runs(trace_id);
 
     CREATE TABLE IF NOT EXISTS naro_approvals (
       id TEXT PRIMARY KEY,
@@ -451,6 +456,7 @@ interface RunRow {
   run_id: string; agent_id: string; status: string; goal: string;
   started_at: number | string; updated_at: number | string;
   result: unknown; error: string | null; host: string | null;
+  tenant_id: string | null; trace_id: string | null;
 }
 
 /** The shared run index: every replica's `naro serve` writes here, so
@@ -465,13 +471,13 @@ export class PgRunRegistry implements RunRegistry {
 
   async upsert(run: RunSummary): Promise<void> {
     await this.q.query(
-      `INSERT INTO naro_runs (run_id, agent_id, status, goal, started_at, updated_at, result, error, host)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      `INSERT INTO naro_runs (run_id, agent_id, status, goal, started_at, updated_at, result, error, host, tenant_id, trace_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        ON CONFLICT (run_id) DO UPDATE SET
-         status=$3, updated_at=$6, result=$7, error=$8, host=$9`,
+         status=$3, updated_at=$6, result=$7, error=$8, host=$9, tenant_id=$10, trace_id=$11`,
       [run.runId, run.agentId, run.status, run.goal, run.startedAt, run.updatedAt,
         run.result === undefined ? null : JSON.stringify(run.result),
-        run.error ?? null, run.host ?? null],
+        run.error ?? null, run.host ?? null, run.tenantId ?? null, run.traceId ?? null],
     );
   }
 
@@ -480,9 +486,16 @@ export class PgRunRegistry implements RunRegistry {
     return rows[0] ? toSummary(rows[0] as unknown as RunRow) : undefined;
   }
 
-  async list(opts: { limit?: number } = {}): Promise<readonly RunSummary[]> {
+  async list(opts: { limit?: number; tenantId?: string; traceId?: string } = {}): Promise<readonly RunSummary[]> {
+    const clauses: string[] = [];
+    const params: (string | number)[] = [];
+    if (opts.tenantId !== undefined) { params.push(opts.tenantId); clauses.push(`tenant_id=$${params.length}`); }
+    if (opts.traceId !== undefined) { params.push(opts.traceId); clauses.push(`trace_id=$${params.length}`); }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')} ` : '';
+    params.push(opts.limit ?? 10_000);
     const { rows } = await this.q.query(
-      'SELECT * FROM naro_runs ORDER BY started_at DESC LIMIT $1', [opts.limit ?? 10_000]);
+      `SELECT * FROM naro_runs ${where}ORDER BY started_at DESC LIMIT $${params.length}`, params,
+    );
     return rows.map((r) => toSummary(r as unknown as RunRow));
   }
 }
@@ -495,6 +508,8 @@ function toSummary(r: RunRow): RunSummary {
     ...(r.result != null && { result: r.result }),
     ...(r.error != null && { error: r.error }),
     ...(r.host != null && { host: r.host }),
+    ...(r.tenant_id != null && { tenantId: r.tenant_id }),
+    ...(r.trace_id != null && { traceId: r.trace_id }),
   };
 }
 
