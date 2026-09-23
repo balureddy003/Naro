@@ -1,6 +1,6 @@
 # 0016 — Tool definitions from untrusted sources are provenance-pinned
 
-Status: proposed
+Status: accepted
 Date: 2026-09-23
 
 ## Context

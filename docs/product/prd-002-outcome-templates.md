@@ -3,7 +3,7 @@
 Status: proposed
 Owner: unassigned
 Depends on: [PRD-001](prd-001-cost-aware-escalation.md)
-Depended on by: [PRD-003](prd-003-managed-control-plane.md), [PRD-004](prd-004-smb-integrations.md)
+Depended on by: [PRD-003](prd-003-managed-control-plane.md), [PRD-004](prd-004-smb-integrations.md), [PRD-006](prd-006-chat-interface.md)
 
 ## Summary
 
@@ -118,9 +118,11 @@ building anything that touches customer-facing text.
   labeled historical transactions before calling a template "shipped,"
   not just a schema check passing.
 - **Human-approval templates (email/review drafts) still need a UI** —
-  presumably the console (PRD-003) or an even lighter surface (email
-  digest with approve/edit/reject links). Not designed here; flagged as
-  a PRD-003 dependency.
+  now addressed by [PRD-006](prd-006-chat-interface.md) (proposed): a
+  self-deployable, chat-shaped interface built on `@naro/client`,
+  purpose-built for this exact scenario rather than repurposing the ops
+  console (PRD-003's territory, and a different persona per
+  [ADR 0023](../adr/0023-console-renders-the-evidence-record-not-a-log.md)).
 - **Should templates be free-standing packages** (`@naro/template-*`) or
   entries in one `@naro/templates` package? Leaning toward one package
   with independent internal versioning (requirement 4) until there's a
@@ -133,5 +135,5 @@ building anything that touches customer-facing text.
    prove the shape.
 2. Transaction categorizer, real data, real benchmark numbers.
 3. Invoice/receipt extractor, same bar.
-4. Human-approval templates (email/review draft), gated on a usable
-   approval UI existing (PRD-003 or a lighter interim surface).
+4. Human-approval templates (email/review draft), gated on PRD-006
+   (chat interface) shipping.

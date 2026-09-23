@@ -1,6 +1,6 @@
 # 0017 — Delegated principal identity is a policy input
 
-Status: proposed
+Status: accepted
 Date: 2026-09-23
 
 ## Context

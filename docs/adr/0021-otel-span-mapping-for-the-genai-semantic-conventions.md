@@ -1,6 +1,6 @@
 # 0021 — OTLP span mapping using the GenAI semantic conventions
 
-Status: proposed
+Status: accepted
 Date: 2026-09-23
 
 ## Context

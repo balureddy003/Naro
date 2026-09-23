@@ -1,6 +1,6 @@
 # 0018 — Retention pruning is an attested chain re-anchor, not deletion
 
-Status: proposed
+Status: accepted
 Date: 2026-09-23
 
 ## Context

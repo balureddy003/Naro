@@ -1,6 +1,6 @@
 # 0015 — Naro-as-MCP-server routes calls through the harness gate
 
-Status: proposed
+Status: accepted
 Date: 2026-09-23
 
 ## Context
