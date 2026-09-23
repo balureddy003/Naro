@@ -145,14 +145,27 @@ test('definition changes list + acknowledge via the admin routes', async () => {
   }
 });
 
-test('principal store: issue → auth works on next request → revoke', async () => {
+test('principal store: static map still bootstraps admin when the store starts empty', async () => {
+  // ADR 0025: principalStore is additive, not a replacement — a freshly
+  // created store has nothing in it, and POST /admin/principals itself
+  // needs an admin token, so the static map has to keep working or a
+  // deployment that adds --principals-store can never authenticate anyone.
   const store = new InMemoryPrincipalStore();
-  // The admin bootstraps itself via the static map; the store is live.
   const { url, close } = await startAgentServer(factory, { port: 0, principals: admins, principalStore: store });
   try {
-    // With a store configured, static tokens no longer authenticate —
-    // the store is the identity source (ADR 0025). Seed it first.
-    await store.upsert('adm', { id: 'boss', roles: new Set(['admin']) });
+    const me = await (await fetch(`${url}/me`, { headers: ADMIN })).json() as { id: string };
+    assert.equal(me.id, 'boss');
+  } finally {
+    await close();
+  }
+});
+
+test('principal store: issue → auth works on next request → revoke', async () => {
+  const store = new InMemoryPrincipalStore();
+  // The admin authenticates via the static map (the bootstrap path the
+  // previous test covers); the store is live for everyone invited after.
+  const { url, close } = await startAgentServer(factory, { port: 0, principals: admins, principalStore: store });
+  try {
     const created = await fetch(`${url}/admin/principals`, {
       method: 'POST', headers: ADMIN, body: JSON.stringify({ id: 'sam', roles: ['viewer', 'operator'], tenantId: 'riverside' }),
     });

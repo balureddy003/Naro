@@ -182,7 +182,11 @@ export interface ServeOptions {
   /** Ed25519 private key (PEM) used to attest admin prune markers. */
   readonly pruneSealKey?: string;
   /** ADR 0025: a live principal store — resolves bearer tokens per request
-   *  instead of the static `principals` map, and backs /admin/principals. */
+   *  and backs /admin/principals. Checked before the static `principals`
+   *  map, not instead of it: the static map stays live as a bootstrap/
+   *  break-glass path when both are configured, since POST
+   *  /admin/principals itself needs an admin token to call and a
+   *  freshly-created store starts with none. */
   readonly principalStore?: PrincipalStore;
   /** Serve the chat UI at GET /chat and its assets under /chat-ui/*.
    *  Default true — same static, auth-free-page posture as /console. */
@@ -306,14 +310,24 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
     // ADR 0025: a configured principalStore resolves per request (a write
     // is live on the next request); the static map is the gateway-fronted
     // path. Neither configured → the control plane is open (dev default).
+    //
+    // ADR 0025 is explicit that principalStore is "additive, alongside
+    // (not replacing) the existing static principals map" — a deployment
+    // that configures both keeps the static map as a break-glass/bootstrap
+    // path. That matters concretely: POST /admin/principals itself needs
+    // an admin bearer token, so a principalStore that starts empty (a
+    // fresh SQLite file, nothing seeded) has no way to ever authenticate
+    // anyone unless a static token still works as a fallback here. Check
+    // the store first (it's the live, revocable source of truth), then
+    // fall back to the static map rather than short-circuiting on
+    // whichever was configured.
     let principal: Principal | undefined;
     if (opts.principalStore !== undefined || principals !== undefined) {
       const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1];
       let p: { id: string; roles: Iterable<string>; tenantId?: string } | undefined;
       if (bearer !== undefined) {
-        p = opts.principalStore !== undefined
-          ? await opts.principalStore.get(bearer)
-          : principals?.[bearer];
+        p = opts.principalStore !== undefined ? await opts.principalStore.get(bearer) : undefined;
+        if (p === undefined) p = principals?.[bearer];
       }
       if (p === undefined) return json(401, { error: 'unauthorized' });
       principal = { id: p.id, roles: expandRoles(p.roles), ...(p.tenantId !== undefined && { tenantId: p.tenantId }) };

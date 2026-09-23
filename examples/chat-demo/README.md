@@ -33,6 +33,22 @@ pauses on the approval card — approve it and the verified result lands.
 
 ## Live identity (ADR 0025)
 
-Swap `--principals` for `--principals-store ./data/principals.db` and
-the Access tab's "Generate access" issues real tokens that work on the
-next request — no restart.
+Add `--principals-store ./data/principals.db` *alongside* `--principals`
+(don't drop `--principals` — see below) and the Access tab's "Generate
+access" issues real tokens that work on the next request, no restart:
+
+```bash
+npx naro serve examples/chat-demo/src/index.ts \
+  --port 8080 \
+  --principals principals.json \
+  --principals-store ./data/principals.db \
+  --approvals ./data/approvals.db
+```
+
+**Keep `--principals` even once the store is live.** `POST
+/admin/principals` itself needs an admin bearer token to call, so a
+`--principals-store` alone, with nothing seeded in it yet, has no path
+to ever authenticate anyone — not even the deployment's own owner.
+`my-token` from `principals.json` stays your bootstrap/break-glass admin
+account; everyone you invite afterward through the Access tab gets a
+real, store-backed, individually-revocable token instead.

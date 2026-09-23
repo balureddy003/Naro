@@ -129,6 +129,9 @@
     },
     {
       "path": "chat-ui"
+    },
+    {
+      "path": "templates"
     }
   ],
   "extends": "./tsconfig.base.json",

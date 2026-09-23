@@ -56,7 +56,10 @@ const HELP = `naro — universal agent foundation CLI
                                tenantId scopes GET /runs visibility (ADR 0013)
                              [--principals-store <file.db>] — live identity store
                                (ADR 0025): /admin/principals issues + revokes
-                               without restart; supersedes --principals
+                               without restart; checked before --principals,
+                               not instead of it — keep --principals as a
+                               bootstrap admin token, or a fresh store has
+                               no one able to authenticate at all
                              [--no-console] — disable GET /console (on by default)
                              [--no-chat] — disable GET /chat (on by default)
                              [--registry <file.db>] — durable run index (SQLite)
@@ -278,9 +281,10 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
       const registryPath = flag('--registry');
       const journalPath = flag('--journal');
       const approvalsPath = flag('--approvals');
-      // ADR 0025: --principals-store <file.db> swaps the static
-      // --principals map for a live SqlitePrincipalStore — writes via
-      // /admin/principals are live on the next request, no restart.
+      // ADR 0025: --principals-store <file.db> adds a live
+      // SqlitePrincipalStore alongside --principals (not instead of it —
+      // see serve.ts's auth check) — writes via /admin/principals are
+      // live on the next request, no restart.
       const principalsStorePath = flag('--principals-store');
       // A shared --pg/NARO_PG_URL backs all three stores; --registry-pg/
       // --journal-pg/--approvals-pg override it per-store; see
