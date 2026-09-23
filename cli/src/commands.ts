@@ -312,6 +312,21 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
         return 2;
       }
 
+      // A module's own createRunner() often constructs its own approvals
+      // bridge (it has no other way to reach the one RunnerFactory's
+      // signature doesn't pass through) — examples/chat-demo does exactly
+      // this, reading NARO_APPROVALS_DB. Left unset, that falls back to a
+      // hardcoded default path that silently diverges from whatever
+      // --approvals actually pointed at: the server answers GET /approvals
+      // from one SQLite file while the running agent's approval-wait reads
+      // from another, so a pending approval is real (visible in the run's
+      // own event journal) but never shows up anywhere a human can answer
+      // it. Setting the env var here from the same resolved, absolute path
+      // the server's own SqliteApprovalBridge uses makes --approvals the
+      // single source of truth instead of a footgun two independently-
+      // configured paths have to agree on by coincidence.
+      if (approvalsSource?.kind === 'sqlite') process.env['NARO_APPROVALS_DB'] = resolve(approvalsSource.path);
+
       const file = args.find((a) => !a.startsWith('-'));
       if (!file) { io.err('usage: naro serve <module.ts> [--port N] [--host h]'); return 2; }
       const mod = await import(pathToFileURL(resolve(file)).href) as { createRunner?: RunnerFactory; chatTemplates?: ServeOptions['chatTemplates'] };

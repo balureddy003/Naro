@@ -1,6 +1,15 @@
 import { h, clear } from './dom.ts';
 import type { ChatTemplate } from './app.ts';
 import { markActivated } from './app.ts';
+import { sdk } from './sdk.ts';
+
+/** True for a 501 from `@naro/client` — checked via the typed `.status`
+ *  field `NaroApiError` carries, never by string-matching `.message`
+ *  (which is the raw response body, e.g. `{"error":"no tool registry
+ *  configured"}` — it never contains the literal text "501"). */
+function isNotConfigured(e: unknown): boolean {
+  return e instanceof sdk.NaroApiError && e.status === 501;
+}
 
 /**
  * Everything that isn't the transcript: the System section (ADR 0024's
@@ -79,7 +88,7 @@ function renderCollisions(deps: PageDeps, col: HTMLElement): void {
     }
   }).catch((e: Error) => {
     clear(wrap);
-    wrap.append(h('div', { class: 'empty' }, e.message.includes('501') ? 'This deployment has no tool registry wired to serve — nothing to resolve.' : e.message));
+    wrap.append(h('div', { class: 'empty' }, isNotConfigured(e) ? 'This deployment has no tool registry wired to serve — nothing to resolve.' : e.message));
   });
 }
 
@@ -106,7 +115,7 @@ function renderDefinitions(deps: PageDeps, col: HTMLElement): void {
     }
   }).catch((e: Error) => {
     clear(wrap);
-    wrap.append(h('div', { class: 'empty' }, e.message.includes('501') ? 'This deployment has no tool registry wired to serve.' : e.message));
+    wrap.append(h('div', { class: 'empty' }, isNotConfigured(e) ? 'This deployment has no tool registry wired to serve.' : e.message));
   });
 }
 
@@ -128,7 +137,7 @@ function renderRetention(deps: PageDeps, col: HTMLElement): void {
     btn.setAttribute('disabled', '');
     void deps.client.pruneRun(runId.value.trim(), through, policy.value.trim())
       .then((r) => { note.textContent = `Pruned ${r.pruned} events — anchor ${r.anchorHash.slice(0, 16)}… is the chain's new start.`; })
-      .catch((e: Error) => { note.textContent = e.message.includes('501') ? "This deployment's event store doesn't support pruning (needs a durable store)." : e.message; })
+      .catch((e: Error) => { note.textContent = isNotConfigured(e) ? "This deployment's event store doesn't support pruning (needs a durable store)." : e.message; })
       .finally(() => btn.removeAttribute('disabled'));
   });
   card.append(
@@ -203,7 +212,7 @@ export function renderAccessTab(deps: PageDeps, col: HTMLElement, t: ChatTemplat
       }
     }).catch((e: Error) => {
       clear(listWrap);
-      listWrap.append(h('p', {}, e.message.includes('501')
+      listWrap.append(h('p', {}, isNotConfigured(e)
         ? 'This deployment uses a static token file — teammates are added by editing it, not here.'
         : e.message));
     });
