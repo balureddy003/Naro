@@ -1,5 +1,6 @@
 import { sdk } from './sdk.ts';
 import { h, clear } from './dom.ts';
+import { icon } from './icons.ts';
 import { disposeAll } from './lifecycle.ts';
 import { runStatusLabel } from './copy.ts';
 import { renderRun } from './chat.ts';
@@ -123,12 +124,12 @@ function renderSidebar(state: AppState, route: Route): void {
     }
     const group = h('div', { class: `tmpl-group${route.templateId === t.id ? ' open' : ''}` });
     const headRow = h('div', { class: 'tmpl-group-head' },
-      h('span', { class: 'tmpl-caret' }, '▸'),
+      h('span', { class: 'tmpl-caret' }, icon('caret')),
       h('span', { class: 'tmpl-icon' }, (t.icon ?? t.name.slice(0, 2)).toUpperCase()),
       h('span', { class: 'tmpl-name' }, t.name));
     headRow.addEventListener('click', () => { location.hash = `#/t/${t.id}/runs`; });
     if (isAdmin) {
-      const gear = h('button', { class: 'gear-btn', type: 'button', 'aria-label': `${t.name} settings` }, '⚙');
+      const gear = h('button', { class: 'gear-btn', type: 'button', 'aria-label': `${t.name} settings` }, icon('gear'));
       gear.addEventListener('click', (e) => { e.stopPropagation(); location.hash = `#/t/${t.id}/settings`; });
       headRow.append(gear);
     }
@@ -190,7 +191,7 @@ function ago_(ts: number): string {
 function renderTopbar(state: AppState, route: Route): void {
   const el = document.getElementById('topbar')!;
   clear(el);
-  const menu = h('button', { class: 'menu-btn', type: 'button', 'aria-label': 'Menu' }, '☰');
+  const menu = h('button', { class: 'menu-btn', type: 'button', 'aria-label': 'Menu' }, icon('menu'));
   menu.addEventListener('click', () => {
     document.getElementById('sidebar')!.classList.toggle('open');
     document.getElementById('backdrop')!.classList.toggle('show');
@@ -386,26 +387,62 @@ async function boot(): Promise<void> {
   });
 }
 
+/**
+ * There is deliberately no signup form here — Naro has no self-service
+ * registration (ADR 0012/0025): every person's access is issued by an
+ * admin, never created by the person themselves, the same posture as
+ * Grafana or Metabase's own self-hosted admin-invites-you model. What
+ * *was* wrong with this screen wasn't the architecture, it was that it
+ * read like a debug form instead of a real product's first screen — no
+ * mark, no explanation of why there's no "create account" link, one
+ * generic sentence. Fixed here without changing what's actually true:
+ * still token-based, still admin-issued, just presented like it means
+ * it, and honest about the two real cases (you're the admin bootstrapping
+ * this deployment for the first time, or someone gave you a token).
+ */
 function renderSignIn(templates: ChatTemplate[]): void {
   const content = document.getElementById('content')!;
   clear(content);
   const col = h('div', { class: 'column signin' });
-  const card = h('div', { class: 'page-card' },
-    h('h3', {}, 'Sign in'),
-    h('p', {}, `This Naro needs an access token — the same bearer token your deployment issued (${templates.length} template${templates.length === 1 ? '' : 's'} configured).`),
+
+  const mark = h('div', { class: 'signin-mark' }, icon('shield'));
+  const card = h('div', { class: 'page-card signin-card' },
+    mark,
+    h('h2', { class: 'signin-title' }, 'Naro'),
+    h('p', { class: 'signin-lede' },
+      templates.length > 0
+        ? `${templates.length} outcome template${templates.length === 1 ? '' : 's'} configured on this deployment. Every action they take is policy-checked and provable — sign in to see it.`
+        : 'Self-hosted, policy-checked, provable. Sign in to get started.'),
+    h('div', { class: 'signin-rule' }),
     h('label', { class: 'field-label', for: 'tok' }, 'Access token'));
-  const input = h('input', { class: 'text-input', id: 'tok', type: 'password', placeholder: 'naro_…' });
-  const btn = h('button', { class: 'btn-fill', type: 'button', style: 'margin-top:12px' }, 'Continue');
+  const input = h('input', { class: 'text-input mono', id: 'tok', type: 'password', placeholder: 'naro_…', autocomplete: 'off', spellcheck: 'false' });
+  const btn = h('button', { class: 'btn-fill', type: 'button' }, icon('arrow', 'btn-icon'), 'Continue');
+  btn.style.cssText = 'width:100%;margin-top:14px;display:flex;align-items:center;justify-content:center;gap:8px';
+  const err = h('p', { class: 'signin-err', style: 'display:none' });
   const save = () => {
-    if (input.value.trim() === '') return;
-    localStorage.setItem(TOKEN_KEY, input.value.trim());
+    const v = input.value.trim();
+    if (v === '') { err.textContent = 'Enter a token to continue.'; err.style.display = ''; input.focus(); return; }
+    localStorage.setItem(TOKEN_KEY, v);
     location.reload();
   };
   btn.addEventListener('click', save);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
-  card.append(input, btn);
-  col.append(card);
+  input.addEventListener('input', () => { err.style.display = 'none'; });
+  card.append(input, err, btn);
+
+  const help = h('div', { class: 'signin-help' },
+    h('p', {},
+      h('strong', {}, "Setting this up for the first time? "),
+      "You already have a token — it's the one you passed to naro serve with ",
+      h('code', {}, '--principals'),
+      ' or ', h('code', {}, '--token'), ' when you started it.'),
+    h('p', {},
+      h('strong', {}, 'Someone gave you access? '),
+      "Use the token they shared with you — it's issued to you personally and works the moment they generate it, no invite email, no password to set."));
+
+  col.append(card, help);
   content.append(col);
+  input.focus();
 }
 
 void boot();

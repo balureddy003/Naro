@@ -1,4 +1,5 @@
 import { h, clear, shortHash } from './dom.ts';
+import { icon } from './icons.ts';
 import { policyBadge, runStatusLabel } from './copy.ts';
 import { attachApprovalId, transcriptFromEvents, type ApprovalItem, type ChipItem, type Transcript } from './viewmodel.ts';
 import type { PageDeps } from './pages.ts';
@@ -113,7 +114,7 @@ function renderChip(chip: ChipItem): HTMLElement {
     h('span', { class: `dot ${chip.status === 'pending' ? 'pending' : badge.cls}` }),
     h('span', {}, chip.label),
     h('span', { style: 'font-size:11px;color:var(--ink-faint)' }, badge.text),
-    h('span', { class: 'chev' }, '▸'));
+    h('span', { class: 'chev' }, icon('caret')));
 
   let expanded: HTMLElement | undefined;
   el.addEventListener('click', () => {

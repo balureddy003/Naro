@@ -9,9 +9,14 @@
  * sidebar can't derive "which templates exist" from runs alone, and a
  * config literal in the page means no extra endpoint to expose it.
  *
- * Visual language follows docs/product/prd-006-mockup.html: three
- * semantic colors (accent=verified, warn=needs-review, danger=denied),
- * one shell, sidebar-of-objects, expandable template groups.
+ * Visual language follows docs/product/prd-006-mockup.html: IBM Plex
+ * Sans/Mono (the one external dependency this page has — everything else
+ * is inline, matching the console's zero-CDN posture except this single,
+ * deliberate typography choice), three semantic colors (accent=verified,
+ * warn=needs-review, danger=denied), one shell, sidebar-of-objects,
+ * expandable template groups, a restrained one-tier shadow system for
+ * elevation (cards/overlays only — flat surfaces stay flat, per the
+ * mockup's "not everything is a card" rule).
  */
 export const CHAT_UI_HTML = `<!doctype html>
 <html lang="en">
@@ -19,9 +24,14 @@ export const CHAT_UI_HTML = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Naro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
   :root {
     color-scheme: light dark;
+    --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
     --bg: #f2f4f0; --sidebar-bg: #ecefe7; --surface: #ffffff; --surface-alt: #f6f7f3;
     --ink: #1b231f; --ink-muted: #4e5a53; --ink-faint: #5f6b64;
     --border: #d7dbd0; --border-soft: #e4e7de;
@@ -29,6 +39,8 @@ export const CHAT_UI_HTML = `<!doctype html>
     --warn: #96590a; --warn-soft: #f6ecdd; --warn-soft-border: #e6d2b3;
     --danger: #96341f; --danger-soft: #f7e7e2; --danger-soft-border: #e8c5ba;
     --focus: #0f6e5c; --overlay: rgba(20,24,20,.35);
+    --shadow-sm: 0 1px 2px rgba(24,30,26,.05), 0 1px 1px rgba(24,30,26,.04);
+    --shadow-md: 0 8px 24px rgba(24,30,26,.10), 0 2px 6px rgba(24,30,26,.06);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -39,6 +51,8 @@ export const CHAT_UI_HTML = `<!doctype html>
       --warn: #e3ab56; --warn-soft: #332a17; --warn-soft-border: #4d3d20;
       --danger: #e2917c; --danger-soft: #35211c; --danger-soft-border: #4d3129;
       --focus: #4fd6b6; --overlay: rgba(0,0,0,.55);
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.24), 0 1px 1px rgba(0,0,0,.2);
+      --shadow-md: 0 8px 24px rgba(0,0,0,.4), 0 2px 6px rgba(0,0,0,.3);
     }
   }
   :root[data-theme="dark"] {
@@ -49,15 +63,24 @@ export const CHAT_UI_HTML = `<!doctype html>
     --warn: #e3ab56; --warn-soft: #332a17; --warn-soft-border: #4d3d20;
     --danger: #e2917c; --danger-soft: #35211c; --danger-soft-border: #4d3129;
     --focus: #4fd6b6; --overlay: rgba(0,0,0,.55);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.24), 0 1px 1px rgba(0,0,0,.2);
+    --shadow-md: 0 8px 24px rgba(0,0,0,.4), 0 2px 6px rgba(0,0,0,.3);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
   body {
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font: 15px/1.5 var(--font-sans);
     background: var(--bg); color: var(--ink);
   }
   button { font: inherit; color: inherit; }
   :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  /* ---------------- icons ---------------- */
+  .icon { width: 14px; height: 14px; flex: none; display: inline-block; vertical-align: -2.5px; }
+  .tmpl-caret, .chev { transition: transform .12s ease; }
+  .tmpl-caret .icon, .chev .icon { width: 10px; height: 10px; }
+  .gear-btn .icon { width: 14px; height: 14px; }
+  .menu-btn .icon { width: 18px; height: 18px; vertical-align: -4px; }
 
   .app { display: flex; height: 100vh; }
 
@@ -138,16 +161,17 @@ export const CHAT_UI_HTML = `<!doctype html>
   .topbar {
     display: flex; align-items: center; gap: 10px; padding: 10px 20px;
     border-bottom: 1px solid var(--border); background: var(--surface);
-    position: sticky; top: 0; z-index: 5;
+    position: sticky; top: 0; z-index: 5; box-shadow: var(--shadow-sm);
   }
-  .menu-btn { display: none; border: 0; background: none; font-size: 18px; cursor: pointer; padding: 2px 6px; }
-  .topbar-title { font-weight: 650; font-size: 15px; }
+  .menu-btn { display: none; border: 0; background: none; cursor: pointer; padding: 2px 6px; color: var(--ink-muted); }
+  .topbar-title { font-weight: 650; font-size: 15px; letter-spacing: -.005em; }
   .topbar-sub { font-size: 12px; color: var(--ink-faint); }
   .tabs { display: flex; gap: 4px; margin-left: auto; }
   .tab {
     border: 0; background: none; padding: 6px 12px; border-radius: 7px;
-    font-size: 13.5px; cursor: pointer; color: var(--ink-muted);
+    font-size: 13.5px; cursor: pointer; color: var(--ink-muted); transition: background .12s ease, color .12s ease;
   }
+  .tab:hover { background: var(--surface-alt); color: var(--ink); }
   .tab.active { background: var(--accent-soft); color: var(--accent); font-weight: 550; }
   .content { flex: 1; overflow-y: auto; }
   .column { max-width: 720px; margin: 0 auto; padding: 20px 16px 140px; }
@@ -251,7 +275,7 @@ export const CHAT_UI_HTML = `<!doctype html>
   /* pages (system, settings, access) */
   .page-card {
     border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
-    padding: 16px 18px; margin-bottom: 14px;
+    padding: 16px 18px; margin-bottom: 14px; box-shadow: var(--shadow-sm);
   }
   .page-card h3 { margin: 0 0 4px; font-size: 14.5px; }
   .page-card p { margin: 4px 0 10px; font-size: 13.5px; color: var(--ink-muted); }
@@ -259,13 +283,16 @@ export const CHAT_UI_HTML = `<!doctype html>
   .text-input, select {
     width: 100%; border: 1px solid var(--border); border-radius: 8px;
     padding: 8px 10px; font: inherit; background: var(--surface); color: var(--ink);
+    transition: border-color .12s ease;
   }
+  .text-input:focus, select:focus { border-color: var(--accent); }
+  .text-input.mono { font-family: var(--font-mono); letter-spacing: .01em; }
   .token-once {
-    font-family: ui-monospace, monospace; font-size: 13px; word-break: break-all;
+    font-family: var(--font-mono); font-size: 13px; word-break: break-all;
     background: var(--surface-alt); border: 1px solid var(--border); border-radius: 8px;
     padding: 10px 12px; margin: 8px 0;
   }
-  .diff-old, .diff-new { font-family: ui-monospace, monospace; font-size: 12px; border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
+  .diff-old, .diff-new { font-family: var(--font-mono); font-size: 12px; border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
   .diff-old { background: var(--danger-soft); }
   .diff-new { background: var(--warn-soft); }
   .empty { color: var(--ink-faint); font-size: 13.5px; padding: 24px 0; text-align: center; }
@@ -278,7 +305,7 @@ export const CHAT_UI_HTML = `<!doctype html>
   .wizard {
     width: 560px; max-width: 100%; max-height: 88vh; overflow-y: auto;
     background: var(--surface); border-radius: 16px; padding: 26px 28px;
-    box-shadow: 0 20px 60px rgba(0,0,0,.25);
+    box-shadow: var(--shadow-md), 0 20px 60px rgba(0,0,0,.18);
   }
   .wizard h2 { margin: 0 0 6px; }
   .wizard .step-sub { color: var(--ink-muted); font-size: 13.5px; margin-bottom: 18px; }
@@ -298,9 +325,35 @@ export const CHAT_UI_HTML = `<!doctype html>
   .csv-preview table { border-collapse: collapse; font-size: 12.5px; width: 100%; }
   .csv-preview th, .csv-preview td { border-bottom: 1px solid var(--border-soft); padding: 5px 9px; text-align: left; white-space: nowrap; }
 
-  /* sign-in */
-  .signin { max-width: 380px; margin: 15vh auto; }
-  .signin .page-card { padding: 22px; }
+  /* sign-in — the deployment's actual front door: no self-registration
+     by design (ADR 0012/0025, admin-issued tokens), but presented like
+     a real product's first screen, not a debug form. */
+  .signin { max-width: 400px; margin: 12vh auto 0; padding-bottom: 40px; }
+  .signin-card { padding: 30px 28px 26px; text-align: center; }
+  .signin-mark {
+    width: 44px; height: 44px; margin: 0 auto 16px; border-radius: 12px;
+    background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-soft-border);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .signin-mark .icon { width: 22px; height: 22px; }
+  .signin-title { margin: 0 0 8px; font-size: 19px; font-weight: 650; letter-spacing: -.01em; }
+  .signin-lede { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-muted); }
+  .signin-rule { height: 1px; background: var(--border-soft); margin: 20px 0 16px; }
+  .signin-card .field-label { text-align: left; }
+  .signin-card .text-input { text-align: left; }
+  .signin-err { color: var(--danger); font-size: 12.5px; margin: 6px 0 0; text-align: left; }
+  .signin-card .btn-icon { width: 12px; height: 12px; }
+  .signin-help {
+    margin-top: 16px; padding: 14px 16px; border: 1px solid var(--border-soft);
+    border-radius: 12px; background: var(--surface-alt);
+  }
+  .signin-help p { margin: 0 0 10px; font-size: 12.5px; line-height: 1.6; color: var(--ink-muted); }
+  .signin-help p:last-child { margin-bottom: 0; }
+  .signin-help strong { color: var(--ink); font-weight: 600; }
+  .signin-help code {
+    font-family: var(--font-mono); font-size: 11.5px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
+  }
 
   @media (max-width: 780px) {
     .sidebar { position: fixed; z-index: 15; height: 100%; transform: translateX(-100%); transition: transform .2s; }
