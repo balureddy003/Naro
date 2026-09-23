@@ -512,3 +512,23 @@ test('run({runId, traceId}) — an explicit traceId still wins', async () => {
   const res = await runner.run({ runId: 'run_child_1', traceId: 'trace_parent_1' });
   assert.ok(res.events.every((e) => e.traceId === 'trace_parent_1'));
 });
+
+test('ADR 0017: deps.principal reaches every policy evaluation', async () => {
+  const seen: (string | undefined)[] = [];
+  const spy: PolicyEngine = {
+    evaluate: (_a, ctx) => { seen.push(ctx.principal?.id); return 'allow'; },
+  };
+  const reasoner = new DirectReasoner((ctx) =>
+    ctx.observations.length === 0
+      ? { kind: 'act', action: { capability: 'env.write', target: 'env://local/k', input: 'v' } }
+      : { kind: 'complete', result: 'done' });
+  const runner = new AgentRunner({
+    ...makeDeps(),
+    reasoner,
+    policy: spy,
+    principal: { id: 'ops@corp', roles: ['operator'], tenantId: 'acme' },
+  });
+  await runner.run();
+  assert.ok(seen.length > 0, 'policy was never evaluated');
+  assert.ok(seen.every((id) => id === 'ops@corp'));
+});

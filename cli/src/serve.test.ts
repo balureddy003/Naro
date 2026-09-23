@@ -619,3 +619,111 @@ test('drain cancels in-flight runs — their journals end cancelled', async () =
   for (let i = 0; i < 100 && !cancelled; i++) await new Promise((r) => setTimeout(r, 20));
   assert.ok(cancelled, 'in-flight run should journal agent.cancelled during drain');
 });
+
+// ── ADR 0022: attributed run cancellation ─────────────────────────────
+
+/** A run that hangs inside an abortable action until cancelled. */
+const hangingFactory = (goal: Goal) => new AgentRunner({
+  spec: createAgentSpec({ name: 'svc', goal }),
+  reasoner: new DirectReasoner((ctx) =>
+    ctx.observations.some((o) => o.kind === 'env-change')
+      ? { kind: 'complete', result: 'done' }
+      : { kind: 'act', action: { capability: 'env.wait', target: 'env://local/wait', input: {} } }),
+  executor: {
+    execute: (a, ctx) => new Promise((_, rej) => {
+      ctx.signal?.addEventListener('abort', () => rej(new Error('aborted')), { once: true });
+    }),
+  },
+  policy: allowAllPolicy,
+});
+
+async function waitStatus(url: string, id: string, auth: string, want: string): Promise<void> {
+  for (let i = 0; i < 80; i++) {
+    const r = await (await fetch(`${url}/runs/${id}`, { headers: { authorization: auth } })).json() as { status: string };
+    if (r.status === want) return;
+    await new Promise((res) => setTimeout(res, 25));
+  }
+  throw new Error(`run ${id} never reached ${want}`);
+}
+
+test('POST /runs/:id/cancel stops one run, with reason + attribution in the journal', async () => {
+  const { url, close } = await startAgentServer(hangingFactory, {
+    port: 0,
+    principals: { tok: { id: 'ops-oncall', roles: ['operator'] } },
+  });
+  const auth = 'Bearer tok';
+  try {
+    const created = await fetch(`${url}/goals`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: auth },
+      body: JSON.stringify({ description: 'hang forever' }),
+    });
+    const { runId } = await created.json() as { runId: string };
+
+    // reason is required — a cancellation must say why.
+    const noReason = await fetch(`${url}/runs/${runId}/cancel`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: auth },
+      body: '{}',
+    });
+    assert.equal(noReason.status, 400);
+
+    const res = await fetch(`${url}/runs/${runId}/cancel`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: auth },
+      body: JSON.stringify({ reason: 'runaway loop' }),
+    });
+    assert.equal(res.status, 202);
+    await waitStatus(url, runId, auth, 'cancelled');
+
+    // Attribution is in the journal, not just an access log.
+    const ev = await fetch(`${url}/runs/${runId}/events`, { headers: { authorization: auth } });
+    const text = await ev.text();
+    const cancelled = text.split('\n\n').filter(Boolean)
+      .map((f) => JSON.parse(f.replace(/^data: /, '')) as NaroEvent)
+      .find((e) => e.type === 'agent.cancelled');
+    assert.ok(cancelled, 'journal must contain agent.cancelled');
+    assert.equal((cancelled!.data as { reason?: string }).reason, 'runaway loop');
+    assert.equal((cancelled!.data as { by?: string }).by, 'ops-oncall');
+
+    // A second cancel of the terminal run is a 404, not a no-op 202.
+    const again = await fetch(`${url}/runs/${runId}/cancel`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: auth },
+      body: JSON.stringify({ reason: 'again' }),
+    });
+    assert.equal(again.status, 404);
+  } finally {
+    await close();
+  }
+});
+
+test('cancel respects roles: operator can stop one run, cancel-all needs admin', async () => {
+  const { url, close } = await startAgentServer(hangingFactory, {
+    port: 0,
+    principals: {
+      op: { id: 'op', roles: ['operator'] },
+      admin: { id: 'root', roles: ['admin'] },
+    },
+  });
+  try {
+    const { runId } = await (await fetch(`${url}/goals`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer op' },
+      body: JSON.stringify({ description: 'hang' }),
+    })).json() as { runId: string };
+
+    // operator is not admin — fleet halt refused.
+    const denied = await fetch(`${url}/runs/cancel-all`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer op' },
+      body: JSON.stringify({ reason: 'halt' }),
+    });
+    assert.equal(denied.status, 403);
+
+    // admin halts the run.
+    const halted = await fetch(`${url}/runs/cancel-all`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer admin' },
+      body: JSON.stringify({ reason: 'fleet halt' }),
+    });
+    assert.equal(halted.status, 202);
+    assert.equal((await halted.json() as { cancelled: number }).cancelled, 1);
+    await waitStatus(url, runId, 'Bearer admin', 'cancelled');
+  } finally {
+    await close();
+  }
+});

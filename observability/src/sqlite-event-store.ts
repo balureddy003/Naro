@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { NaroEvent } from '@naro/core';
 import type { EventExporter } from './exporter.ts';
+import { buildPruneMarker, planPrune, type PrunableEventStore, type PruneOptions, type PruneResult } from './prune.ts';
 
 interface Row {
   id: string; seq: number; run_id: string; agent_id: string;
@@ -18,7 +19,7 @@ interface Row {
  * feeding a new run's forensics. Same guarantee as JsonlExporter plus
  * indexed queries — file-per-agent JSONL stays the lightweight option.
  */
-export class SqliteEventStore implements EventExporter {
+export class SqliteEventStore implements EventExporter, PrunableEventStore {
   private readonly db: DatabaseSync;
   private writeError: unknown;
   private pending: Promise<void> = Promise.resolve();
@@ -89,6 +90,33 @@ export class SqliteEventStore implements EventExporter {
       ...(r.prev !== null && { prev: r.prev }),
       ...(r.hash !== null && { hash: r.hash }),
     }) as NaroEvent);
+  }
+
+  /**
+   * Attested retention prune (ADR 0018): writes the disclosure marker as
+   * the journal's new first row, then deletes the covered rows — one
+   * transaction, so a crash can never leave rows deleted without their
+   * marker. Refuses non-terminal runs and cutoffs that erase the terminal
+   * event.
+   */
+  async prune(runId: string, throughSeq: number, opts: PruneOptions = {}): Promise<PruneResult> {
+    const { anchorHash, run } = planPrune(this.history({ runId }), throughSeq);
+    const marker = buildPruneMarker(run, throughSeq, anchorHash, opts);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db.prepare(
+        'INSERT INTO events (id, seq, run_id, agent_id, goal_id, type, at, data, prev, hash) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      ).run(marker.id, marker.seq, marker.runId, marker.agentId, marker.goalId, marker.type,
+        marker.at, JSON.stringify(marker.data), marker.prev ?? null, marker.hash ?? null);
+      // The marker itself sits at seq = throughSeq — exclude it explicitly.
+      const r = this.db.prepare('DELETE FROM events WHERE run_id = ? AND seq <= ? AND id != ?')
+        .run(runId, throughSeq, marker.id);
+      this.db.exec('COMMIT');
+      return { pruned: Number(r.changes), anchorHash };
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
   }
 
   /** Distinct runs seen — for "list runs" tooling. */

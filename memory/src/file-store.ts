@@ -85,14 +85,14 @@ export class FileMemoryStore implements MemoryStore, EmbeddingIndex {
       .filter((e): e is MemoryEntry & { embedding: readonly number[] } =>
         e.embedding !== undefined && (tier === undefined || e.tier === tier));
     return entries
-      .map((e) => ({ id: e.id, key: e.key, content: e.content, score: cosineSimilarity(embedding, e.embedding) }))
+      .map((e) => ({ id: e.id, key: e.key, content: e.content, score: cosineSimilarity(embedding, e.embedding), ...(e.trust !== undefined && { trust: e.trust }) }))
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
   }
 
   private rank(entries: MemoryEntry[], query: string, limit: number): MemoryHit[] {
     return entries
-      .map((e) => ({ id: e.id, key: e.key, content: e.content, score: textScore(query, e) }))
+      .map((e) => ({ id: e.id, key: e.key, content: e.content, score: textScore(query, e), ...(e.trust !== undefined && { trust: e.trust }) }))
       .filter((h) => h.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);

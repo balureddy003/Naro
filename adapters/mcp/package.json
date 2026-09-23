@@ -16,9 +16,10 @@
     "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.0",
+    "@naro/adapter-harness": "0.1.0",
     "@naro/core": "0.1.0",
-    "@naro/tools": "0.1.0",
-    "@modelcontextprotocol/sdk": "^1.18.0"
+    "@naro/tools": "0.1.0"
   },
   "devDependencies": {
     "@naro/contract-tests": "0.1.0"

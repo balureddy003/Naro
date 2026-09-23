@@ -1,3 +1,5 @@
+import type { TrustLevel } from './observation.ts';
+
 /**
  * Memory, viewed from the reasoning loop.
  *
@@ -11,6 +13,13 @@ export interface MemoryHit {
   readonly key: string;
   readonly content: unknown;
   readonly score?: number;
+  /**
+   * Provenance the writer stamped on the entry (ADR 0019) — lets prompt
+   * assembly grade recalled memory the same way live observations are
+   * graded (`UNTRUSTED` framing for 'external'). Absent means unknown
+   * trust, not system-trusted.
+   */
+  readonly trust?: TrustLevel;
 }
 
 /** Minimal read interface; @naro/memory's MemoryStore extends it. */

@@ -38,6 +38,10 @@ function resolveClientDist(): string {
  *                              run's journal so far: policy verdict →
  *                              action → observation → verifier, correlated
  *                              server-side instead of by the client
+ *   POST /runs/:id/cancel    {reason} → 202 — the Article 14 stop button:
+ *                              aborts that run's AbortController; reason +
+ *                              calling principal land on agent.cancelled
+ *   POST /runs/cancel-all    {reason} → 202 — fleet-wide halt (admin role)
  *   GET  /approvals          → pending human-in-the-loop requests
  *   POST /approvals/:id      {approved?|text?|note?} → {ok}
  *   GET  /health             → {ok: true}        (liveness — process up)
@@ -67,7 +71,15 @@ function resolveClientDist(): string {
  * replica doesn't own. `approvals` exposes a shared HumanBridge's queue.
  */
 
-export type RunnerFactory = (goal: ReturnType<typeof createGoal>) => AgentRunner;
+/**
+ * The module's runner constructor. `info.principal` is the authenticated
+ * caller (ADR 0017) — modules that want per-action "on behalf of" policy
+ * decisions pass it to `AgentDeps.principal`.
+ */
+export type RunnerFactory = (
+  goal: ReturnType<typeof createGoal>,
+  info?: { principal?: Principal },
+) => AgentRunner;
 
 /** A control-plane identity: an id, the roles it holds, and — see ADR
  *  0013 — the tenant its `/runs` visibility is scoped to, if any. */
@@ -82,19 +94,25 @@ export interface Principal {
  * `operator` submits goals, `approver` answers approvals. operator and
  * approver each imply viewer.
  */
-type Role = 'viewer' | 'operator' | 'approver';
+type Role = 'viewer' | 'operator' | 'approver' | 'admin';
 
 function requiredRole(method: string, path: string): Role | undefined {
   if (method === 'POST' && path === '/goals') return 'operator';
+  // ADR 0022: single-run cancel is an operator action; fleet-wide halt is
+  // admin — a strictly larger blast radius than any single-run route.
+  if (method === 'POST' && path === '/runs/cancel-all') return 'admin';
+  if (method === 'POST' && /^\/runs\/[^/]+\/cancel$/.test(path)) return 'operator';
   if (method === 'POST' && /^\/approvals\/[^/]+$/.test(path)) return 'approver';
   if (method === 'GET' && (path === '/runs' || path === '/approvals' || /^\/runs\/[^/]+(\/events|\/evidence)?$/.test(path))) return 'viewer';
   return undefined;
 }
 
-/** operator/approver imply viewer — expand so checks are a single has(). */
+/** operator/approver imply viewer; admin implies all —
+ *  expand so checks are a single has(). */
 function expandRoles(roles: readonly string[]): ReadonlySet<string> {
   const s = new Set(roles);
   if (s.has('operator') || s.has('approver')) s.add('viewer');
+  if (s.has('admin')) { s.add('operator'); s.add('approver'); s.add('viewer'); }
   return s;
 }
 
@@ -132,8 +150,10 @@ interface RunRecord {
   status: 'running' | 'completed' | 'failed' | 'cancelled' | 'paused';
   result?: unknown;
   error?: string;
-  /** Cancellation channel — close() aborts in-flight runs. */
+  /** Cancellation channel — close() and POST /runs/:id/cancel abort it. */
   signal: AbortController;
+  /** Owning tenant (ADR 0013) — cancel routes stay inside the caller's scope. */
+  tenantId?: string;
 }
 
 export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}): Promise<{ url: string; close: () => Promise<void> }> {
@@ -327,6 +347,51 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       return done ? json(200, { ok: true }) : json(404, { error: 'no pending request' });
     }
 
+    // ADR 0022 — the Article 14 stop button: cancel one run without
+    // restarting the server (which drain-cancels every run). The same
+    // AbortController drain uses; `reason` is required and `by` is stamped
+    // from the calling principal — both land on agent.cancelled.
+    const cancelMatch = /^\/runs\/([^/]+)\/cancel$/.exec(url.pathname);
+    if (req.method === 'POST' && cancelMatch) {
+      let body: { reason?: string };
+      try { body = JSON.parse(await readBody(req, maxBody)); }
+      catch (e) {
+        return json(e instanceof Error && e.message === 'too-large' ? 413 : 400,
+          { error: e instanceof Error && e.message === 'too-large' ? 'body too large' : 'invalid JSON' });
+      }
+      if (typeof body.reason !== 'string' || body.reason.length === 0) {
+        return json(400, { error: 'reason is required — a cancellation must say why' });
+      }
+      const rec = runs.get(cancelMatch[1]!);
+      // 404, not 403, for a foreign tenant's run — a cross-tenant probe
+      // learns nothing about whether the run exists (same rule as GET).
+      if (!rec || rec.status !== 'running'
+        || (principal?.tenantId !== undefined && rec.tenantId !== principal.tenantId)) {
+        return json(404, { error: 'unknown run' });
+      }
+      rec.signal.abort({ reason: body.reason, ...(principal !== undefined && { by: principal.id }) });
+      return json(202, { ok: true, runId: rec.id, status: 'cancelling' });
+    }
+
+    if (req.method === 'POST' && url.pathname === '/runs/cancel-all') {
+      let body: { reason?: string };
+      try { body = JSON.parse(await readBody(req, maxBody)); }
+      catch (e) {
+        return json(e instanceof Error && e.message === 'too-large' ? 413 : 400,
+          { error: e instanceof Error && e.message === 'too-large' ? 'body too large' : 'invalid JSON' });
+      }
+      if (typeof body.reason !== 'string' || body.reason.length === 0) {
+        return json(400, { error: 'reason is required — a fleet halt must say why' });
+      }
+      // A tenant-scoped admin halts only their tenant's runs.
+      const targets = [...runs.values()].filter((r) => r.status === 'running'
+        && (principal?.tenantId === undefined || r.tenantId === principal.tenantId));
+      for (const r of targets) {
+        r.signal.abort({ reason: body.reason, ...(principal !== undefined && { by: principal.id }) });
+      }
+      return json(202, { ok: true, cancelled: targets.length });
+    }
+
     if (req.method === 'POST' && url.pathname === '/goals') {
       if (draining) return json(503, { error: 'draining — not accepting new runs' });
       let body: { description?: string; successCriteria?: string[]; idempotencyKey?: string };
@@ -350,7 +415,11 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       }
 
       const goal = createGoal({ description: body.description, successCriteria: body.successCriteria ?? [] });
-      const rec: RunRecord = { id, runner: factory(goal), status: 'running', signal: new AbortController() };
+      const rec: RunRecord = {
+        id, runner: factory(goal, { ...(principal !== undefined && { principal }) }),
+        status: 'running', signal: new AbortController(),
+        ...(principal?.tenantId !== undefined && { tenantId: principal.tenantId }),
+      };
       runs.set(rec.id, rec);
       const startedAt = Date.now();
       let agentId = '';

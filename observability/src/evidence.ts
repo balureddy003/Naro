@@ -203,6 +203,16 @@ export function formatEvidence(record: EvidenceRecord): string {
       ? `seal: VALID (ed25519, key ${chain.sealed.publicKey?.split('\n')[1]?.slice(0, 24) ?? '?'}…)`
       : `seal: INVALID — ${chain.sealed.reason ?? 'unknown'}`);
   }
+  // ADR 0018: a pruned journal verifies — but as a *disclosed* prune,
+  // never reported as a complete journal.
+  if (chain.pruned) {
+    const p = chain.pruned;
+    lines.push(
+      `pruned: DISCLOSED — through seq ${p.throughSeq}, ${new Date(p.at).toISOString()}` +
+      `${p.policy !== undefined ? `, policy: ${p.policy}` : ''}` +
+      (p.attested === undefined ? '' : p.attested.ok ? ' (attested ed25519)' : ` (attestation INVALID: ${p.attested.reason ?? '?'})`),
+    );
+  }
   for (const a of record.actions) {
     const gate = (a.policy === 'denied' ? `denied (${a.deniedReason})` : a.policy)
       + (a.policyEngine !== undefined ? ` [engine: ${a.policyEngine}]` : '')

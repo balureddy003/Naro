@@ -40,7 +40,7 @@ export class InMemoryMemoryStore implements MemoryStore {
 
   private rank(entries: MemoryEntry[], query: string, limit: number): MemoryHit[] {
     return entries
-      .map((e) => ({ id: e.id, key: e.key, content: e.content, score: textScore(query, e) }))
+      .map((e) => ({ id: e.id, key: e.key, content: e.content, score: textScore(query, e), ...(e.trust !== undefined && { trust: e.trust }) }))
       .filter((h) => h.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);

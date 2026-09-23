@@ -1,7 +1,27 @@
+import { createHash } from 'node:crypto';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import type { JsonSchema, Tool, ToolSource } from '@naro/tools';
 import type { SideEffect } from '@naro/tools';
+
+/** Order-independent JSON for hashing — object keys sorted recursively. */
+function stableStringify(v: unknown): string {
+  return JSON.stringify(v, (_k, val) =>
+    val !== null && typeof val === 'object' && !Array.isArray(val)
+      ? Object.fromEntries(Object.entries(val).sort(([a], [b]) => a.localeCompare(b)))
+      : val);
+}
+
+/**
+ * ADR 0016: pin the definition a remote server advertised. A changed hash
+ * on a later refresh() is a possible rug pull — the registry forces
+ * re-approval rather than silently swapping the contract.
+ */
+function hashDefinition(t: McpTool): string {
+  return createHash('sha256').update(stableStringify({
+    name: t.name, description: t.description ?? '', inputSchema: t.inputSchema ?? {},
+  })).digest('hex');
+}
 
 export interface McpSourceOptions {
   /**
@@ -51,6 +71,7 @@ export class McpToolSource implements ToolSource {
       sideEffects,
       // A remote server's output is authored outside this system.
       trust: 'external',
+      definitionHash: hashDefinition(t),
       metadata: { origin: 'mcp' },
       execute: async (input) => {
         const res = await client.callTool({

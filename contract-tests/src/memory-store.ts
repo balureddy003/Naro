@@ -7,11 +7,13 @@ export interface MemoryEntryLike {
   readonly key: string;
   readonly content: unknown;
   readonly tier: string;
+  /** ADR 0019 — provenance, when the writer set it. */
+  readonly trust?: string;
 }
 export interface MemoryStoreLike {
-  write(input: { key: string; content: unknown; tier?: string }): Promise<MemoryEntryLike>;
+  write(input: { key: string; content: unknown; tier?: string; trust?: string }): Promise<MemoryEntryLike>;
   read(key: string): Promise<MemoryEntryLike | undefined>;
-  search(query: string, limit?: number): Promise<readonly { key: string }[]>;
+  search(query: string, limit?: number): Promise<readonly { key: string; trust?: string }[]>;
   searchTier(tier: string, query: string, limit?: number): Promise<readonly { key: string }[]>;
   forget(key: string): Promise<boolean>;
 }
@@ -47,6 +49,16 @@ export function memoryStoreContract(name: string, make: () => MemoryStoreLike | 
     await s.write({ key: 's', content: 'shared term', tier: 'semantic' });
     const hits = await s.searchTier('semantic', 'term');
     assert.ok(hits.every((h) => h.key === 's'));
+  });
+
+  // ADR 0019: trust must round-trip — an externally-sourced memory must
+  // still carry its marker when it's recalled in a later run.
+  test(`${name}: trust round-trips from write to read to search`, async () => {
+    const s = await make();
+    await s.write({ key: 'tainted', content: 'a fetched fact', tier: 'semantic', trust: 'external' });
+    assert.equal((await s.read('tainted'))?.trust, 'external');
+    const hits = await s.search('fetched');
+    assert.equal(hits.find((h) => h.key === 'tainted')?.trust, 'external');
   });
 
   test(`${name}: forget removes the entry`, async () => {

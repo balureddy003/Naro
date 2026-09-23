@@ -10,6 +10,7 @@ closed `Decision` protocol. Strategies never execute capabilities directly.
 | `ReActReasoner` | ReAct | model tool calls become actions; text becomes a completion claim |
 | `PlanExecuteReasoner` | plan/execute | emits structured tasks, then dispatches task-bound actions |
 | `ReflectionReasoner` | ReAct + critique | adds evidence-backed lessons after failures |
+| `EscalatingReasoner` | tiered composition (ADR 0014) | runs the cheapest child reasoner; escalates to the next tier after N failed verifications — cost-aware escalation as a reasoner, not a kernel primitive |
 | `TreeSearchReasoner` | bounded search | expands and scores simulated decisions before choosing one |
 | `DirectReasoner` in runtime | scripted | deterministic function without a model |
 

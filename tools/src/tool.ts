@@ -34,6 +34,14 @@ export interface Tool {
    *  anything that returns content authored outside the system — web
    *  pages, emails, files from untrusted repos. */
   readonly trust?: TrustLevel;
+  /**
+   * Integrity pin over `{name, description, inputSchema}` — computed by
+   * remote ToolSources (ADR 0016). The registry compares it across
+   * refreshes: a changed hash is a possible rug pull and the tool is
+   * forced to `sideEffects: 'destructive'` until an operator acknowledges.
+   * Local, hand-authored tools don't need one.
+   */
+  readonly definitionHash?: string;
   readonly metadata?: Readonly<Record<string, unknown>>;
   execute(input: unknown, ctx: ExecContext): Promise<unknown>;
 }

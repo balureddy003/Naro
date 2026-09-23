@@ -53,6 +53,23 @@ files). `ToolExecutor` stamps it on the observation; wrappers over
 environments must declare it themselves — the environment's own tag does
 not flow through.
 
+### Source provenance — collisions and rug pulls (ADRs 0016, 0020)
+
+`ToolRegistry` tracks *which* `ToolSource` served each tool:
+
+- **Definition pinning (0016):** remote sources stamp `definitionHash` over
+  `{name, description, inputSchema}` (`McpToolSource` does this). On refresh,
+  a changed hash emits `tool.definition.changed` and the tool's side effects
+  are forced to `destructive` — it stays re-approval-gated until
+  `registry.acknowledgeDefinition(name)`.
+- **Collisions (0020):** two sources claiming the same name emit
+  `tool.collision.detected`; the first-registered source keeps serving and
+  the claim is held shadowed (see `registry.collisions()`). An operator
+  promotes it explicitly with `registry.resolve(name, sourceId)`. Local
+  hand-registered tools can't be silently shadowed by a source either.
+- Registry events surface via `registry.events` and the `onEvent` callback —
+  journal them if you want the audit record.
+
 ## Writing a tool
 
 ```ts

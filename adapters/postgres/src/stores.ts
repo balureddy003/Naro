@@ -3,6 +3,7 @@ import type { ApprovalRequest, Checkpoint, CheckpointStore, HumanBridge, RunRegi
 import type { LeaseStore } from '@naro/runtime';
 import type { LimitStore } from '@naro/policy';
 import type { EventExporter } from '@naro/observability';
+import { buildPruneMarker, planPrune, type PrunableEventStore, type PruneOptions, type PruneResult } from '@naro/observability';
 import type { MemoryEntry, MemoryInput, MemoryStore, MemoryTier } from '@naro/memory';
 import type { MemoryHit } from '@naro/core';
 import type { AgentBus, AgentMessage } from '@naro/multiagent';
@@ -104,6 +105,9 @@ async function migrate(q: PgQueryable): Promise<void> {
       error TEXT,
       host TEXT
     );
+    -- Tables created before ADR 0019 lack trust — add it.
+    ALTER TABLE naro_memory ADD COLUMN IF NOT EXISTS trust TEXT;
+
     -- Tables created before ADR 0013 lack tenant_id — add it.
     ALTER TABLE naro_runs ADD COLUMN IF NOT EXISTS tenant_id TEXT;
     ALTER TABLE naro_runs ADD COLUMN IF NOT EXISTS trace_id TEXT;
@@ -174,7 +178,7 @@ export class PgCheckpointStore implements CheckpointStore {
 
 // --- events ----------------------------------------------------------------
 
-export class PgEventStore implements EventExporter {
+export class PgEventStore implements EventExporter, PrunableEventStore {
   private readonly q: PgQueryable;
   private constructor(q: PgQueryable) { this.q = q; }
   static async create(q: PgQueryable): Promise<PgEventStore> {
@@ -217,6 +221,29 @@ export class PgEventStore implements EventExporter {
       ...(r['hash'] != null && { hash: r['hash'] as string }),
     }) as NaroEvent);
   }
+
+  /**
+   * Attested retention prune (ADR 0018) — same semantics as the SQLite
+   * store: marker row first, then DELETE of covered rows. Without a
+   * transaction primitive on PgQueryable the two statements are sequential;
+   * the marker is written *before* the delete so a crash between them
+   * leaves extra rows, never a marker claiming a prune that didn't happen.
+   */
+  async prune(runId: string, throughSeq: number, opts: PruneOptions = {}): Promise<PruneResult> {
+    const { anchorHash, run } = planPrune(await this.history({ runId }), throughSeq);
+    const marker = buildPruneMarker(run, throughSeq, anchorHash, opts);
+    await this.q.query(
+      `INSERT INTO naro_events (id, event_seq, run_id, agent_id, goal_id, type, at, data, prev, hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO NOTHING`,
+      [marker.id, marker.seq, marker.runId, marker.agentId, marker.goalId, marker.type, marker.at,
+       JSON.stringify(marker.data), marker.prev ?? null, marker.hash ?? null],
+    );
+    const { rows } = await this.q.query(
+      'DELETE FROM naro_events WHERE run_id=$1 AND event_seq<=$2 AND id<>$3 RETURNING id',
+      [runId, throughSeq, marker.id],
+    );
+    return { pruned: rows.length, anchorHash };
+  }
 }
 
 // --- memory -----------------------------------------------------------------
@@ -236,13 +263,14 @@ export class PgMemoryStore implements MemoryStore {
       at: Date.now(),
       ...(input.agentId !== undefined && { agentId: input.agentId }),
       ...(input.source !== undefined && { source: input.source }),
+      ...(input.trust !== undefined && { trust: input.trust }),
     };
     await this.q.query(
-      `INSERT INTO naro_memory (key, id, tier, tags, content, agent_id, source, at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (key) DO UPDATE SET id=$2, tier=$3, tags=$4, content=$5, agent_id=$6, source=$7, at=$8`,
+      `INSERT INTO naro_memory (key, id, tier, tags, content, agent_id, source, trust, at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (key) DO UPDATE SET id=$2, tier=$3, tags=$4, content=$5, agent_id=$6, source=$7, trust=$8, at=$9`,
       [entry.key, entry.id, entry.tier, JSON.stringify(entry.tags), JSON.stringify(entry.content),
-       entry.agentId ?? null, entry.source ?? null, entry.at],
+       entry.agentId ?? null, entry.source ?? null, entry.trust ?? null, entry.at],
     );
     return entry;
   }
@@ -269,7 +297,7 @@ export class PgMemoryStore implements MemoryStore {
     );
     return rows.map((r): MemoryHit => {
       const e = toEntry(r);
-      return { id: e.id, key: e.key, content: e.content, score: 1 };
+      return { id: e.id, key: e.key, content: e.content, score: 1, ...(e.trust !== undefined && { trust: e.trust }) };
     });
   }
 
@@ -285,6 +313,7 @@ function toEntry(r: Record<string, unknown>): MemoryEntry {
     tags: r['tags'] as string[], content: r['content'], at: Number(r['at']),
     ...(r['agent_id'] != null && { agentId: r['agent_id'] as string }),
     ...(r['source'] != null && { source: r['source'] as string }),
+    ...(r['trust'] != null && { trust: r['trust'] as MemoryEntry['trust'] }),
   };
 }
 

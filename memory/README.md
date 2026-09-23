@@ -81,7 +81,12 @@ const hits = await memory.searchTier('episodic', 'migration failure', 5);
 ## Trust rules
 
 - Scope entries by agent or tenant before results reach the model.
-- Preserve source and time.
+- Preserve source and time — `MemoryInput.trust` (ADR 0019) stamps the
+  `TrustLevel` (`system`/`tool`/`external`) of whatever produced the
+  content; it round-trips through `MemoryEntry`, `MemoryHit`, and every
+  store. `undefined` means *unknown* trust, not system-trusted — apps
+  writing memories from external observations should pass `obs.trust`
+  through explicitly.
 - Do not promote model claims to facts without verification.
 - Treat recalled content as untrusted prompt data.
 - Define retention and deletion for PII and secrets.

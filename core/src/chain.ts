@@ -56,6 +56,19 @@ export interface ChainVerdict {
    * the embedded public key. `publicKey` lets callers pin an expected key.
    */
   readonly sealed?: { readonly ok: boolean; readonly publicKey?: string; readonly reason?: string };
+  /**
+   * Present when the journal begins with `journal.retention.pruned`
+   * (ADR 0018): the disclosed prune — verified chain continues from
+   * `anchorHash`, not GENESIS. `attested` reports the Ed25519 signature
+   * over {anchorHash, prunedThroughSeq, prunedAt, policy} when present.
+   */
+  readonly pruned?: {
+    readonly throughSeq: number;
+    readonly anchorHash: string;
+    readonly at: number;
+    readonly policy?: string;
+    readonly attested?: { readonly ok: boolean; readonly publicKey?: string; readonly reason?: string };
+  };
 }
 
 /**
@@ -72,10 +85,46 @@ export function verifyChain(
   const sorted = [...events].sort((a, b) => a.seq - b.seq);
   if (sorted.length === 0) return { ok: true, length: 0, unchained: 0 };
 
+  // ADR 0018: a journal opened by `journal.retention.pruned` verifies from
+  // the marker's anchorHash — the hash of the last removed event — rather
+  // than GENESIS. The marker itself is a normal chained event (prev =
+  // GENESIS); the disclosed prune is reported on the verdict, never hidden.
+  let rest: NaroEvent[] = sorted;
+  let pruned: ChainVerdict['pruned'];
+  if (sorted[0]!.type === 'journal.retention.pruned') {
+    const marker = sorted[0]!;
+    const d = marker.data as {
+      prunedThroughSeq: number; anchorHash: string; prunedAt: number;
+      policy?: string; signature?: string; publicKey?: string;
+    };
+    if (marker.hash === undefined || hashEvent(marker) !== marker.hash) {
+      return { ok: false, length: sorted.length, brokenAt: marker.seq, reason: 'retention marker hash mismatch', unchained: 0 };
+    }
+    if (marker.prev !== GENESIS_HASH) {
+      return { ok: false, length: sorted.length, brokenAt: marker.seq, reason: 'retention marker does not open the journal', unchained: 0 };
+    }
+    let attested: NonNullable<typeof pruned>['attested'];
+    if (d.signature !== undefined && d.publicKey !== undefined) {
+      const { signature, publicKey, ...signed } = d;
+      attested = verifySeal(canonicalize(signed), signature, publicKey)
+        ? { ok: true, publicKey }
+        : { ok: false, publicKey, reason: 'invalid prune attestation signature' };
+      if (!attested.ok) {
+        return { ok: false, length: sorted.length, brokenAt: marker.seq, reason: attested.reason, unchained: 0, pruned: { throughSeq: d.prunedThroughSeq, anchorHash: d.anchorHash, at: d.prunedAt, ...(d.policy !== undefined && { policy: d.policy }), attested } };
+      }
+    }
+    pruned = {
+      throughSeq: d.prunedThroughSeq, anchorHash: d.anchorHash, at: d.prunedAt,
+      ...(d.policy !== undefined && { policy: d.policy }),
+      ...(attested !== undefined && { attested }),
+    };
+    rest = sorted.slice(1);
+  }
+
   let unchained = 0;
-  let prev = opts.expectPrev ?? GENESIS_HASH;
+  let prev = pruned !== undefined ? pruned.anchorHash : (opts.expectPrev ?? GENESIS_HASH);
   let head: string | undefined;
-  for (const e of sorted) {
+  for (const e of rest) {
     if (e.hash === undefined) { unchained++; continue; }
     if (hashEvent(e) !== e.hash) {
       return { ok: false, length: sorted.length, brokenAt: e.seq,
@@ -88,8 +137,8 @@ export function verifyChain(
     head = e.hash;
     prev = e.hash;
   }
-  if (unchained === sorted.length) {
-    return { ok: false, length: sorted.length, unchained, reason: 'journal is not hash-chained' };
+  if (rest.length > 0 && unchained === rest.length) {
+    return { ok: false, length: sorted.length, unchained, reason: 'journal is not hash-chained', ...(pruned !== undefined && { pruned }) };
   }
 
   // Seal: a `journal.sealed` event must be the last chained event, sign the
@@ -110,5 +159,6 @@ export function verifyChain(
     }
   }
   return { ok: true, length: sorted.length, unchained,
-    ...(head !== undefined && { head }), ...(sealed !== undefined && { sealed }) };
+    ...(head !== undefined && { head }), ...(sealed !== undefined && { sealed }),
+    ...(pruned !== undefined && { pruned }) };
 }

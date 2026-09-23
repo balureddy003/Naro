@@ -68,6 +68,9 @@ const HELP = `naro — universal agent foundation CLI
   naro approvals --db <db> list pending human-in-the-loop requests
   naro approve <id> --db <db> [--deny] [--note 'why']
   naro answer  <id> --db <db> --text 'response'
+  naro prune <store.db>    attest-and-prune a run's journal (ADR 0018)
+                             --run <id> --before <seq|ISO-date>
+                             [--reason <policy citation>] [--seal-key key.pem]
   naro states              print the agent lifecycle transition table
 `;
 
@@ -166,6 +169,43 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
       if (rest.includes('--json')) io.out(JSON.stringify(record, null, 2));
       else io.out(formatEvidence(record));
       return record.chain.ok && sealOk ? 0 : 1;
+    }
+
+    case 'prune': {
+      const file = rest[0];
+      const flag = (n: string) => { const i = rest.indexOf(n); return i >= 0 ? rest[i + 1] : undefined; };
+      const runId = flag('--run');
+      const before = flag('--before');
+      const reason = flag('--reason');
+      const sealKeyFile = flag('--seal-key');
+      if (!file || !runId || !before) {
+        io.err('usage: naro prune <store.db> --run <id> --before <seq|ISO-date> [--reason <policy>] [--seal-key key.pem]');
+        return 2;
+      }
+      const store = new SqliteEventStore(resolve(file));
+      try {
+        let throughSeq = /^\d+$/.test(before) ? Number(before) : undefined;
+        if (throughSeq === undefined) {
+          const cutoff = Date.parse(before);
+          if (Number.isNaN(cutoff)) { io.err('--before must be a seq number or ISO date'); return 2; }
+          const lastBefore = [...store.history({ runId })].reverse().find((e) => e.at <= cutoff);
+          if (!lastBefore) { io.err(`no events at or before ${before} for run ${runId}`); return 1; }
+          throughSeq = lastBefore.seq;
+        }
+        const sealKey = sealKeyFile !== undefined ? await readFile(resolve(sealKeyFile), 'utf8') : undefined;
+        const res = await store.prune(runId, throughSeq, {
+          ...(reason !== undefined && { policy: reason }),
+          ...(sealKey !== undefined && { sealKey }),
+        });
+        io.out(`pruned ${res.pruned} event(s) through seq ${throughSeq} — anchor ${res.anchorHash.slice(0, 12)}…`);
+        io.out('the journal now opens with a disclosed journal.retention.pruned marker; `naro verify` reports it.');
+        return 0;
+      } catch (e) {
+        io.err(e instanceof Error ? e.message : String(e));
+        return 1;
+      } finally {
+        store.close();
+      }
     }
 
     case 'init': {

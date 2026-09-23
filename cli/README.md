@@ -57,6 +57,20 @@ against the embedded public key, and `--pubkey` requires it to match yours.
   bad signature, key mismatch) or the journal predates chaining;
 - exit `2`: usage error.
 
+### `prune`
+
+`naro prune <store.db> --run <id> --before <seq|ISO-date> [--reason <policy>]
+[--seal-key key.pem]` — attested retention pruning on a `SqliteEventStore`
+([ADR 0018](../docs/adr/0018-attested-retention-pruning.md)). Instead of
+deleting rows silently (which makes a pruned journal indistinguishable from
+a tampered one), it writes a `journal.retention.pruned` marker as the run's
+new first event — carrying `prunedThroughSeq`, the `anchorHash` of the last
+removed event, and an optional Ed25519 attestation (`--seal-key`) — then
+deletes the covered rows. Only terminal runs can be pruned, and the cutoff
+must leave the terminal event. `naro verify` then reports the chain as OK
+*with a disclosed prune* — verified from the anchor, never presented as a
+complete journal.
+
 ### `states`
 
 Prints the current transition table directly from `AGENT_STATES` and
@@ -94,13 +108,22 @@ Additional flags:
   {approved?|text?|note?}` so operators approve over HTTP — including
   cross-process, since the bridge is durable.
 - `--principals <file.json>` — maps bearer tokens to `{id, roles, tenantId?}`.
-  Roles: `viewer` (GET endpoints), `operator` (`POST /goals`), `approver`
-  (`POST /approvals/:id`); operator and approver imply viewer. Insufficient
-  role → `403 {error: 'forbidden', required: <role>}`. The principal id is
-  written to the approval (`answered_by`) and journaled on
-  `human.approval.received.by` — who approved is evidence. Supersedes
-  `--token`/`NARO_SERVE_TOKEN`, which remains as shorthand for one admin
-  principal (no `tenantId` — full visibility).
+  Roles: `viewer` (GET endpoints), `operator` (`POST /goals`,
+  `POST /runs/:id/cancel`), `approver` (`POST /approvals/:id`), `admin`
+  (`POST /runs/cancel-all` — fleet-wide halt, ADR 0022); operator/approver
+  imply viewer, admin implies all. Insufficient role → `403 {error:
+  'forbidden', required: <role>}`. The principal id is written to the
+  approval (`answered_by`), journaled on `human.approval.received.by`, and
+  stamped as `by` on `agent.cancelled` — who approved and who stopped a run
+  is evidence. Supersedes `--token`/`NARO_SERVE_TOKEN`, which remains as
+  shorthand for one admin principal (no `tenantId` — full visibility).
+- `POST /runs/:id/cancel {reason}` — cancels one in-flight run through the
+  same `AbortController` drain uses, without restarting the server.
+  `reason` is required; `agent.cancelled` journals `reason` + `by`. Unknown
+  or already-terminal runs are `404` — a cancel that returns 202 means the
+  abort is landing.
+- `POST /runs/cancel-all {reason}` — fleet-wide halt (admin). Tenant-scoped
+  principals halt only their tenant's runs.
 - `tenantId` on a principal ([ADR 0013](../docs/adr/0013-tenant-scoped-run-visibility.md))
   scopes `GET /runs`, `GET /runs/:id`, and `GET /runs/:id/events` to runs
   submitted under that tenant; a cross-tenant direct read is `404`. This is

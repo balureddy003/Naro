@@ -52,6 +52,13 @@ export interface AgentDeps {
   readonly human?: HumanBridge;
   /** Permissions granted to this agent; checked by the policy engine. */
   readonly grants?: readonly string[];
+  /**
+   * The principal this run acts on behalf of (ADR 0017) — included on
+   * every PolicyContext so a rule can gate on *whose authority* an action
+   * runs under, not just what the agent may do. `naro serve` sets it from
+   * the authenticated caller.
+   */
+  readonly principal?: import('@naro/core').PolicyPrincipal;
   /** Resolves secret references for tools at exec time — never observed. */
   readonly secrets?: { resolve(ref: string): Promise<string | undefined> };
   /** Retrieves context for 'need-context' decisions. */
@@ -326,7 +333,17 @@ export class AgentRunner {
 
       while (true) {
         if (signal?.aborted) {
-          return this.finish('CANCELLED', 'cancelled', { reason: String(signal.reason ?? 'aborted') });
+          // AbortSignal.reason is the cancel channel's envelope: a plain
+          // string, or {reason, by} when a control plane attributes the
+          // stop to a principal (ADR 0022).
+          const r = signal.reason;
+          const envelope = typeof r === 'object' && r !== null
+            ? r as { reason?: unknown; by?: unknown }
+            : undefined;
+          return this.finish('CANCELLED', 'cancelled', {
+            reason: String(envelope?.reason ?? r ?? 'aborted'),
+            ...(typeof envelope?.by === 'string' && { by: envelope.by }),
+          });
         }
         if (this.pauseRequested) {
           this.transition('PAUSED');
@@ -498,6 +515,7 @@ export class AgentRunner {
       goal: this.deps.spec.goal,
       grants: this.deps.grants ?? [],
       provenance: this.provenance(),
+      ...(this.deps.principal !== undefined && { principal: this.deps.principal }),
     }));
 
     if (decision === 'deny') {
@@ -748,14 +766,16 @@ export class AgentRunner {
   private finish(
     to: 'COMPLETED' | 'FAILED' | 'CANCELLED',
     status: RunStatus,
-    extra: { result?: unknown; error?: string; reason?: string },
+    extra: { result?: unknown; error?: string; reason?: string; by?: string },
   ): RunResult {
     if (!isStopped(this.state)) this.transition(to);
     else if (this.state !== to) this.state = to; // already stopped (e.g. PAUSED→cancel)
     const usage = this.usage.totalTokens > 0 || this.usage.costUsd > 0 ? { usage: { ...this.usage } } : {};
     if (status === 'completed') this.bus.emit('agent.completed', { result: extra.result, ...usage });
     if (status === 'failed') this.bus.emit('agent.failed', { error: extra.error ?? 'unknown', ...usage });
-    if (status === 'cancelled') this.bus.emit('agent.cancelled', { reason: extra.reason ?? '', ...usage });
+    if (status === 'cancelled') this.bus.emit('agent.cancelled', {
+      reason: extra.reason ?? '', ...(extra.by !== undefined && { by: extra.by }), ...usage,
+    });
     // Seal last — the signature covers every event up to and including the
     // terminal one. Paused runs are deliberately unsealed: they resume.
     if (status !== 'paused' && this.deps.sealKey) this.bus.seal(this.deps.sealKey);
