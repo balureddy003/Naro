@@ -20,3 +20,8 @@ checks it against the invoice schema, and reconciles line items → total
 (a parse-first wrapper, since a schema check on the raw string is a
 false negative). Verified live against qwen2.5:3b on Ollama: completed
 in ~10s at ~980 tokens, $0.
+
+Plus `bench/categorizer.ts` — a real benchmark over 48 labeled fixtures
+through `BenchmarkRunner`. First numbers (qwen2.5:3b, Ollama): 77.1%
+accuracy, ~1.9s/case, $0 API vs ~$0.16 at frontier list rates. Method and
+miss analysis in `templates/bench/README.md`.

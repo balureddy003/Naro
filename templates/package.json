@@ -23,5 +23,9 @@
     "@naro/tools": "0.1.0",
     "@naro/verification": "0.1.0",
     "@naro/model": "0.1.0"
+  },
+  "devDependencies": {
+    "@naro/evaluation": "0.1.0",
+    "@naro/model": "0.1.0"
   }
 }
