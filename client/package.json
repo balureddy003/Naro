@@ -1,0 +1,15 @@
+{
+  "name": "@naro/client",
+  "version": "0.1.0",
+  "description": "Typed, framework-agnostic client for naro serve's control-plane API — the SDK layer any UI (the included console, a custom dashboard, a CLI) builds on.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": { ".": "./dist/index.js" },
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {}
+}

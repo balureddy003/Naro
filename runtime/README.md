@@ -96,6 +96,18 @@ is structured-cloned at emission, so later action or task mutation cannot
 rewrite the journal. Subscriber exceptions are isolated in
 `EventBus.deliveryErrors`.
 
+`runner.history()` returns a synchronous snapshot of events so far — the
+same list `.run()` returns as `RunResult.events` at completion, readable
+mid-run for read-only inspection (`naro serve`'s `GET /runs/:id/evidence`
+uses it). Not a subscription; use `events()` for that.
+
+Every event's `traceId` correlates a whole delegation tree, not just one
+run — a root run's `traceId` defaults to its own `runId` (explicit or
+caller-assigned via `run({runId})`); a delegated child inherits its
+parent's via `run({traceId})`. `RunRegistry.list({traceId})` (in
+`@naro/runtime`'s own stores, or `@naro/adapter-pg`'s) lists every run in
+one tree.
+
 ## Checkpoint and resume
 
 Checkpoints are written at reasoning boundaries and include:

@@ -1,9 +1,25 @@
 import { createServer, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
 import { hostname } from 'node:os';
+import { readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { newId, createGoal, type NaroEvent } from '@naro/core';
 import { InMemoryRunRegistry, type AgentRunner, type ApprovalRequest, type RunRegistry } from '@naro/runtime';
+import { buildEvidence } from '@naro/observability';
 import { CONSOLE_HTML } from './console.ts';
+
+// Resolved once per process — @naro/client's compiled dist/ is plain,
+// dependency-free ESM (fetch + AbortController + ReadableStream only), so
+// serving its files as-is is a valid browser module graph with no bundler
+// step. GET /client/* below serves exactly this directory.
+let clientDistDir: string | undefined;
+function resolveClientDist(): string {
+  if (clientDistDir === undefined) {
+    clientDistDir = dirname(fileURLToPath(import.meta.resolve('@naro/client')));
+  }
+  return clientDistDir;
+}
 
 /**
  * `naro serve <agent-module>` — a Naro agent as a service.
@@ -16,6 +32,12 @@ import { CONSOLE_HTML } from './console.ts';
  *   GET  /runs               → [{runId, status, agentId, goal, ...}]
  *   GET  /runs/:id           → {status, result?|error?}
  *   GET  /runs/:id/events    → SSE stream of the run's journal
+ *                              [?since=<seq>] resumes after that seq instead
+ *                              of replaying the whole journal
+ *   GET  /runs/:id/evidence  → EvidenceRecord — buildEvidence() over the
+ *                              run's journal so far: policy verdict →
+ *                              action → observation → verifier, correlated
+ *                              server-side instead of by the client
  *   GET  /approvals          → pending human-in-the-loop requests
  *   POST /approvals/:id      {approved?|text?|note?} → {ok}
  *   GET  /health             → {ok: true}        (liveness — process up)
@@ -65,7 +87,7 @@ type Role = 'viewer' | 'operator' | 'approver';
 function requiredRole(method: string, path: string): Role | undefined {
   if (method === 'POST' && path === '/goals') return 'operator';
   if (method === 'POST' && /^\/approvals\/[^/]+$/.test(path)) return 'approver';
-  if (method === 'GET' && (path === '/runs' || path === '/approvals' || /^\/runs\/[^/]+(\/events)?$/.test(path))) return 'viewer';
+  if (method === 'GET' && (path === '/runs' || path === '/approvals' || /^\/runs\/[^/]+(\/events|\/evidence)?$/.test(path))) return 'viewer';
   return undefined;
 }
 
@@ -154,6 +176,22 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       return res.end(CONSOLE_HTML);
     }
 
+    // @naro/client's compiled module graph, served as-is — the console's
+    // `<script type="module">` imports from here. Filename allowlisted
+    // ([a-z0-9_-]+.js or .js.map) so the URL can never escape the dist
+    // directory it's joined onto.
+    const clientAsset = /^\/client\/([a-z0-9_-]+\.js(?:\.map)?)$/i.exec(url.pathname);
+    if (req.method === 'GET' && clientAsset && opts.console !== false) {
+      try {
+        const body = await readFile(join(resolveClientDist(), clientAsset[1]!), 'utf8');
+        const isMap = clientAsset[1]!.endsWith('.map');
+        res.writeHead(200, { 'content-type': isMap ? 'application/json' : 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' });
+        return res.end(body);
+      } catch {
+        return json(404, { error: 'not found' });
+      }
+    }
+
     // Authn: bearer token → principal. Authz: the route's required role.
     // Neither configured → the control plane is open (dev default).
     let principal: Principal | undefined;
@@ -170,14 +208,22 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
 
     if (req.method === 'GET' && url.pathname === '/runs') {
       // No tenant on the caller → unscoped (every run) — see ADR 0013.
-      const list = await registry.list({ limit: 200, ...(principal?.tenantId !== undefined && { tenantId: principal.tenantId }) });
+      // ?traceId=<id> lists one delegation tree instead of every run.
+      const traceIdFilter = url.searchParams.get('traceId');
+      const list = await registry.list({
+        limit: 200,
+        ...(principal?.tenantId !== undefined && { tenantId: principal.tenantId }),
+        ...(traceIdFilter !== null && { traceId: traceIdFilter }),
+      });
       return json(200, list.map((r) => ({
         runId: r.runId, status: r.status, agentId: r.agentId, goal: r.goal,
-        startedAt: r.startedAt, updatedAt: r.updatedAt, ...(r.host !== undefined && { host: r.host }),
+        startedAt: r.startedAt, updatedAt: r.updatedAt,
+        ...(r.host !== undefined && { host: r.host }),
+        ...(r.traceId !== undefined && { traceId: r.traceId }),
       })));
     }
 
-    const runMatch = /^\/runs\/([^/]+)(\/events)?$/.exec(url.pathname);
+    const runMatch = /^\/runs\/([^/]+)(\/events|\/evidence)?$/.exec(url.pathname);
     if (req.method === 'GET' && runMatch) {
       // A run outside the caller's tenant is a 404, not a 403 — a
       // cross-tenant probe learns nothing about whether it exists. Only
@@ -190,13 +236,23 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       const rec = runs.get(runMatch[1]!);
 
       if (runMatch[2] === '/events') {
+        // Resume a stream instead of re-replaying the whole journal on
+        // every reconnect: ?since=<seq> skips events at or below it. This
+        // filters at the response boundary — runner.events() itself still
+        // replays from the start, same cost as today's no-`since` case —
+        // but the client only pays network/render cost for what's new.
+        const sinceParam = url.searchParams.get('since');
+        const since = sinceParam !== null ? Number(sinceParam) : undefined;
+        if (sinceParam !== null && (!Number.isFinite(since) || since! < 0)) {
+          return json(400, { error: 'since must be a non-negative integer' });
+        }
         if (rec) {
           // SSE: runner.events() replays the journal then live-tails;
           // the stream ends after the run's terminal event.
           res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
           void (async () => {
             for await (const e of rec.runner.events()) {
-              res.write(`data: ${JSON.stringify(e)}\n\n`);
+              if (since === undefined || e.seq > since) res.write(`data: ${JSON.stringify(e)}\n\n`);
               if (['agent.completed', 'agent.failed', 'agent.cancelled'].includes(e.type)) break;
             }
             res.end();
@@ -208,11 +264,24 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
           const events = await opts.journal.history({ runId: runMatch[1]! });
           if (events.length === 0) return json(404, { error: 'unknown run' });
           res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
-          for (const e of events) res.write(`data: ${JSON.stringify(e)}\n\n`);
+          for (const e of events) if (since === undefined || e.seq > since) res.write(`data: ${JSON.stringify(e)}\n\n`);
           res.end();
           return;
         }
         return json(404, { error: 'run not on this replica; configure journal for cross-replica reads' });
+      }
+
+      if (runMatch[2] === '/evidence') {
+        // buildEvidence() correlates the whole journal (gate → action →
+        // observation → verifier) — the same computation naro verify
+        // does offline, exposed live so a client renders the evidence
+        // tree instead of re-deriving it from raw events itself.
+        const events = rec ? rec.runner.history()
+          : opts.journal ? await opts.journal.history({ runId: runMatch[1]! })
+            : undefined;
+        if (events === undefined) return json(404, { error: 'run not on this replica; configure journal for cross-replica reads' });
+        if (events.length === 0) return json(404, { error: 'unknown run' });
+        return json(200, buildEvidence(events));
       }
 
       const summary = await registry.get(runMatch[1]!);
@@ -267,14 +336,19 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       runs.set(rec.id, rec);
       const startedAt = Date.now();
       let agentId = '';
+      let traceId: string | undefined;
       // goal.started carries the agent's identity and the goal text —
-      // index the run the moment its journal begins.
+      // index the run the moment its journal begins. Its own traceId is a
+      // root run's own runId unless a caller passed one in (delegation —
+      // see @naro/multiagent's delegationConstraints), so this always has one.
       rec.runner.on('goal.started', (e) => {
         agentId = e.agentId;
+        traceId = e.traceId;
         void registry.upsert({
           runId: rec.id, agentId, status: 'running', goal: e.data.goal.description,
           startedAt, updatedAt: Date.now(), host: hostName,
           ...(principal?.tenantId !== undefined && { tenantId: principal.tenantId }),
+          ...(traceId !== undefined && { traceId }),
         });
       });
       // The API runId IS the journal runId — events, exports, and wake(runId)
@@ -287,6 +361,7 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
           runId: rec.id, agentId, status: r.status, goal: goal.description,
           startedAt, updatedAt: Date.now(), host: hostName,
           ...(principal?.tenantId !== undefined && { tenantId: principal.tenantId }),
+          ...(traceId !== undefined && { traceId }),
           ...(r.result !== undefined && { result: r.result }),
           ...(r.error !== undefined && { error: r.error }),
         });
@@ -295,6 +370,7 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
         void registry.upsert({
           runId: rec.id, agentId, status: 'failed', goal: goal.description,
           startedAt, updatedAt: Date.now(), host: hostName, error: rec.error,
+          ...(traceId !== undefined && { traceId }),
         });
       });
       return json(202, { runId: rec.id });

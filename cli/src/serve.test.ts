@@ -43,7 +43,9 @@ test('GET /console serves the static page without auth, even when principals are
     assert.match(res.headers.get('content-type') ?? '', /text\/html/);
     const body = await res.text();
     assert.match(body, /Naro — Ops Console/);
-    assert.match(body, /Authorization/); // documents that it sends the header itself
+    // Consumes @naro/client rather than hand-rolling fetch/auth itself —
+    // that SDK is what actually sends the Authorization header now.
+    assert.match(body, /from '\/client\/index\.js'/);
   } finally {
     await close();
   }
@@ -53,6 +55,136 @@ test('console: false disables the route (404, not auth-gated)', async () => {
   const { url, close } = await startAgentServer(factory, { port: 0, console: false });
   try {
     assert.equal((await fetch(`${url}/console`)).status, 404);
+  } finally {
+    await close();
+  }
+});
+
+test('GET /client/index.js serves @naro/client\'s compiled module without auth', async () => {
+  const { url, close } = await startAgentServer(factory, {
+    port: 0, principals: { tok: { id: 'x', roles: ['viewer'] } },
+  });
+  try {
+    const res = await fetch(`${url}/client/index.js`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type') ?? '', /javascript/);
+    const body = await res.text();
+    assert.match(body, /from '\.\/client\.js'/);
+  } finally {
+    await close();
+  }
+});
+
+test('GET /client/ rejects anything outside [a-z0-9_-]+.js(.map)? — no path traversal', async () => {
+  const { url, close } = await startAgentServer(factory, { port: 0 });
+  try {
+    // %2F survives URL normalization as a literal path-segment character
+    // (unlike a bare '../', which fetch() would normalize away before the
+    // request is even sent) — this is what actually exercises the regex.
+    assert.equal((await fetch(`${url}/client/${encodeURIComponent('../package.json')}`)).status, 404);
+    assert.equal((await fetch(`${url}/client/types.js`)).status, 200); // a real file still works
+  } finally {
+    await close();
+  }
+});
+
+test('client: false-equivalent — console: false also disables /client/*', async () => {
+  const { url, close } = await startAgentServer(factory, { port: 0, console: false });
+  try {
+    assert.equal((await fetch(`${url}/client/index.js`)).status, 404);
+  } finally {
+    await close();
+  }
+});
+
+test('GET /runs/:id/events?since=N skips events at or below that seq', async () => {
+  const { url, close } = await startAgentServer(factory, { port: 0 });
+  try {
+    const res = await fetch(`${url}/goals`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'cursor me' }),
+    });
+    const { runId } = await res.json() as { runId: string };
+    await new Promise((r) => setTimeout(r, 50));
+
+    const full = (await (await fetch(`${url}/runs/${runId}/events`)).text())
+      .split('\n').filter((l) => l.startsWith('data: '))
+      .map((l) => JSON.parse(l.slice(6)) as { seq: number });
+    assert.ok(full.length >= 2);
+
+    const cursor = full[0]!.seq;
+    const resumed = (await (await fetch(`${url}/runs/${runId}/events?since=${cursor}`)).text())
+      .split('\n').filter((l) => l.startsWith('data: '))
+      .map((l) => JSON.parse(l.slice(6)) as { seq: number });
+    assert.deepEqual(resumed.map((e) => e.seq), full.slice(1).map((e) => e.seq));
+  } finally {
+    await close();
+  }
+});
+
+test('GET /runs/:id/events?since=<garbage> is a 400, not a silent full replay', async () => {
+  const { url, close } = await startAgentServer(factory, { port: 0 });
+  try {
+    const res = await fetch(`${url}/goals`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'x' }),
+    });
+    const { runId } = await res.json() as { runId: string };
+    assert.equal((await fetch(`${url}/runs/${runId}/events?since=nope`)).status, 400);
+    assert.equal((await fetch(`${url}/runs/${runId}/events?since=-1`)).status, 400);
+  } finally {
+    await close();
+  }
+});
+
+test('GET /runs/:id/evidence returns buildEvidence() over the run\'s journal', async () => {
+  const { url, close } = await startAgentServer(factory, { port: 0 });
+  try {
+    const res = await fetch(`${url}/goals`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'evidence me' }),
+    });
+    const { runId } = await res.json() as { runId: string };
+    await new Promise((r) => setTimeout(r, 50));
+    const evidence = await (await fetch(`${url}/runs/${runId}/evidence`)).json() as {
+      chain: { ok: boolean }; outcome?: { status: string }; counts: { actions: number };
+    };
+    assert.equal(evidence.chain.ok, true);
+    assert.equal(evidence.outcome?.status, 'completed');
+  } finally {
+    await close();
+  }
+});
+
+test('GET /runs/:id/evidence 404s for an unknown run', async () => {
+  const { url, close } = await startAgentServer(factory, { port: 0 });
+  try {
+    assert.equal((await fetch(`${url}/runs/nope/evidence`)).status, 404);
+  } finally {
+    await close();
+  }
+});
+
+test('a run\'s traceId defaults to its own runId and GET /runs?traceId filters by it', async () => {
+  const { url, close } = await startAgentServer(factory, { port: 0 });
+  try {
+    const a = await (await fetch(`${url}/goals`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'root a' }),
+    })).json() as { runId: string };
+    const b = await (await fetch(`${url}/goals`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'root b' }),
+    })).json() as { runId: string };
+    await new Promise((r) => setTimeout(r, 50));
+
+    const runA = await (await fetch(`${url}/runs/${a.runId}`)).json() as { traceId?: string };
+    // no explicit traceId was passed in, so it defaults to the run's own id.
+    assert.equal(runA.traceId, a.runId);
+
+    const filtered = await (await fetch(`${url}/runs?traceId=${a.runId}`)).json() as { runId: string }[];
+    assert.deepEqual(filtered.map((r) => r.runId), [a.runId]);
+    assert.ok(!filtered.some((r) => r.runId === b.runId));
   } finally {
     await close();
   }

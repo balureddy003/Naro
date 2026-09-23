@@ -47,6 +47,27 @@ test('get() round-trips tenantId', async () => {
   });
 });
 
+test('list({traceId}) scopes to one delegation tree', async () => {
+  await eachRegistry(async (label, make) => {
+    const reg = await make();
+    await reg.upsert(run({ runId: 'root', traceId: 'root' }));
+    await reg.upsert(run({ runId: 'child1', traceId: 'root' }));
+    await reg.upsert(run({ runId: 'unrelated', traceId: 'other' }));
+    const tree = await reg.list({ traceId: 'root' });
+    assert.deepEqual(tree.map((r) => r.runId).sort(), ['child1', 'root'], label);
+  });
+});
+
+test('tenantId and traceId filters combine', async () => {
+  await eachRegistry(async (label, make) => {
+    const reg = await make();
+    await reg.upsert(run({ runId: 'a', tenantId: 'acme', traceId: 't1' }));
+    await reg.upsert(run({ runId: 'b', tenantId: 'globex', traceId: 't1' }));
+    const scoped = await reg.list({ tenantId: 'acme', traceId: 't1' });
+    assert.deepEqual(scoped.map((r) => r.runId), ['a'], label);
+  });
+});
+
 test('SqliteRunRegistry: an old database without tenant_id migrates in place', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'naro-runs-'));
   const path = join(dir, 'runs.db');

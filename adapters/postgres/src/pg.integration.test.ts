@@ -110,6 +110,19 @@ describePg('pg integration (requires NARO_PG_URL)', async () => {
     assert.equal((await reg.get(acme.runId))?.tenantId, 'acme');
   });
 
+  test('run registry: list({traceId}) scopes to a delegation tree', async () => {
+    const reg = await PgRunRegistry.create(pool);
+    const stamp = Date.now();
+    const root = { runId: `pg-trace-root-${stamp}`, agentId: 'a1', status: 'completed' as const,
+      goal: 'g', startedAt: stamp, updatedAt: stamp, traceId: `pg-tree-${stamp}` };
+    const childRun = { runId: `pg-trace-child-${stamp}`, agentId: 'a2', status: 'completed' as const,
+      goal: 'g', startedAt: stamp, updatedAt: stamp, traceId: `pg-tree-${stamp}` };
+    await reg.upsert(root);
+    await reg.upsert(childRun);
+    const tree = await reg.list({ traceId: `pg-tree-${stamp}` });
+    assert.deepEqual(tree.map((r) => r.runId).sort(), [childRun.runId, root.runId].sort());
+  });
+
   test('approvals: request blocks until a second store answers, then resolves', async () => {
     const asker = await PgApprovalBridge.create(pool, { pollMs: 25, timeoutMs: 5000 });
     const responder = await PgApprovalBridge.create(pool, { pollMs: 25, timeoutMs: 5000 });

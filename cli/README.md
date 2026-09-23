@@ -66,10 +66,14 @@ Prints the current transition table directly from `AGENT_STATES` and
 
 `naro serve <module.ts> [--port N] [--host h] [--token t]` exposes an agent
 as a service. The module must export a runner factory; the server accepts
-`POST /goals`, streams run events over SSE (`GET /runs/:id/events`), and
-supports result polling (`GET /runs/:id`). The `runId` returned by
-`POST /goals` is the journal's `runId` — events, exports, and `wake()` all
-correlate with it.
+`POST /goals`, streams run events over SSE (`GET /runs/:id/events`, with
+`?since=<seq>` to resume a stream instead of re-replaying the whole
+journal on every reconnect), serves the correlated evidence tree
+(`GET /runs/:id/evidence` — `buildEvidence()` over the run's journal:
+policy verdict → action → observation → verifier, computed once
+server-side instead of re-derived by every client), and supports result
+polling (`GET /runs/:id`). The `runId` returned by `POST /goals` is the
+journal's `runId` — events, exports, and `wake()` all correlate with it.
 
 Additional flags:
 

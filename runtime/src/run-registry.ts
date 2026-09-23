@@ -16,6 +16,10 @@ export interface RunSummary {
   readonly host?: string;
   /** The submitting principal's tenant, if `naro serve` has one — see ADR 0013. */
   readonly tenantId?: string;
+  /** This run's delegation-tree correlator (`NaroEvent.traceId`) — a root
+   *  run's traceId equals its own runId; a delegated child's matches its
+   *  parent's. Lets a client list every run in one delegation tree. */
+  readonly traceId?: string;
 }
 
 /**
@@ -27,8 +31,9 @@ export interface RunRegistry {
   upsert(run: RunSummary): Promise<void>;
   get(runId: string): Promise<RunSummary | undefined>;
   /** Newest first. `tenantId` restricts to runs stamped with that tenant —
-   *  see ADR 0013; omit it for unscoped (all-tenant) visibility. */
-  list(opts?: { limit?: number; tenantId?: string }): Promise<readonly RunSummary[]>;
+   *  see ADR 0013; `traceId` restricts to one delegation tree. Omit either
+   *  for unscoped visibility; both may be combined. */
+  list(opts?: { limit?: number; tenantId?: string; traceId?: string }): Promise<readonly RunSummary[]>;
 }
 
 /** Default registry — process-local, lost on exit. Fine for dev/tests. */
@@ -44,10 +49,10 @@ export class InMemoryRunRegistry implements RunRegistry {
     return Promise.resolve(this.runs.get(runId));
   }
 
-  list(opts: { limit?: number; tenantId?: string } = {}): Promise<readonly RunSummary[]> {
-    const scoped = opts.tenantId === undefined
-      ? [...this.runs.values()]
-      : [...this.runs.values()].filter((r) => r.tenantId === opts.tenantId);
+  list(opts: { limit?: number; tenantId?: string; traceId?: string } = {}): Promise<readonly RunSummary[]> {
+    const scoped = [...this.runs.values()]
+      .filter((r) => opts.tenantId === undefined || r.tenantId === opts.tenantId)
+      .filter((r) => opts.traceId === undefined || r.traceId === opts.traceId);
     const all = scoped.sort((a, b) => b.startedAt - a.startedAt);
     return Promise.resolve(all.slice(0, opts.limit ?? all.length));
   }
@@ -57,6 +62,7 @@ interface Row {
   run_id: string; agent_id: string; status: string; goal: string;
   started_at: number; updated_at: number; result: string | null;
   error: string | null; host: string | null; tenant_id: string | null;
+  trace_id: string | null;
 }
 
 /** Durable run index on node:sqlite — survives restarts, shareable. */
@@ -83,25 +89,29 @@ export class SqliteRunRegistry implements RunRegistry {
     this.migrate();
   }
 
-  /** Old databases predate `tenant_id` (ADR 0013) — add what's missing. */
+  /** Old databases predate `tenant_id` (ADR 0013) / `trace_id` — add what's missing. */
   private migrate(): void {
     const cols = new Set(
       (this.db.prepare('PRAGMA table_info(runs)').all() as { name: string }[]).map((c) => c.name),
     );
     if (!cols.has('tenant_id')) this.db.exec('ALTER TABLE runs ADD COLUMN tenant_id TEXT');
+    if (!cols.has('trace_id')) {
+      this.db.exec('ALTER TABLE runs ADD COLUMN trace_id TEXT');
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_runs_trace ON runs(trace_id)');
+    }
   }
 
   async upsert(run: RunSummary): Promise<void> {
     await this.db.prepare(`
-      INSERT INTO runs (run_id, agent_id, status, goal, started_at, updated_at, result, error, host, tenant_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO runs (run_id, agent_id, status, goal, started_at, updated_at, result, error, host, tenant_id, trace_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(run_id) DO UPDATE SET
         status = excluded.status, updated_at = excluded.updated_at,
         result = excluded.result, error = excluded.error, host = excluded.host,
-        tenant_id = excluded.tenant_id
+        tenant_id = excluded.tenant_id, trace_id = excluded.trace_id
     `).run(run.runId, run.agentId, run.status, run.goal, run.startedAt, run.updatedAt,
       run.result === undefined ? null : JSON.stringify(run.result),
-      run.error ?? null, run.host ?? null, run.tenantId ?? null);
+      run.error ?? null, run.host ?? null, run.tenantId ?? null, run.traceId ?? null);
   }
 
   async get(runId: string): Promise<RunSummary | undefined> {
@@ -109,12 +119,15 @@ export class SqliteRunRegistry implements RunRegistry {
     return r && toSummary(r);
   }
 
-  async list(opts: { limit?: number; tenantId?: string } = {}): Promise<readonly RunSummary[]> {
-    const rows = (opts.tenantId === undefined
-      ? this.db.prepare('SELECT * FROM runs ORDER BY started_at DESC LIMIT ?')
-        .all(opts.limit ?? 10_000)
-      : this.db.prepare('SELECT * FROM runs WHERE tenant_id = ? ORDER BY started_at DESC LIMIT ?')
-        .all(opts.tenantId, opts.limit ?? 10_000)) as unknown as Row[];
+  async list(opts: { limit?: number; tenantId?: string; traceId?: string } = {}): Promise<readonly RunSummary[]> {
+    const clauses: string[] = [];
+    const params: (string | number)[] = [];
+    if (opts.tenantId !== undefined) { clauses.push('tenant_id = ?'); params.push(opts.tenantId); }
+    if (opts.traceId !== undefined) { clauses.push('trace_id = ?'); params.push(opts.traceId); }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')} ` : '';
+    params.push(opts.limit ?? 10_000);
+    const rows = this.db.prepare(`SELECT * FROM runs ${where}ORDER BY started_at DESC LIMIT ?`)
+      .all(...params) as unknown as Row[];
     return rows.map(toSummary);
   }
 
@@ -130,5 +143,6 @@ function toSummary(r: Row): RunSummary {
     ...(r.error !== null && { error: r.error }),
     ...(r.host !== null && { host: r.host }),
     ...(r.tenant_id !== null && { tenantId: r.tenant_id }),
+    ...(r.trace_id !== null && { traceId: r.trace_id }),
   };
 }
