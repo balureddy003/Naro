@@ -92,7 +92,7 @@ from a model card.
 | Model | Approx. size | Ollama tag | Chat | Tool-calling | Structured output | Verified? |
 |---|---|---|---|---|---|---|
 | Llama 3.2 | 1B / 3B | `llama3.2:1b`, `llama3.2:3b` | yes | claimed | claimed | no — needs testing |
-| Qwen 2.5 | 0.5B–7B | `qwen2.5:1.5b`, `qwen2.5:3b`, `qwen2.5:7b` | yes | claimed | claimed | no — needs testing |
+| Qwen 2.5 | 0.5B–7B | `qwen2.5:1.5b`, `qwen2.5:3b`, `qwen2.5:7b` | yes | claimed | claimed | **yes — `qwen2.5:3b` verified 2026-02-08 via `verifyOllamaCapabilities`: all five capabilities proven (chat, tool-calling, structured-output, streaming, embeddings); a live `transaction-categorizer` run completed in ~2.2s at 834 tokens, $0 API cost. Other tags still need testing.** |
 | Phi-3.5-mini | 3.8B | `phi3.5` | yes | claimed | claimed | no — needs testing |
 | Gemma 2 | 2B / 9B | `gemma2:2b` | yes | no (base model has no native tool-calling) | claimed | no — needs testing |
 | SmolLM2 | 135M–1.7B | `smollm2` | yes | no | no | no — needs testing |
