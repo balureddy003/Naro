@@ -18,6 +18,7 @@
     "observability",
     "evaluation",
     "verification",
+    "templates",
     "multiagent",
     "adapters/*",
     "contract-tests",

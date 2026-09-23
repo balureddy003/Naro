@@ -188,7 +188,7 @@ export interface OllamaCheapTierOptions {
  * assembling provider + model + reasoner. Returns the pieces so the
  * caller owns composition (the label feeds EscalatingReasoner's tiers).
  */
-export function ollamaCheapTier(opts: OllamaCheapTierOptions): { reasoner: ReActReasoner; label: string } {
+export function ollamaCheapTier(opts: OllamaCheapTierOptions): { model: Model; reasoner: ReActReasoner; label: string } {
   const baseUrl = opts.baseUrl ?? OLLAMA_DEFAULT_BASE_URL;
   const model = new OpenAiCompatibleModel(opts.model, {
     baseUrl,
@@ -196,6 +196,7 @@ export function ollamaCheapTier(opts: OllamaCheapTierOptions): { reasoner: ReAct
     ...(opts.fetchImpl !== undefined && { fetchImpl: opts.fetchImpl }),
   }, 'ollama');
   return {
+    model,
     reasoner: new ReActReasoner(model),
     label: `ollama/${opts.model}`,
   };
