@@ -184,6 +184,19 @@ cheap; movement on Y is the whole game.
   identity a seat at the same structural gate every action already passes
   through. Complements 0016 rather than competing with it: one closes a
   content-trust gap, the other an authority gap.
+- **Third and fourth candidates: provenance closes its remaining two
+  surfaces.** [ADR 0019](adr/0019-memory-writes-are-provenance-tagged.md)
+  extends `Observation`/`Tool` trust-tagging to `MemoryEntry` — OWASP's
+  2026 Agentic AI Top 10 names memory/context poisoning as ASI06
+  specifically and prescribes "memory sanitization with provenance" as a
+  leading defense; no entrant in this field's scored list tags persistent
+  memory with evidence-origin the way ADR 0010 already tags observations.
+  [ADR 0020](adr/0020-tool-source-collisions-are-not-silent.md) closes
+  cross-server tool shadowing (a second MCP source claiming a trusted
+  name), the sibling pattern to 0016's rug pull. Four ADRs, one thesis:
+  every place untrusted content can reach a decision — observations, tool
+  definitions, tool identity, memory — now has the same structural
+  answer instead of three out of four.
 
 ## Cautions for a buyer
 

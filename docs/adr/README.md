@@ -28,6 +28,8 @@ Read these when you want to know *why* the code is shaped the way it is. Read
 | [0016](0016-tool-definitions-are-provenance-pinned.md) | Tool definitions from untrusted sources are provenance-pinned (MCP tool poisoning / rug-pull defense) | proposed |
 | [0017](0017-delegated-principal-is-a-policy-input.md) | Delegated principal identity (`PolicyContext.principal`) is a policy input, distinct from grants and provenance | proposed |
 | [0018](0018-attested-retention-pruning.md) | Retention pruning is an attested chain re-anchor (`journal.retention.pruned`), not silent deletion | proposed |
+| [0019](0019-memory-writes-are-provenance-tagged.md) | `MemoryEntry`/`MemoryInput` carry `trust`, extending provenance to persistent memory (OWASP ASI06 memory poisoning) | proposed |
+| [0020](0020-tool-source-collisions-are-not-silent.md) | Tool name collisions across sources are surfaced and require resolution, not silently overwritten (cross-server tool shadowing) | proposed |
 
 ## Template
 
