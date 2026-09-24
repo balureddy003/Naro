@@ -13,6 +13,8 @@ import { SqliteApprovalBridge, SqliteRunRegistry } from '@naro/runtime';
 // flags never requires 'pg' to be installed.
 import { pgPool, PgApprovalBridge, PgEventStore, PgRunRegistry } from '@naro/adapter-pg';
 import { startAgentServer, type RunnerFactory, type ServeOptions } from './serve.ts';
+import { SqlitePrincipalStore } from './principals.ts';
+import { SqliteAccountStore, SqliteSessionStore } from './accounts.ts';
 
 export interface CliIO {
   out: (s: string) => void;
@@ -53,7 +55,14 @@ const HELP = `naro — universal agent foundation CLI
                              [--principals <file.json>] — token→{id,roles,tenantId?}
                                map; roles: viewer, operator, approver;
                                tenantId scopes GET /runs visibility (ADR 0013)
+                             [--principals-store <file.db>] — live identity store
+                               (ADR 0025): /admin/principals issues + revokes
+                               without restart; checked before --principals,
+                               not instead of it — keep --principals as a
+                               bootstrap admin token, or a fresh store has
+                               no one able to authenticate at all
                              [--no-console] — disable GET /console (on by default)
+                             [--no-chat] — disable GET /chat (on by default)
                              [--registry <file.db>] — durable run index (SQLite)
                              [--journal <file.db>]  — shared event store for
                                cross-replica GET /runs/:id/events (SQLite)
@@ -64,6 +73,18 @@ const HELP = `naro — universal agent foundation CLI
                                --registry-pg/--journal-pg/--approvals-pg;
                                requires the optional 'pg' package
                              [--registry-pg <url>] [--journal-pg <url>] [--approvals-pg <url>]
+                             [--accounts-store <file.db>] — hosted email/
+                               password signup (ADR 0027): POST /accounts/
+                               signup and /accounts/login, session cookies.
+                               Requires --principals-store too (a signed-up
+                               account is provisioned as a real principal);
+                               501s without both. Off entirely unless set —
+                               no /accounts/* routes on a self-hosted deploy
+                               that never passes this.
+                             [--secure-cookies] — mark the session cookie
+                               Secure; set this once behind TLS (a reverse
+                               proxy terminating HTTPS) — off by default so
+                               plain-HTTP local/dev runs still work
                              module exports createRunner(goal): AgentRunner
   naro approvals --db <db> list pending human-in-the-loop requests
   naro approve <id> --db <db> [--deny] [--note 'why']
@@ -268,9 +289,22 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
       }
       const noConsole = args.includes('--no-console');
       if (noConsole) args.splice(args.indexOf('--no-console'), 1);
+      const noChat = args.includes('--no-chat');
+      if (noChat) args.splice(args.indexOf('--no-chat'), 1);
       const registryPath = flag('--registry');
       const journalPath = flag('--journal');
       const approvalsPath = flag('--approvals');
+      // ADR 0025: --principals-store <file.db> adds a live
+      // SqlitePrincipalStore alongside --principals (not instead of it —
+      // see serve.ts's auth check) — writes via /admin/principals are
+      // live on the next request, no restart.
+      const principalsStorePath = flag('--principals-store');
+      // ADR 0027: --accounts-store <file.db> turns on hosted email/
+      // password signup — additive, requires --principals-store too (see
+      // ServeOptions.accountStore's own doc comment for why).
+      const accountsStorePath = flag('--accounts-store');
+      const secureCookies = args.includes('--secure-cookies');
+      if (secureCookies) args.splice(args.indexOf('--secure-cookies'), 1);
       // A shared --pg/NARO_PG_URL backs all three stores; --registry-pg/
       // --journal-pg/--approvals-pg override it per-store; see
       // resolveServeStore() for the precedence.
@@ -297,9 +331,24 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
         return 2;
       }
 
+      // A module's own createRunner() often constructs its own approvals
+      // bridge (it has no other way to reach the one RunnerFactory's
+      // signature doesn't pass through) — examples/chat-demo does exactly
+      // this, reading NARO_APPROVALS_DB. Left unset, that falls back to a
+      // hardcoded default path that silently diverges from whatever
+      // --approvals actually pointed at: the server answers GET /approvals
+      // from one SQLite file while the running agent's approval-wait reads
+      // from another, so a pending approval is real (visible in the run's
+      // own event journal) but never shows up anywhere a human can answer
+      // it. Setting the env var here from the same resolved, absolute path
+      // the server's own SqliteApprovalBridge uses makes --approvals the
+      // single source of truth instead of a footgun two independently-
+      // configured paths have to agree on by coincidence.
+      if (approvalsSource?.kind === 'sqlite') process.env['NARO_APPROVALS_DB'] = resolve(approvalsSource.path);
+
       const file = args.find((a) => !a.startsWith('-'));
       if (!file) { io.err('usage: naro serve <module.ts> [--port N] [--host h]'); return 2; }
-      const mod = await import(pathToFileURL(resolve(file)).href) as { createRunner?: RunnerFactory };
+      const mod = await import(pathToFileURL(resolve(file)).href) as { createRunner?: RunnerFactory; chatTemplates?: ServeOptions['chatTemplates'] };
       if (typeof mod.createRunner !== 'function') {
         io.err(`${file} must export createRunner(goal): AgentRunner`);
         return 2;
@@ -310,6 +359,14 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
         ...(token !== undefined && { token }),
         ...(principals !== undefined && { principals }),
         ...(noConsole && { console: false }),
+        ...(noChat && { chat: false }),
+        ...(principalsStorePath !== undefined && { principalStore: new SqlitePrincipalStore(resolve(principalsStorePath)) }),
+        ...(accountsStorePath !== undefined && {
+          accountStore: new SqliteAccountStore(resolve(accountsStorePath)),
+          sessionStore: new SqliteSessionStore(resolve(accountsStorePath)),
+        }),
+        ...(secureCookies && { secureCookies: true }),
+        ...(mod.chatTemplates !== undefined && { chatTemplates: mod.chatTemplates }),
         ...(registry !== undefined && { registry }),
         ...(journal !== undefined && { journal }),
         ...(approvals !== undefined && { approvals }),

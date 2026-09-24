@@ -130,6 +130,27 @@ Additional flags:
   visibility scoping for a single process, not tenant isolation — it does
   not cover `GET /approvals`, and a deployment needing real isolation still
   needs separate processes or a gateway in front.
+- `--principals-store <file.db>` — a live `SqlitePrincipalStore` ([ADR
+  0025](../docs/adr/0025-live-principal-store.md)): bearer tokens resolve
+  through the store on every request, and `admin` principals can issue and
+  revoke identities over HTTP (`GET/POST /admin/principals`, `DELETE
+  /admin/principals/:id`). Supersedes `--principals`/`--token` for
+  authentication — the store is the identity source when configured.
+  Generated tokens are shown once at issuance; the store holds only their
+  SHA-256 hash + last-4.
+- `GET /me` ([ADR 0026](../docs/adr/0026-me-authenticated-self-description.md))
+  — the caller's own `{id, roles, tenantId?}` so UIs render role-accurate
+  surfaces without probing privileged endpoints.
+- Admin surface ([ADR 0024](../docs/adr/0024-admin-api-surface-for-registry-and-retention.md)),
+  all `admin`-gated: `GET/POST /admin/tool-collisions[/resolve]`,
+  `GET/POST /admin/tool-definitions/changed|acknowledge` (needs
+  `toolRegistry` on `startAgentServer`), and `POST /admin/runs/:id/prune
+  {throughSeq, policy?}` (needs a `PrunableEventStore` journal +
+  `pruneSealKey` for attestation). Unconfigured dependencies → `501`, not
+  a broken half-route.
+- `POST /goals` accepts an optional `template` field, passed to the module's
+  `createRunner(goal, {principal, template})` — how a deployment serving
+  multiple outcome templates routes a submission.
 
 Production surface: `GET /health` + `GET /ready` probes (unauthenticated),
 optional bearer gate via `--token` or `NARO_SERVE_TOKEN`, 64 KiB body cap on
@@ -149,6 +170,16 @@ same role-gated endpoints a script would use. Read-only except for
 it with `--no-console` / `console: false` if you'd rather not serve it at
 all — this is not a replacement for a real operations dashboard, just
 enough to look at a run without writing a client.
+
+### Chat interface (PRD-006)
+
+`GET /chat` serves `@naro/chat-ui` — the chat-shaped interface where an
+outcome template is one object with Runs/Settings/Access tabs. Same
+posture as the console: the shell needs no auth, every API call it makes
+is role-gated, its compiled ESM is served under `/chat-ui/*.js` (no
+bundler). `chatTemplates` on `startAgentServer` declares the template
+manifest the sidebar lists; runs group under a template when their
+spec name is `tpl:<id>`. Disable with `--no-chat` / `chat: false`.
 
 ### `approvals` / `approve`
 

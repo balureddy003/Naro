@@ -19,6 +19,8 @@ import {
 export interface PruneOptions {
   /** Policy citation recorded on the marker — e.g. 'GDPR Art. 5(1)(e)'. */
   readonly policy?: string;
+  /** The principal whose decision this prune is — ADR 0024 attribution. */
+  readonly by?: string;
   /** Ed25519 private key (PEM): attests the canonical
    *  {anchorHash, prunedThroughSeq, prunedAt, policy} tuple — proof a
    *  specific key-holder authorized this prune, not just that it happened. */
@@ -75,6 +77,7 @@ export function buildPruneMarker(
   const data: NaroEvent<'journal.retention.pruned'>['data'] = {
     prunedThroughSeq: throughSeq, anchorHash, prunedAt: Date.now(),
     ...(opts.policy !== undefined && { policy: opts.policy }),
+    ...(opts.by !== undefined && { by: opts.by }),
   };
   if (opts.sealKey !== undefined) {
     data.signature = signHead(canonicalize(data), opts.sealKey);

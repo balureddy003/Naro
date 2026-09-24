@@ -49,8 +49,9 @@ export class ToolRegistry {
   private readonly sources: ToolSource[] = [];
   /** name → shadowed defs awaiting resolve() — keyed by tool name. */
   private readonly shadows = new Map<string, { tool: Tool; sourceId: string }[]>();
-  /** `${sourceId}${name}` → original def awaiting acknowledgeDefinition(). */
-  private readonly changedDefs = new Map<string, { tool: Tool; sourceId: string }>();
+  /** `${sourceId}${name}` → original def awaiting acknowledgeDefinition(),
+   *  with the hash pair that flagged it — what an admin reviews before acking. */
+  private readonly changedDefs = new Map<string, { tool: Tool; sourceId: string; previous: string; current: string }>();
   /** `${sourceId}${name}` → last-seen definitionHash (ADR 0016). */
   private readonly seenHashes = new Map<string, string>();
   /** Registry-level events, in order — inspect or forward to a journal. */
@@ -108,7 +109,7 @@ export class ToolRegistry {
           type: 'tool.definition.changed', at: Date.now(), tool: tool.name,
           data: { source: sourceId, previous: seen, current: tool.definitionHash },
         });
-        this.changedDefs.set(key, { tool, sourceId });
+        this.changedDefs.set(key, { tool, sourceId, previous: seen, current: tool.definitionHash });
         // Forced destructive until acknowledged: baseline policy re-approval
         // is the operator's signal that the contract they reviewed changed.
         this.tools.set(tool.name, {
@@ -155,6 +156,15 @@ export class ToolRegistry {
       this.seenHashes.set(`${sourceId}::${name}`, chosen!.tool.definitionHash);
     }
     return true;
+  }
+
+  /** Definitions changed since their source's last review (ADR 0016) —
+   *  pending acknowledgeDefinition(). The pair {previous, current} is the
+   *  evidence an admin diff-reviews before acking. */
+  changedDefinitions(): readonly { name: string; sourceId: string; previous: string; current: string }[] {
+    return [...this.changedDefs.values()].map((e) => ({
+      name: e.tool.name, sourceId: e.sourceId, previous: e.previous, current: e.current,
+    }));
   }
 
   /** Names with unresolved shadowing claims — for operator inspection. */

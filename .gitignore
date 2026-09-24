@@ -5,3 +5,8 @@ dist/
 coverage/
 checkpoints/
 .naro/
+
+# examples/chat-demo's default SqliteApprovalBridge path when
+# NARO_APPROVALS_DB / --approvals isn't set — runtime state, never checked in.
+# Anchored to the repo root — profiles/data/ is a real tracked package, not this.
+/data/

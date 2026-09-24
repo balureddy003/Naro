@@ -126,6 +126,12 @@
     },
     {
       "path": "./dogfood"
+    },
+    {
+      "path": "chat-ui"
+    },
+    {
+      "path": "templates"
     }
   ],
   "extends": "./tsconfig.base.json",

@@ -2,7 +2,7 @@
 
 Status: proposed
 Owner: unassigned
-Depends on: [PRD-002](prd-002-outcome-templates.md), `naro serve`, `@naro/adapter-pg`, `@naro/client`
+Depends on: [PRD-002](prd-002-outcome-templates.md), `naro serve`, `@naro/adapter-pg`, `@naro/client`, [PRD-006](prd-006-chat-interface.md) (the business-facing UI functional requirement 4 calls for), [ADR 0027](../adr/0027-hosted-account-signup-and-sessions.md) (milestone 3's signup)
 
 ## Summary
 
@@ -77,10 +77,14 @@ system keeps running.
 4. **The console (or a business-facing view built on `@naro/client`) is
    the primary interface**, not a developer tool repurposed. The
    existing ops console is aimed at an operator who understands runs and
-   evidence trees; a business owner needs a simpler surface — likely a
-   distinct, business-facing UI built on the same `@naro/client` SDK
-   (exactly the "template built on the headless SDK" pattern the SDK was
-   designed for), not the console itself relabeled.
+   evidence trees; a business owner needs a simpler surface — that
+   surface is [PRD-006](prd-006-chat-interface.md), not a hypothetical
+   still-to-be-designed one: it's the same "template built on the
+   headless SDK" pattern this line already called for, already specified
+   (goal submission, inline approval cards, expandable evidence, a
+   template-scoped Settings/Access model), not the console itself
+   relabeled. What this PRD adds on top is hosting it multi-tenant, not
+   designing it from scratch.
 5. **Draining, backup, and restore are the operator's job, invisibly.**
    `naro serve`'s existing SIGTERM drain and Postgres durability are the
    mechanism; this PRD adds the operational practice (backup schedule,
@@ -102,7 +106,8 @@ system keeps running.
 - `@naro/adapter-pg` for the durable multi-host backing store (already
   ships every port: `PgRunRegistry`, `PgEventStore`, `PgApprovalBridge`,
   `PgLeaseStore`, `PgLimitStore`).
-- `@naro/client` as the SDK the business-facing UI is built on.
+- `@naro/client` as the SDK the business-facing UI is built on —
+  concretely, [PRD-006](prd-006-chat-interface.md), the UI FR4 calls for.
 - A real secrets story for tenant-supplied credentials (PRD-004's data
   connections) — `@naro/adapter-vault` or an equivalent, not values in
   configuration.
@@ -133,5 +138,11 @@ system keeps running.
    multi-tenant infrastructure.
 2. Cost ledger + outcome-based billing, validated against at least one
    full billing cycle's provider invoices.
-3. Self-service signup + business-facing UI.
+3. Self-service signup ([ADR 0027](../adr/0027-hosted-account-signup-and-sessions.md)
+   — implemented: email/password, session cookies, a signed-up account
+   provisioned as a real principal) + business-facing UI ([PRD-006](prd-006-chat-interface.md),
+   served multi-tenant — not a new UI designed for this milestone).
+   Password reset and email verification remain open — see ADR 0027's
+   own consequences section — before this milestone is fully
+   "self-service."
 4. Multi-tenant isolation hardening once tenant count justifies it.

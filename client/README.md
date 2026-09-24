@@ -19,7 +19,12 @@ like"):
 
 - **`NaroClient`** — thin typed wrappers over the HTTP endpoints:
   `submitGoal`, `listRuns`, `getRun`, `getEvidence`, `listApprovals`,
-  `answerApproval`, `streamEvents`. No caching, no state, no opinions about
+  `answerApproval`, `streamEvents`, `me` (ADR 0026), `cancelRun` /
+  `cancelAllRuns` (ADR 0022), and the admin surface —
+  `listToolCollisions` / `resolveToolCollision`,
+  `listChangedDefinitions` / `acknowledgeDefinition`, `pruneRun`
+  (ADR 0024), `listPrincipals` / `createPrincipal` / `revokePrincipal`
+  (ADR 0025). No caching, no state, no opinions about
   re-render — call it, get a typed value or a `NaroApiError`.
 - **Headless primitives** (`headless.ts`) — `watchRun`, `pollRuns`,
   `pollApprovals`. Each takes a callback and returns a plain `() => void`
