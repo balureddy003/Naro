@@ -9,8 +9,42 @@ import { InMemoryRunRegistry, type AgentRunner, type ApprovalRequest, type RunRe
 import { buildEvidence, type PrunableEventStore } from '@naro/observability';
 import type { ToolRegistry } from '@naro/tools';
 import { generateToken, type PrincipalStore } from './principals.ts';
+import {
+  hashPassword, verifyPassword, EmailAlreadyRegisteredError, LoginRateLimiter, SESSION_TTL_MS,
+  type AccountStore, type SessionStore,
+} from './accounts.ts';
 import { CONSOLE_HTML } from './console.ts';
 import { CHAT_UI_HTML } from '@naro/chat-ui';
+
+const SESSION_COOKIE = 'naro_session';
+// Not a real scrypt output — same "saltHex:hashHex" byte lengths hashPassword
+// produces, so a login attempt against an unregistered email still runs a
+// full scrypt+timingSafeEqual cycle (see /accounts/login below) instead of
+// returning fast, which would otherwise let a caller enumerate registered
+// emails by response timing alone.
+const DUMMY_PASSWORD_HASH = `${'a'.repeat(32)}:${'b'.repeat(128)}`;
+
+function readCookie(header: string | undefined, name: string): string | undefined {
+  if (header === undefined) return undefined;
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+  }
+  return undefined;
+}
+
+function setSessionCookie(res: import('node:http').ServerResponse, sessionId: string, secure: boolean): void {
+  const attrs = [`${SESSION_COOKIE}=${sessionId}`, 'Path=/', 'HttpOnly', 'SameSite=Lax', `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`];
+  if (secure) attrs.push('Secure');
+  res.setHeader('Set-Cookie', attrs.join('; '));
+}
+
+function clearSessionCookie(res: import('node:http').ServerResponse, secure: boolean): void {
+  const attrs = [`${SESSION_COOKIE}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0'];
+  if (secure) attrs.push('Secure');
+  res.setHeader('Set-Cookie', attrs.join('; '));
+}
 
 // Resolved once per process — @naro/client's compiled dist/ is plain,
 // dependency-free ESM (fetch + AbortController + ReadableStream only), so
@@ -195,6 +229,18 @@ export interface ServeOptions {
    *  declared manifest, injected into the shell page (no endpoint). A
    *  run groups under a template when its specName is `tpl:<id>`. */
   readonly chatTemplates?: readonly { id: string; name: string; icon?: string; tagline?: string; configured?: boolean }[];
+  /** ADR 0027: hosted email/password signup — additive, opt-in. Requires
+   *  `principalStore` too (a signed-up account is provisioned as a real
+   *  `Principal`); POST /accounts/signup and /accounts/login 501 without
+   *  all three configured. Absent entirely → self-hosted behavior is
+   *  unchanged, no /accounts/* routes exposed at all. */
+  readonly accountStore?: AccountStore;
+  readonly sessionStore?: SessionStore;
+  /** Marks the session cookie `Secure` — set this once the deployment is
+   *  actually behind TLS (a reverse proxy terminating HTTPS, per
+   *  docs/deploy.md). Default false so a plain-HTTP dev/local run still
+   *  works out of the box; a production hosted deployment must opt in. */
+  readonly secureCookies?: boolean;
 }
 
 interface RunRecord {
@@ -222,6 +268,15 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
     opts.principals ?? (opts.token !== undefined
       ? { [opts.token]: { id: 'token', roles: ['viewer', 'operator', 'approver'] } }
       : undefined);
+
+  // Per-server-instance, not module-global — several `startAgentServer()`
+  // calls can be live in one process (every test in this file does this),
+  // and a shared limiter would let one instance's failed logins count
+  // against another's rate limit.
+  const loginLimiter = new LoginRateLimiter();
+  // IP-only, tighter window: bounds mass account creation, not repeated
+  // guesses against one account (that's login's job, above).
+  const signupLimiter = new LoginRateLimiter(5, 60 * 60_000);
 
   const server: Server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
@@ -290,7 +345,16 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       res.end(CHAT_UI_HTML.replace('__NARO_CHAT_CONFIG__',
         // '<' escaped so a template name containing '</script>' can't
         // break out of the inline config block.
-        JSON.stringify({ templates: opts.chatTemplates ?? [] }).replace(/</g, '\\u003c')));
+        JSON.stringify({
+          templates: opts.chatTemplates ?? [],
+          // ADR 0027: which sign-in screen the shell renders — email/
+          // password + signup when this deployment is hosted-accounts-
+          // enabled, the existing token-paste screen otherwise. Both
+          // stores are required (see accountStore's own doc comment);
+          // checking both here, not just one, keeps this flag meaning
+          // "signup will actually work," not "half of it is configured."
+          accountsEnabled: opts.accountStore !== undefined && opts.sessionStore !== undefined,
+        }).replace(/</g, '\\u003c')));
       return;
     }
     const chatAsset = /^\/chat-ui\/([a-z0-9_-]+\.js(?:\.map)?)$/i.exec(url.pathname);
@@ -304,6 +368,96 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       } catch {
         return json(404, { error: 'not found' });
       }
+    }
+
+    // ADR 0027: hosted signup/login — auth-free, same reason /chat is: this
+    // is how a caller BECOMES authenticated, so it can't require already
+    // being authenticated. Absent all three of accountStore/sessionStore/
+    // principalStore, these 501 rather than 404 — a deployment operator
+    // configuring only one or two of the three gets a real "you're missing
+    // a piece" error, not a silent "route doesn't exist."
+    if (req.method === 'POST' && url.pathname === '/accounts/signup') {
+      if (!opts.accountStore || !opts.sessionStore || !opts.principalStore) {
+        return json(501, { error: 'hosted accounts not configured on this deployment' });
+      }
+      let body: { email?: string; password?: string };
+      try { body = JSON.parse(await readBody(req, maxBody)); }
+      catch (e) {
+        return json(e instanceof Error && e.message === 'too-large' ? 413 : 400,
+          { error: e instanceof Error && e.message === 'too-large' ? 'body too large' : 'invalid JSON' });
+      }
+      const email = typeof body.email === 'string' ? body.email.trim() : '';
+      const password = typeof body.password === 'string' ? body.password : '';
+      const ip = req.socket.remoteAddress ?? 'unknown';
+      // Signup has no existing account to key a per-email limiter on
+      // (that's the whole point — see login's per-email+IP limiter below
+      // for the case where one does), so this is IP-only: bounds mass
+      // account creation / spam without needing a CAPTCHA for v1.
+      if (!signupLimiter.allow(ip, ip)) return json(429, { error: 'too many signups from this address — try again later' });
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 320) return json(400, { error: 'a valid email is required' });
+      if (password.length < 10) return json(400, { error: 'password must be at least 10 characters' });
+      // Not a security-critical bound by itself (the 64 KiB body cap
+      // already limits this) — scrypt's cost scales with input size, so
+      // an absurdly long password is still cheaper to reject outright
+      // than to hash, on every signup attempt an attacker can make.
+      if (password.length > 256) return json(400, { error: 'password must be 256 characters or fewer' });
+      signupLimiter.record(ip, ip);
+      let account;
+      try {
+        account = await opts.accountStore.create(email, await hashPassword(password));
+      } catch (e) {
+        if (e instanceof EmailAlreadyRegisteredError) return json(409, { error: e.message });
+        throw e;
+      }
+      // The account IS a principal from the moment it exists (ADR 0027) —
+      // provisioned as that tenant's admin. The token this upsert needs
+      // is generated and discarded; this flow is session-only, and a
+      // hosted signup should never show a business owner the word
+      // "token" or "bearer" (see ADR 0027's alternatives-considered).
+      await opts.principalStore.upsert(generateToken(), { id: account.id, roles: new Set(['admin']), tenantId: account.tenantId });
+      const sessionId = await opts.sessionStore.create({ accountId: account.id, principalId: account.id, tenantId: account.tenantId });
+      setSessionCookie(res, sessionId, opts.secureCookies === true);
+      return json(201, { id: account.id, email: account.email, tenantId: account.tenantId });
+    }
+    if (req.method === 'POST' && url.pathname === '/accounts/login') {
+      if (!opts.accountStore || !opts.sessionStore) {
+        return json(501, { error: 'hosted accounts not configured on this deployment' });
+      }
+      let body: { email?: string; password?: string };
+      try { body = JSON.parse(await readBody(req, maxBody)); }
+      catch (e) {
+        return json(e instanceof Error && e.message === 'too-large' ? 413 : 400,
+          { error: e instanceof Error && e.message === 'too-large' ? 'body too large' : 'invalid JSON' });
+      }
+      const email = typeof body.email === 'string' ? body.email.trim() : '';
+      const password = typeof body.password === 'string' ? body.password : '';
+      // Length isn't secret (the caller already knows what they sent), so
+      // rejecting it early — before the constant-time path below — leaks
+      // nothing; it just avoids scrypt-hashing an attacker-supplied
+      // multi-kilobyte string on every request.
+      if (password.length > 256) return json(400, { error: 'invalid email or password' });
+      const ip = req.socket.remoteAddress ?? 'unknown';
+      if (!loginLimiter.allow(email, ip)) return json(429, { error: 'too many attempts — try again in a few minutes' });
+      const stored = await opts.accountStore.findByEmail(email);
+      // Always runs the same scrypt+timingSafeEqual cost, registered email
+      // or not (against DUMMY_PASSWORD_HASH when it doesn't exist) — a
+      // fast-path early-return here would let response timing alone leak
+      // which emails are registered.
+      const ok = await verifyPassword(password, stored?.passwordHash ?? DUMMY_PASSWORD_HASH);
+      if (!ok || stored === undefined) {
+        loginLimiter.recordFailure(email, ip);
+        return json(401, { error: 'invalid email or password' });
+      }
+      loginLimiter.clear(email, ip);
+      const sessionId = await opts.sessionStore.create({ accountId: stored.id, principalId: stored.id, tenantId: stored.tenantId });
+      setSessionCookie(res, sessionId, opts.secureCookies === true);
+      return json(200, { id: stored.id, email: stored.email, tenantId: stored.tenantId });
+    }
+    if (req.method === 'POST' && url.pathname === '/accounts/logout') {
+      const sessionId = readCookie(req.headers.cookie, SESSION_COOKIE);
+      if (sessionId !== undefined && opts.sessionStore !== undefined) await opts.sessionStore.revoke(sessionId);
+      clearSessionCookie(res, opts.secureCookies === true);
+      return json(200, { ok: true });
     }
 
     // Authn: bearer token → principal. Authz: the route's required role.
@@ -320,14 +474,28 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
     // anyone unless a static token still works as a fallback here. Check
     // the store first (it's the live, revocable source of truth), then
     // fall back to the static map rather than short-circuiting on
-    // whichever was configured.
+    // whichever was configured. ADR 0027 adds a third path: a session
+    // cookie, resolved to the principal its session's `principalId`
+    // names — checked last since a bearer credential, when present, is
+    // an explicit choice to authenticate as that identity for this one
+    // request, not implicitly fall back to whatever browser session
+    // happens to be cookied.
     let principal: Principal | undefined;
-    if (opts.principalStore !== undefined || principals !== undefined) {
+    if (opts.principalStore !== undefined || principals !== undefined || opts.sessionStore !== undefined) {
       const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1];
       let p: { id: string; roles: Iterable<string>; tenantId?: string } | undefined;
       if (bearer !== undefined) {
         p = opts.principalStore !== undefined ? await opts.principalStore.get(bearer) : undefined;
         if (p === undefined) p = principals?.[bearer];
+      }
+      if (p === undefined && opts.sessionStore !== undefined) {
+        const sessionId = readCookie(req.headers.cookie, SESSION_COOKIE);
+        if (sessionId !== undefined) {
+          const session = await opts.sessionStore.get(sessionId);
+          if (session !== undefined && opts.principalStore !== undefined) {
+            p = await opts.principalStore.getById(session.principalId);
+          }
+        }
       }
       if (p === undefined) return json(401, { error: 'unauthorized' });
       principal = { id: p.id, roles: expandRoles(p.roles), ...(p.tenantId !== undefined && { tenantId: p.tenantId }) };

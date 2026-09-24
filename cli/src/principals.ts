@@ -33,6 +33,11 @@ export interface StoredPrincipal extends Principal {
 export interface PrincipalStore {
   /** Resolve a bearer token to its principal — the per-request auth path. */
   get(token: string): Promise<Principal | undefined>;
+  /** Resolve by principal id rather than token — ADR 0027's session auth
+   *  path: a session stores `principalId`, not a bearer token, so a role
+   *  change or revocation is visible on the session's very next request
+   *  too, the same immediacy `get(token)` already gives bearer callers. */
+  getById(id: string): Promise<Principal | undefined>;
   /** All principals with token last-4 for display — never raw tokens. */
   list(): Promise<readonly StoredPrincipal[]>;
   /** Create or replace the principal a token resolves to. */
@@ -65,6 +70,13 @@ export class InMemoryPrincipalStore implements PrincipalStore {
   get(token: string): Promise<Principal | undefined> {
     const row = this.rows.get(hashToken(token));
     return Promise.resolve(row === undefined ? undefined : toPrincipal(row.principal));
+  }
+
+  getById(id: string): Promise<Principal | undefined> {
+    for (const row of this.rows.values()) {
+      if (row.principal.id === id) return Promise.resolve(toPrincipal(row.principal));
+    }
+    return Promise.resolve(undefined);
   }
 
   list(): Promise<readonly StoredPrincipal[]> {
@@ -116,6 +128,15 @@ export class SqlitePrincipalStore implements PrincipalStore {
     if (row === undefined) return Promise.resolve(undefined);
     const p = JSON.parse(row.principal) as { id: string; roles: string[]; tenantId?: string };
     return Promise.resolve(toPrincipal(p));
+  }
+
+  getById(id: string): Promise<Principal | undefined> {
+    const rows = this.db.prepare('SELECT principal FROM principals').all() as { principal: string }[];
+    for (const row of rows) {
+      const p = JSON.parse(row.principal) as { id: string; roles: string[]; tenantId?: string };
+      if (p.id === id) return Promise.resolve(toPrincipal(p));
+    }
+    return Promise.resolve(undefined);
   }
 
   list(): Promise<readonly StoredPrincipal[]> {

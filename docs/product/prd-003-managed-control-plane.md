@@ -2,7 +2,7 @@
 
 Status: proposed
 Owner: unassigned
-Depends on: [PRD-002](prd-002-outcome-templates.md), `naro serve`, `@naro/adapter-pg`, `@naro/client`, [PRD-006](prd-006-chat-interface.md) (the business-facing UI functional requirement 4 calls for)
+Depends on: [PRD-002](prd-002-outcome-templates.md), `naro serve`, `@naro/adapter-pg`, `@naro/client`, [PRD-006](prd-006-chat-interface.md) (the business-facing UI functional requirement 4 calls for), [ADR 0027](../adr/0027-hosted-account-signup-and-sessions.md) (milestone 3's signup)
 
 ## Summary
 
@@ -138,6 +138,11 @@ system keeps running.
    multi-tenant infrastructure.
 2. Cost ledger + outcome-based billing, validated against at least one
    full billing cycle's provider invoices.
-3. Self-service signup + business-facing UI ([PRD-006](prd-006-chat-interface.md),
+3. Self-service signup ([ADR 0027](../adr/0027-hosted-account-signup-and-sessions.md)
+   — implemented: email/password, session cookies, a signed-up account
+   provisioned as a real principal) + business-facing UI ([PRD-006](prd-006-chat-interface.md),
    served multi-tenant — not a new UI designed for this milestone).
+   Password reset and email verification remain open — see ADR 0027's
+   own consequences section — before this milestone is fully
+   "self-service."
 4. Multi-tenant isolation hardening once tenant count justifies it.

@@ -36,6 +36,7 @@ Read these when you want to know *why* the code is shaped the way it is. Read
 | [0024](0024-admin-api-surface-for-registry-and-retention.md) | `naro serve` gains `admin`-gated endpoints for tool-collision resolution, definition acknowledgment, and retention pruning — HTTP wiring onto ADR 0016/0018/0020's existing decisions | accepted |
 | [0025](0025-live-principal-store.md) | A `PrincipalStore` port makes `naro serve` identity live and admin-writable — no config-file edit, no restart, to add or revoke a teammate | accepted |
 | [0026](0026-me-authenticated-self-description.md) | `GET /me` returns the caller's principal — role-accurate UI rendering (PRD-006 req 7) without probing privileged endpoints | accepted |
+| [0027](0027-hosted-account-signup-and-sessions.md) | Email/password signup for PRD-003's hosted product, layered on ADR 0025's `PrincipalStore` — a signed-up account IS a principal, not a second identity system | accepted |
 
 ## Template
 

@@ -31,6 +31,10 @@ export interface AppState {
   templates: ChatTemplate[];
   runs: readonly RunSummary[];
   approvals: readonly ApprovalRequest[];
+  /** Which sign-out path the sidebar's account menu should use — an
+   *  accounts-enabled deployment calls POST /accounts/logout; a
+   *  self-hosted one just clears the localStorage token. */
+  accountsEnabled: boolean;
 }
 
 interface Route {
@@ -98,11 +102,16 @@ function renderSidebar(state: AppState, route: Route): void {
   const head = h('div', { class: 'sidebar-head' });
   const ws = h('div', { class: 'workspace' },
     h('span', { class: 'workspace-mark' }, 'N'),
-    h('div', {},
+    h('div', { style: 'min-width:0;flex:1' },
       h('div', { class: 'workspace-name' }, 'Naro'),
       h('div', { class: 'workspace-sub' }, `signed in as ${state.me.id}`)));
+  if (!state.me.open) {
+    const signOut = h('button', { class: 'gear-btn', type: 'button', 'aria-label': 'Sign out', title: 'Sign out' }, icon('logout'));
+    signOut.addEventListener('click', () => void signOutAndReload(state));
+    ws.append(signOut);
+  }
   head.append(ws);
-  head.append(h('span', { class: 'self-host-badge' }, 'self‑hosted · naro serve'));
+  head.append(h('span', { class: 'self-host-badge' }, state.accountsEnabled ? 'naro serve' : 'self‑hosted · naro serve'));
   if (state.me.roles.has('admin')) {
     const newBtn = h('button', { class: 'new-btn', type: 'button' }, '+ New template');
     newBtn.addEventListener('click', () => openWizard(deps()));
@@ -173,6 +182,15 @@ function renderSidebar(state: AppState, route: Route): void {
     }
   }
   el.append(body);
+}
+
+async function signOutAndReload(state: AppState): Promise<void> {
+  if (state.accountsEnabled) {
+    try { await fetch(`${location.origin}/accounts/logout`, { method: 'POST' }); } catch { /* best effort — reload re-checks anyway */ }
+  } else {
+    localStorage.removeItem(TOKEN_KEY);
+  }
+  location.reload();
 }
 
 function ago_(ts: number): string {
@@ -354,10 +372,15 @@ async function render(): Promise<void> {
 }
 
 async function boot(): Promise<void> {
-  const cfg = (window as unknown as { NARO_CHAT_CONFIG?: { templates?: ChatTemplate[] } }).NARO_CHAT_CONFIG ?? {};
+  const cfg = (window as unknown as { NARO_CHAT_CONFIG?: { templates?: ChatTemplate[]; accountsEnabled?: boolean } }).NARO_CHAT_CONFIG ?? {};
   const templates = cfg.templates ?? [];
+  const accountsEnabled = cfg.accountsEnabled === true;
 
-  const token = localStorage.getItem(TOKEN_KEY) ?? undefined;
+  // ADR 0027: an accounts-enabled deployment authenticates via the
+  // session cookie the browser already sends on every same-origin
+  // request — no token to read from localStorage at all. A self-hosted
+  // deployment keeps the exact token-in-localStorage path unchanged.
+  const token = accountsEnabled ? undefined : (localStorage.getItem(TOKEN_KEY) ?? undefined);
   const client = new sdk.NaroClient({ baseUrl: location.origin, ...(token !== undefined && { token }) });
 
   let me: AppState['me'];
@@ -365,11 +388,12 @@ async function boot(): Promise<void> {
     const m = await client.me();
     me = { id: m.id, roles: new Set(m.roles), ...(m.tenantId !== undefined && { tenantId: m.tenantId }), ...(m.open === true && { open: true }) };
   } catch {
-    renderSignIn(templates);
+    if (accountsEnabled) renderAccountAuth(templates);
+    else renderTokenSignIn(templates);
     return;
   }
 
-  state = { client, me, templates, runs: [], approvals: [] };
+  state = { client, me, templates, runs: [], approvals: [], accountsEnabled };
   await refresh(state);
   window.addEventListener('hashchange', () => void render());
   await render();
@@ -388,19 +412,25 @@ async function boot(): Promise<void> {
 }
 
 /**
- * There is deliberately no signup form here — Naro has no self-service
- * registration (ADR 0012/0025): every person's access is issued by an
- * admin, never created by the person themselves, the same posture as
- * Grafana or Metabase's own self-hosted admin-invites-you model. What
- * *was* wrong with this screen wasn't the architecture, it was that it
- * read like a debug form instead of a real product's first screen — no
- * mark, no explanation of why there's no "create account" link, one
- * generic sentence. Fixed here without changing what's actually true:
- * still token-based, still admin-issued, just presented like it means
- * it, and honest about the two real cases (you're the admin bootstrapping
- * this deployment for the first time, or someone gave you a token).
+ * The self-hosted sign-in screen — deliberately no signup form here.
+ * Naro's self-hosted posture has no self-service registration (ADR
+ * 0012/0025): every person's access is issued by an admin, never created
+ * by the person themselves, the same posture as Grafana or Metabase's own
+ * self-hosted admin-invites-you model. What *was* wrong with this screen
+ * wasn't the architecture, it was that it read like a debug form instead
+ * of a real product's first screen — no mark, no explanation of why
+ * there's no "create account" link, one generic sentence. Fixed here
+ * without changing what's actually true: still token-based, still
+ * admin-issued, just presented like it means it, and honest about the two
+ * real cases (you're the admin bootstrapping this deployment for the
+ * first time, or someone gave you a token).
+ *
+ * `renderAccountAuth` below is the *other* screen — real email/password
+ * signup, for a deployment that opted into ADR 0027's hosted accounts.
+ * Which one a given deployment shows is a server-side config flag
+ * (`accountsEnabled`), never a client-side choice.
  */
-function renderSignIn(templates: ChatTemplate[]): void {
+function renderTokenSignIn(templates: ChatTemplate[]): void {
   const content = document.getElementById('content')!;
   clear(content);
   const col = h('div', { class: 'column signin' });
@@ -443,6 +473,98 @@ function renderSignIn(templates: ChatTemplate[]): void {
   col.append(card, help);
   content.append(col);
   input.focus();
+}
+
+/**
+ * ADR 0027's hosted signup/login — real email + password, a session
+ * cookie on success, no token the visitor ever sees or copies. One
+ * screen, a tab toggle between the two modes (defaulting to Sign up,
+ * the first thing a new visitor to a hosted product needs) rather than
+ * two separate routes, since the fields and submit mechanics are nearly
+ * identical and a mis-click between them should be one tap to fix, not
+ * a navigation.
+ */
+function renderAccountAuth(templates: ChatTemplate[]): void {
+  const content = document.getElementById('content')!;
+  clear(content);
+  const col = h('div', { class: 'column signin' });
+
+  let mode: 'signup' | 'login' = 'signup';
+
+  const mark = h('div', { class: 'signin-mark' }, icon('shield'));
+  const title = h('h2', { class: 'signin-title' }, 'Naro');
+  const lede = h('p', { class: 'signin-lede' });
+  const tabs = h('div', { class: 'auth-tabs' },
+    h('button', { class: 'auth-tab', type: 'button', id: 'tab-signup' }, 'Sign up'),
+    h('button', { class: 'auth-tab', type: 'button', id: 'tab-login' }, 'Log in'));
+
+  const emailInput = h('input', { class: 'text-input', id: 'auth-email', type: 'email', placeholder: 'you@company.com', autocomplete: 'email' });
+  const passwordInput = h('input', { class: 'text-input mono', id: 'auth-password', type: 'password', placeholder: '••••••••••', autocomplete: 'current-password' });
+  const passwordHint = h('p', { class: 'field-hint' }, 'At least 10 characters.');
+  const err = h('p', { class: 'signin-err', style: 'display:none' });
+  const btn = h('button', { class: 'btn-fill', type: 'button' }, icon('arrow', 'btn-icon'), 'Create account');
+  btn.style.cssText = 'width:100%;margin-top:4px;display:flex;align-items:center;justify-content:center;gap:8px';
+
+  const card = h('div', { class: 'page-card signin-card' },
+    mark, title, lede, tabs, h('div', { class: 'signin-rule' }),
+    h('label', { class: 'field-label', for: 'auth-email' }, 'Email'), emailInput,
+    h('label', { class: 'field-label', for: 'auth-password' }, 'Password'), passwordInput, passwordHint,
+    err, btn);
+
+  const help = h('div', { class: 'signin-help' });
+
+  const applyMode = () => {
+    err.style.display = 'none';
+    // Direct references, not getElementById — this runs once before
+    // these nodes are attached to `document` at all (the initial
+    // applyMode() call, right before col/card get appended below).
+    tabs.children[0]!.classList.toggle('active', mode === 'signup');
+    tabs.children[1]!.classList.toggle('active', mode === 'login');
+    passwordInput.setAttribute('autocomplete', mode === 'signup' ? 'new-password' : 'current-password');
+    passwordHint.style.display = mode === 'signup' ? '' : 'none';
+    btn.lastChild!.textContent = mode === 'signup' ? 'Create account' : 'Log in';
+    lede.textContent = templates.length > 0
+      ? `${templates.length} outcome template${templates.length === 1 ? '' : 's'} configured on this deployment. Every action they take is policy-checked and provable.`
+      : 'Self-hosted, policy-checked, provable.';
+    clear(help);
+    help.append(mode === 'signup'
+      ? h('p', {}, "You're in immediately — no email verification yet, this is a v1. Signing up makes you this deployment's first admin.")
+      : h('p', {}, h('strong', {}, "Don't have an account? "), 'Use the "Sign up" tab above — anyone can create the first account on a fresh deployment.'));
+  };
+
+  tabs.children[0]!.addEventListener('click', () => { mode = 'signup'; applyMode(); });
+  tabs.children[1]!.addEventListener('click', () => { mode = 'login'; applyMode(); });
+
+  const submit = async () => {
+    const email = emailInput.value.trim();
+    const password = passwordInput.value;
+    if (email === '' || password === '') { err.textContent = 'Email and password are both required.'; err.style.display = ''; return; }
+    btn.setAttribute('disabled', '');
+    try {
+      const res = await fetch(`${location.origin}/accounts/${mode === 'signup' ? 'signup' : 'login'}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        err.textContent = body.error ?? `${mode === 'signup' ? 'Sign up' : 'Log in'} failed.`;
+        err.style.display = '';
+        return;
+      }
+      location.reload();
+    } catch {
+      err.textContent = 'Could not reach the server — check your connection and try again.';
+      err.style.display = '';
+    } finally {
+      btn.removeAttribute('disabled');
+    }
+  };
+  btn.addEventListener('click', () => void submit());
+  passwordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') void submit(); });
+
+  applyMode();
+  col.append(card, help);
+  content.append(col);
+  emailInput.focus();
 }
 
 void boot();

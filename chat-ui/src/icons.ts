@@ -15,6 +15,7 @@ const PATHS: Record<string, string> = {
   shield: '<path d="M8 1.5L2.5 3.8v3.5C2.5 11 4.9 13.4 8 14.2c3.1-.8 5.5-3.2 5.5-6.9V3.8L8 1.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" fill="none"/><path d="M5.5 8l1.8 1.8L10.8 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
   key: '<circle cx="5.5" cy="10.5" r="3" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M7.6 8.4L13.5 2.5M11 5l1.8 1.8M9 7l1.3 1.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
   arrow: '<path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+  logout: '<path d="M6.5 2H3.5a1 1 0 00-1 1v10a1 1 0 001 1h3M10 11l3-3-3-3M13 8H6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
 };
 
 export type IconName = keyof typeof PATHS;

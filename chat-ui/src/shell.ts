@@ -355,6 +355,19 @@ export const CHAT_UI_HTML = `<!doctype html>
     border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
   }
 
+  /* ADR 0027 — hosted signup/login tab toggle */
+  .auth-tabs {
+    display: flex; gap: 3px; margin: 16px 0 0; padding: 3px;
+    background: var(--surface-alt); border: 1px solid var(--border-soft); border-radius: 10px;
+  }
+  .auth-tab {
+    flex: 1; border: 0; background: none; padding: 7px 0; border-radius: 7px;
+    font: inherit; font-size: 13px; font-weight: 550; color: var(--ink-muted); cursor: pointer;
+    transition: background .12s ease, color .12s ease;
+  }
+  .auth-tab.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+  .field-hint { margin: 4px 0 0; font-size: 11.5px; color: var(--ink-faint); text-align: left; }
+
   @media (max-width: 780px) {
     .sidebar { position: fixed; z-index: 15; height: 100%; transform: translateX(-100%); transition: transform .2s; }
     .sidebar.open { transform: translateX(0); }

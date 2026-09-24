@@ -14,6 +14,7 @@ import { SqliteApprovalBridge, SqliteRunRegistry } from '@naro/runtime';
 import { pgPool, PgApprovalBridge, PgEventStore, PgRunRegistry } from '@naro/adapter-pg';
 import { startAgentServer, type RunnerFactory, type ServeOptions } from './serve.ts';
 import { SqlitePrincipalStore } from './principals.ts';
+import { SqliteAccountStore, SqliteSessionStore } from './accounts.ts';
 
 export interface CliIO {
   out: (s: string) => void;
@@ -72,6 +73,18 @@ const HELP = `naro — universal agent foundation CLI
                                --registry-pg/--journal-pg/--approvals-pg;
                                requires the optional 'pg' package
                              [--registry-pg <url>] [--journal-pg <url>] [--approvals-pg <url>]
+                             [--accounts-store <file.db>] — hosted email/
+                               password signup (ADR 0027): POST /accounts/
+                               signup and /accounts/login, session cookies.
+                               Requires --principals-store too (a signed-up
+                               account is provisioned as a real principal);
+                               501s without both. Off entirely unless set —
+                               no /accounts/* routes on a self-hosted deploy
+                               that never passes this.
+                             [--secure-cookies] — mark the session cookie
+                               Secure; set this once behind TLS (a reverse
+                               proxy terminating HTTPS) — off by default so
+                               plain-HTTP local/dev runs still work
                              module exports createRunner(goal): AgentRunner
   naro approvals --db <db> list pending human-in-the-loop requests
   naro approve <id> --db <db> [--deny] [--note 'why']
@@ -286,6 +299,12 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
       // see serve.ts's auth check) — writes via /admin/principals are
       // live on the next request, no restart.
       const principalsStorePath = flag('--principals-store');
+      // ADR 0027: --accounts-store <file.db> turns on hosted email/
+      // password signup — additive, requires --principals-store too (see
+      // ServeOptions.accountStore's own doc comment for why).
+      const accountsStorePath = flag('--accounts-store');
+      const secureCookies = args.includes('--secure-cookies');
+      if (secureCookies) args.splice(args.indexOf('--secure-cookies'), 1);
       // A shared --pg/NARO_PG_URL backs all three stores; --registry-pg/
       // --journal-pg/--approvals-pg override it per-store; see
       // resolveServeStore() for the precedence.
@@ -342,6 +361,11 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
         ...(noConsole && { console: false }),
         ...(noChat && { chat: false }),
         ...(principalsStorePath !== undefined && { principalStore: new SqlitePrincipalStore(resolve(principalsStorePath)) }),
+        ...(accountsStorePath !== undefined && {
+          accountStore: new SqliteAccountStore(resolve(accountsStorePath)),
+          sessionStore: new SqliteSessionStore(resolve(accountsStorePath)),
+        }),
+        ...(secureCookies && { secureCookies: true }),
         ...(mod.chatTemplates !== undefined && { chatTemplates: mod.chatTemplates }),
         ...(registry !== undefined && { registry }),
         ...(journal !== undefined && { journal }),
