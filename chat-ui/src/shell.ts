@@ -466,7 +466,33 @@ export const CHAT_UI_HTML = `<!doctype html>
     animation: signin-in .45s cubic-bezier(.16,1,.3,1);
   }
   @keyframes signin-in { from { opacity: 0; transform: translateY(14px) scale(.985); } }
-  @media (prefers-reduced-motion: reduce) { .signin { animation: none; } }
+  /* staggered entrance — the hero's story lands in sequence, then the
+     panel; one shared animation, stepped delays */
+  .hero-mark, .hero-title, .hero-lede, .hero-point, .signin-panel > * {
+    animation: rise .5s cubic-bezier(.16,1,.3,1) both;
+  }
+  .hero-title { animation-delay: .06s }
+  .hero-lede { animation-delay: .12s }
+  .hero-point:nth-child(1) { animation-delay: .18s }
+  .hero-point:nth-child(2) { animation-delay: .24s }
+  .hero-point:nth-child(3) { animation-delay: .30s }
+  .hero-chain { animation: rise .5s cubic-bezier(.16,1,.3,1) .36s both; }
+  .signin-panel > *:nth-child(-n+3) { animation-delay: .10s }
+  .signin-panel > *:nth-child(n+4):nth-child(-n+6) { animation-delay: .16s }
+  .signin-panel > *:nth-child(n+7) { animation-delay: .22s }
+  .signin-help, .signin-foot { animation: rise .5s cubic-bezier(.16,1,.3,1) .34s both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+  @media (prefers-reduced-motion: reduce) {
+    .signin, .hero-mark, .hero-title, .hero-lede, .hero-point, .hero-chain,
+    .signin-panel > *, .signin-help, .signin-foot { animation: none; }
+  }
+  /* the hash-chain motif — three linked nodes, one verified check.
+     A true picture of what the product does, drawn faint enough to be
+     texture, not illustration. */
+  .hero-chain { margin-top: 40px; opacity: .55; }
+  .hero-chain circle { fill: var(--surface); stroke: var(--accent); stroke-width: 1.4; }
+  .hero-chain line { stroke: var(--accent); stroke-width: 1.2; opacity: .5; }
+  .hero-chain path { stroke: var(--accent); stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
   .signin-split {
     display: flex; border-radius: 20px; overflow: hidden;
     border: 1px solid var(--border); background: var(--surface);
@@ -506,15 +532,26 @@ export const CHAT_UI_HTML = `<!doctype html>
   .auth-tabs {
     display: flex; gap: 3px; margin: 0 0 24px; padding: 3px;
     background: var(--surface-alt); border: 1px solid var(--border-soft); border-radius: 10px;
+    position: relative;
   }
+  /* sliding pill — the selection moves, the labels stay put */
+  .tab-pill {
+    position: absolute; top: 3px; bottom: 3px; left: 3px;
+    width: calc(50% - 4.5px); border-radius: 8px;
+    background: var(--surface); box-shadow: var(--shadow-sm);
+    transition: left .2s cubic-bezier(.16,1,.3,1);
+  }
+  .auth-tabs.login .tab-pill { left: calc(50% + 1.5px); }
+  @media (prefers-reduced-motion: reduce) { .tab-pill { transition: none; } }
   .auth-tab {
     flex: 1; border: 0; background: none; padding: 8px 0; border-radius: 8px;
     font: inherit; font-size: 13px; font-weight: 550; color: var(--ink-muted); cursor: pointer;
-    transition: background .12s ease, color .12s ease;
+    position: relative; z-index: 1; transition: color .15s ease;
   }
-  .auth-tab.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+  .auth-tab.active { color: var(--ink); }
   .field-label { font-weight: 550; }
   .pw-wrap { position: relative; }
+  .pw-wrap .text-input { padding-right: 40px; }
   .pw-toggle {
     position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
     border: 0; background: none; color: var(--ink-faint); cursor: pointer; padding: 4px;
@@ -522,17 +559,49 @@ export const CHAT_UI_HTML = `<!doctype html>
   }
   .pw-toggle:hover { color: var(--ink-muted); }
   .pw-toggle .icon { width: 16px; height: 16px; }
-  .signin .text-input { padding: 11px 13px; font-size: 14px; }
+  .signin .text-input { padding: 11px 13px; font-size: 14px; transition: border-color .12s ease, box-shadow .12s ease; }
   .signin .text-input:focus {
     border-color: var(--accent); outline: none;
     box-shadow: 0 0 0 3px var(--accent-soft);
   }
+  /* Chrome's autofill paints its own colors — reclaim them for the theme */
+  .signin .text-input:-webkit-autofill {
+    -webkit-text-fill-color: var(--ink);
+    -webkit-box-shadow: 0 0 0 40px var(--surface) inset;
+    caret-color: var(--ink);
+    border-color: var(--accent-soft-border);
+    transition: background-color 99999s ease-out;
+  }
+  /* field-level failure — the offending field carries the error, not
+     just the message below the form */
+  .text-input.invalid { border-color: var(--danger); }
+  .text-input.invalid:focus { box-shadow: 0 0 0 3px var(--danger-soft); }
+  .shake { animation: shake .32s ease; }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    55% { transform: translateX(4px); }
+    80% { transform: translateX(-2px); }
+  }
+  @media (prefers-reduced-motion: reduce) { .shake { animation: none; } }
+  /* password strength — three honest segments (length is the only rule
+     this deployment enforces, so the meter measures exactly that) */
+  .pw-meter { display: flex; gap: 4px; margin-top: 8px; }
+  .pw-meter i {
+    height: 3px; flex: 1; border-radius: 2px; background: var(--border);
+    transition: background .15s ease;
+  }
+  .pw-meter.s1 i:nth-child(1) { background: var(--danger); }
+  .pw-meter.s2 i:nth-child(-n+2) { background: var(--warn); }
+  .pw-meter.s3 i { background: var(--accent); }
   .signin-btn {
     width: 100%; margin-top: 16px; padding: 12px 16px; min-height: 46px;
     display: flex; align-items: center; justify-content: center; gap: 9px;
-    font-size: 14px; transition: filter .12s ease, transform .06s ease;
+    font-size: 14px; transition: filter .12s ease, transform .06s ease, box-shadow .12s ease;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, white), var(--accent));
+    box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255,255,255,.14);
   }
-  .signin-btn:hover:not([disabled]) { filter: brightness(1.07); }
+  .signin-btn:hover:not([disabled]) { filter: brightness(1.07); box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255,255,255,.14); }
   .signin-btn:active:not([disabled]) { transform: translateY(1px); }
   .signin-btn[disabled] { opacity: .75; cursor: default; }
   .btn-icon { width: 13px; height: 13px; }
@@ -543,6 +612,7 @@ export const CHAT_UI_HTML = `<!doctype html>
   }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.8s; } }
+  .err-slot:empty { display: none; }
   .signin-err {
     display: flex; align-items: center; gap: 8px;
     color: var(--danger); font-size: 12.5px; margin: 10px 0 0; text-align: left;

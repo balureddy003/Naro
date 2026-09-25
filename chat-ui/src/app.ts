@@ -509,13 +509,21 @@ function authScaffold(
   document.querySelector('.app')!.classList.add('auth');
   clear(content);
   const col = h('div', { class: 'signin' });
+  const chain = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  chain.setAttribute('viewBox', '0 0 220 44');
+  chain.setAttribute('class', 'hero-chain');
+  chain.setAttribute('aria-hidden', 'true');
+  chain.innerHTML = '<line x1="26" y1="22" x2="86" y2="22"/><line x1="134" y1="22" x2="194" y2="22"/>'
+    + '<circle cx="18" cy="22" r="8"/><circle cx="110" cy="22" r="8"/><circle cx="202" cy="22" r="8"/>'
+    + '<path d="M106 22.5l3 3 5-5.5" />';
   const hero = h('div', { class: 'signin-hero' },
     h('div', { class: 'hero-mark' }, icon('shield')),
     h('h1', { class: 'hero-title' }, 'Naro'),
     h('p', { class: 'hero-lede' }, lede),
     h('div', { class: 'hero-points' },
       ...points.map(([ic, strong, sub]) => h('div', { class: 'hero-point' },
-        icon(ic), h('span', {}, h('strong', {}, strong), sub)))));
+        icon(ic), h('span', {}, h('strong', {}, strong), sub)))),
+    chain);
   const panel = h('div', { class: 'signin-panel' });
   col.append(h('div', { class: 'signin-split' }, hero, panel));
   const help = h('div', { class: 'signin-help' });
@@ -523,13 +531,13 @@ function authScaffold(
   return { col, panel, help };
 }
 
-const ERR_HIDE = { style: 'display:none' } as const;
+const ERR_SLOT = { class: 'err-slot' } as const; // empty div — zero height until an error lands
 function authError(msg: string): HTMLElement {
   return h('p', { class: 'signin-err' }, icon('alert'), h('span', {}, msg));
 }
 function showErr(slot: HTMLElement, msg: string): void {
-  const el = authError(msg);
-  slot.replaceWith(el);
+  clear(slot);
+  slot.append(authError(msg));
 }
 
 /** Password input with a show/hide toggle — the standard affordance. */
@@ -570,20 +578,25 @@ function renderTokenSignIn(templates: ChatTemplate[]): void {
   input.setAttribute('placeholder', 'naro_…');
   input.setAttribute('spellcheck', 'false');
   panel.append(wrap);
-  const errSlot = h('p', ERR_HIDE);
+  const errSlot = h('div', ERR_SLOT);
   panel.append(errSlot);
   const btn = h('button', { class: 'btn-fill signin-btn', type: 'button' }, icon('arrow', 'btn-icon'), 'Continue');
   panel.append(btn);
 
   const save = () => {
     const v = input.value.trim();
-    if (v === '') { showErr(errSlot, 'Enter a token to continue.'); input.focus(); return; }
+    if (v === '') {
+      showErr(errSlot, 'Enter a token to continue.');
+      input.classList.add('invalid');
+      wrap.classList.remove('shake'); void wrap.offsetWidth; wrap.classList.add('shake');
+      input.focus(); return;
+    }
     localStorage.setItem(TOKEN_KEY, v);
     location.reload();
   };
   btn.addEventListener('click', save);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
-  input.addEventListener('input', () => { errSlot.querySelector('.signin-err')?.remove(); });
+  input.addEventListener('input', () => { clear(errSlot); input.classList.remove('invalid'); });
 
   help.append(
     h('p', {},
@@ -630,13 +643,21 @@ function renderAccountAuth(templates: ChatTemplate[]): void {
   const title = h('h1', { class: 'signin-title' });
   const sub = h('p', { class: 'signin-sub' });
   const tabs = h('div', { class: 'auth-tabs' },
+    h('div', { class: 'tab-pill' }),
     h('button', { class: 'auth-tab', type: 'button' }, 'Sign up'),
     h('button', { class: 'auth-tab', type: 'button' }, 'Log in'));
 
   const emailInput = h('input', { class: 'text-input', type: 'email', placeholder: 'you@company.com', autocomplete: 'email' }) as HTMLInputElement;
   const pw = passwordField('auth-password', 'current-password');
   const passwordHint = h('p', { class: 'field-hint' }, 'At least 10 characters.');
-  const errSlot = h('p', ERR_HIDE);
+  // Length meter — the honest version of a strength meter: this
+  // deployment's only password rule is length, so that is what it shows.
+  const meter = h('div', { class: 'pw-meter', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'));
+  pw.input.addEventListener('input', () => {
+    const n = pw.input.value.length;
+    meter.className = `pw-meter${n >= 10 ? ' s3' : n >= 6 ? ' s2' : n > 0 ? ' s1' : ''}`;
+  });
+  const errSlot = h('div', ERR_SLOT);
   const btn = h('button', { class: 'btn-fill signin-btn', type: 'button' });
   const btnIcon = h('span', {});
   const btnLabel = h('span', {});
@@ -644,13 +665,15 @@ function renderAccountAuth(templates: ChatTemplate[]): void {
 
   panel.append(title, sub, tabs,
     h('label', { class: 'field-label' }, 'Email'), emailInput,
-    h('label', { class: 'field-label', style: 'margin-top:14px' }, 'Password'), pw.wrap, passwordHint,
+    h('label', { class: 'field-label', style: 'margin-top:14px' }, 'Password'), pw.wrap, passwordHint, meter,
     errSlot, btn);
 
   const applyMode = () => {
-    errSlot.querySelector('.signin-err')?.remove();
-    tabs.children[0]!.classList.toggle('active', mode === 'signup');
-    tabs.children[1]!.classList.toggle('active', mode === 'login');
+    clear(errSlot);
+    tabs.children[1]!.classList.toggle('active', mode === 'signup');
+    tabs.children[2]!.classList.toggle('active', mode === 'login');
+    tabs.classList.toggle('login', mode === 'login');
+    meter.style.display = mode === 'signup' ? '' : 'none';
     title.textContent = mode === 'signup' ? 'Create your account' : 'Welcome back';
     sub.textContent = mode === 'signup'
       ? 'The first account on this deployment becomes its admin.'
@@ -665,8 +688,8 @@ function renderAccountAuth(templates: ChatTemplate[]): void {
       : h('p', {}, h('strong', {}, "Don't have an account? "), 'Use the "Sign up" tab above — anyone can create the first account on a fresh deployment.'));
   };
 
-  tabs.children[0]!.addEventListener('click', () => { mode = 'signup'; applyMode(); emailInput.focus(); });
-  tabs.children[1]!.addEventListener('click', () => { mode = 'login'; applyMode(); emailInput.focus(); });
+  tabs.children[1]!.addEventListener('click', () => { mode = 'signup'; applyMode(); emailInput.focus(); });
+  tabs.children[2]!.addEventListener('click', () => { mode = 'login'; applyMode(); emailInput.focus(); });
 
   const setBusy = (busy: boolean) => {
     if (busy) {
@@ -683,8 +706,20 @@ function renderAccountAuth(templates: ChatTemplate[]): void {
   const submit = async () => {
     const email = emailInput.value.trim();
     const password = pw.input.value;
-    errSlot.querySelector('.signin-err')?.remove();
-    if (email === '' || password === '') { errSlot.replaceWith(authError('Email and password are both required.')); return; }
+    clear(errSlot);
+    emailInput.classList.toggle('invalid', email === '');
+    pw.input.classList.toggle('invalid', password === '');
+    if (email === '' || password === '') {
+      showErr(errSlot, 'Email and password are both required.');
+      for (const el of [emailInput, pw.wrap]) { el.classList.remove('shake'); void (el as HTMLElement).offsetWidth; el.classList.add('shake'); }
+      return;
+    }
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      emailInput.classList.add('invalid');
+      showErr(errSlot, 'That doesn\'t look like an email address.');
+      emailInput.classList.remove('shake'); void emailInput.offsetWidth; emailInput.classList.add('shake');
+      return;
+    }
     setBusy(true);
     try {
       const res = await fetch(`${location.origin}/accounts/${mode === 'signup' ? 'signup' : 'login'}`, {
@@ -692,18 +727,20 @@ function renderAccountAuth(templates: ChatTemplate[]): void {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({})) as { error?: string };
-        errSlot.replaceWith(authError(body.error ?? `${mode === 'signup' ? 'Sign up' : 'Log in'} failed.`));
+        showErr(errSlot, body.error ?? `${mode === 'signup' ? 'Sign up' : 'Log in'} failed.`);
         return;
       }
       location.reload();
     } catch {
-      errSlot.replaceWith(authError('Could not reach the server — check your connection and try again.'));
+      showErr(errSlot, 'Could not reach the server — check your connection and try again.');
     } finally {
       setBusy(false);
     }
   };
   btn.addEventListener('click', () => void submit());
   for (const field of [emailInput, pw.input]) field.addEventListener('keydown', (e) => { if (e.key === 'Enter') void submit(); });
+  emailInput.addEventListener('input', () => emailInput.classList.remove('invalid'));
+  pw.input.addEventListener('input', () => pw.input.classList.remove('invalid'));
 
   applyMode();
   col.append(help);
