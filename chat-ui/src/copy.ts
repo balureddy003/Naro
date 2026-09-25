@@ -7,17 +7,23 @@
 
 /** capability → the verb phrase on an action chip. */
 export function actionLabel(capability: string, target: string): string {
+  // Tools arrive as capability 'tool.invoke' + target 'tool://name' —
+  // label by the tool's name, not the mechanism that invoked it.
+  const tool = target.replace(/^tool:\/\//, '');
   const map: Record<string, string> = {
-    get_document: `Read ${target}`,
+    get_document: `Read ${tool}`,
     compute_total: 'Checked the math',
-    lookup_history: `Looked up past ${target}`,
+    lookup_history: 'Looked up past transactions',
     list_categories: 'Listed the allowed categories',
+    recall_category: 'Checked remembered vendors',
+    remember: 'Remembered this vendor',
+    delegate: `Delegated to ${tool === 'delegate' ? 'a child agent' : tool}`,
+    search_vendors: 'Researched the vendor',
   };
+  if (map[tool]) return map[tool]!;
   if (map[capability]) return map[capability]!;
-  // tool:read_invoice → "Read invoice"; unknown capabilities still get a
-  // human sentence — never the raw capability string.
-  const pretty = capability.replace(/^tool:/, '').replace(/_/g, ' ');
-  return `${pretty[0]!.toUpperCase()}${pretty.slice(1)}${target ? ` — ${target}` : ''}`;
+  const pretty = (capability === 'tool.invoke' ? tool : capability.replace(/^tool:/, '')).replace(/_/g, ' ');
+  return `${pretty[0]!.toUpperCase()}${pretty.slice(1)}`;
 }
 
 export function policyBadge(policy: 'permitted' | 'approved' | 'denied' | 'unresolved', verification?: { ok: boolean }): { cls: string; text: string } {

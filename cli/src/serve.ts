@@ -135,9 +135,22 @@ function resolveChatDist(): string {
  * caller (ADR 0017) — modules that want per-action "on behalf of" policy
  * decisions pass it to `AgentDeps.principal`.
  */
+export interface RunOutcome { status: string; result?: unknown; error?: string }
+/**
+ * Submit a child goal through the same launch path as POST /goals — the
+ * module hands a delegated goal to this and the child run registers,
+ * journals, and lists in `GET /runs` under the parent's `traceId`
+ * (ADR 0028). `done` settles with the child's RunResult, which is what
+ * `delegationTool` awaits.
+ */
+export type RunSubmit = (
+  goal: ReturnType<typeof createGoal>,
+  opts?: { template?: string },
+) => { runId: string; done: Promise<RunOutcome> };
+
 export type RunnerFactory = (
   goal: ReturnType<typeof createGoal>,
-  info?: { principal?: Principal; template?: string },
+  info?: { principal?: Principal; template?: string; submit?: RunSubmit },
 ) => AgentRunner;
 
 /** A control-plane identity: an id, the roles it holds, and — see ADR
@@ -229,6 +242,11 @@ export interface ServeOptions {
    *  declared manifest, injected into the shell page (no endpoint). A
    *  run groups under a template when its specName is `tpl:<id>`. */
   readonly chatTemplates?: readonly { id: string; name: string; icon?: string; tagline?: string; configured?: boolean }[];
+  /** ADR 0028: module-supplied model probe — e.g. adapter-openai's
+   *  verifyOllamaCapabilities. Serve stays vendor-neutral: the module
+   *  owns which models exist and how they're verified; this endpoint
+   *  only exposes the result. `POST /admin/models/verify` 501s when unset. */
+  readonly modelVerifier?: () => Promise<unknown>;
   /** ADR 0027: hosted email/password signup — additive, opt-in. Requires
    *  `principalStore` too (a signed-up account is provisioned as a real
    *  `Principal`); POST /accounts/signup and /accounts/login 501 without
@@ -277,6 +295,94 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
   // IP-only, tighter window: bounds mass account creation, not repeated
   // guesses against one account (that's login's job, above).
   const signupLimiter = new LoginRateLimiter(5, 60 * 60_000);
+
+  /**
+   * One launch path for every run — HTTP-submitted goals and delegated
+   * children alike — so both land in the same `runs` map, `registry`,
+   * and journal. Modules reach it through `info.submit` (ADR 0028):
+   * a delegate tool hands the child goal back through the same submit
+   * path, which is what makes child runs visible in `GET /runs` grouped
+   * by the shared `traceId` instead of vanishing into the parent's log.
+   */
+  const launch = (
+    id: string,
+    goal: ReturnType<typeof createGoal>,
+    sub?: { template?: string; principal?: Principal },
+  ): { runId: string; done: Promise<RunOutcome> } => {
+    const caller = sub?.principal;
+    const submit: RunSubmit = (childGoal, childOpts) =>
+      launch(newId('run'), childGoal, { principal: caller, ...(childOpts?.template !== undefined && { template: childOpts.template }) });
+    const rec: RunRecord = {
+      id, runner: factory(goal, {
+        ...(caller !== undefined && { principal: caller }),
+        ...(typeof sub?.template === 'string' && { template: sub.template }),
+        submit,
+      }),
+      status: 'running', signal: new AbortController(),
+      ...(caller?.tenantId !== undefined && { tenantId: caller.tenantId }),
+    };
+    runs.set(rec.id, rec);
+    const startedAt = Date.now();
+    let agentId = '';
+    let traceId: string | undefined;
+    let specName: string | undefined;
+    // goal.started carries the agent's identity and the goal text —
+    // index the run the moment its journal begins. Its own traceId is a
+    // root run's own runId unless a caller passed one in (delegation —
+    // see @naro/multiagent's delegationConstraints), so this always has one.
+    rec.runner.on('goal.started', (e) => {
+      agentId = e.agentId;
+      traceId = e.traceId;
+      void registry.upsert({
+        runId: rec.id, agentId, status: 'running', goal: e.data.goal.description,
+        startedAt, updatedAt: Date.now(), host: hostName,
+        ...(caller?.tenantId !== undefined && { tenantId: caller.tenantId }),
+        ...(traceId !== undefined && { traceId }),
+        ...(specName !== undefined && { specName }),
+      });
+    });
+    // agent.created fires first and carries the spec's declared name —
+    // how a UI groups runs under the template that produced them.
+    rec.runner.on('agent.created', (e) => {
+      specName = e.data.name;
+    });
+    // A delegated child inherits the trace over goal metadata
+    // ('naro:traceId', written by @naro/multiagent's delegationTool) —
+    // read it here so both journals correlate, without serve needing to
+    // import the multiagent package.
+    const inheritedTrace = (goal.metadata as Record<string, unknown> | undefined)?.['naro:traceId'];
+    // The API runId IS the journal runId — events, exports, and wake(runId)
+    // all correlate with the id this endpoint returned.
+    const done = rec.runner.run({
+      signal: rec.signal.signal, runId: rec.id,
+      ...(typeof inheritedTrace === 'string' && { traceId: inheritedTrace }),
+    }).then((r) => {
+      rec.status = r.status;
+      if (r.result !== undefined) rec.result = r.result;
+      if (r.error !== undefined) rec.error = r.error;
+      void registry.upsert({
+        runId: rec.id, agentId, status: r.status, goal: goal.description,
+        startedAt, updatedAt: Date.now(), host: hostName,
+        ...(caller?.tenantId !== undefined && { tenantId: caller.tenantId }),
+        ...(traceId !== undefined && { traceId }),
+        ...(specName !== undefined && { specName }),
+        ...(r.result !== undefined && { result: r.result }),
+        ...(r.error !== undefined && { error: r.error }),
+      });
+      return r;
+    }).catch((e) => {
+      rec.status = 'failed'; rec.error = e instanceof Error ? e.message : String(e);
+      void registry.upsert({
+        runId: rec.id, agentId, status: 'failed', goal: goal.description,
+        startedAt, updatedAt: Date.now(), host: hostName, error: rec.error,
+        ...(traceId !== undefined && { traceId }),
+        ...(specName !== undefined && { specName }),
+      });
+      throw e;
+    });
+    void done.catch(() => {}); // registered above — also surfaced to submitters via `done`
+    return { runId: rec.id, done };
+  };
 
   const server: Server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
@@ -778,6 +884,18 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
         : json(404, { error: 'unknown principal' });
     }
 
+    // ADR 0028: the module declares its own verification — serve can't
+    // know which providers a deployment uses, so the probe is a supplied
+    // function, not a built-in. 501 when the module doesn't provide one.
+    if (req.method === 'POST' && url.pathname === '/admin/models/verify') {
+      if (!opts.modelVerifier) return json(501, { error: 'module does not declare a model verifier' });
+      try {
+        return json(200, { models: await opts.modelVerifier(), by: principal?.id });
+      } catch (e) {
+        return json(502, { error: e instanceof Error ? e.message : 'verification failed' });
+      }
+    }
+
     if (req.method === 'POST' && url.pathname === '/goals') {
       if (draining) return json(503, { error: 'draining — not accepting new runs' });
       let body: { description?: string; successCriteria?: string[]; idempotencyKey?: string; template?: string };
@@ -801,61 +919,8 @@ export function startAgentServer(factory: RunnerFactory, opts: ServeOptions = {}
       }
 
       const goal = createGoal({ description: body.description, successCriteria: body.successCriteria ?? [] });
-      const rec: RunRecord = {
-        id, runner: factory(goal, { ...(principal !== undefined && { principal }), ...(typeof body.template === 'string' && { template: body.template }) }),
-        status: 'running', signal: new AbortController(),
-        ...(principal?.tenantId !== undefined && { tenantId: principal.tenantId }),
-      };
-      runs.set(rec.id, rec);
-      const startedAt = Date.now();
-      let agentId = '';
-      let traceId: string | undefined;
-      let specName: string | undefined;
-      // goal.started carries the agent's identity and the goal text —
-      // index the run the moment its journal begins. Its own traceId is a
-      // root run's own runId unless a caller passed one in (delegation —
-      // see @naro/multiagent's delegationConstraints), so this always has one.
-      rec.runner.on('goal.started', (e) => {
-        agentId = e.agentId;
-        traceId = e.traceId;
-        void registry.upsert({
-          runId: rec.id, agentId, status: 'running', goal: e.data.goal.description,
-          startedAt, updatedAt: Date.now(), host: hostName,
-          ...(principal?.tenantId !== undefined && { tenantId: principal.tenantId }),
-          ...(traceId !== undefined && { traceId }),
-          ...(specName !== undefined && { specName }),
-        });
-      });
-      // agent.created fires first and carries the spec's declared name —
-      // how a UI groups runs under the template that produced them.
-      rec.runner.on('agent.created', (e) => {
-        specName = e.data.name;
-      });
-      // The API runId IS the journal runId — events, exports, and wake(runId)
-      // all correlate with the id this endpoint returned.
-      rec.runner.run({ signal: rec.signal.signal, runId: rec.id }).then((r) => {
-        rec.status = r.status;
-        if (r.result !== undefined) rec.result = r.result;
-        if (r.error !== undefined) rec.error = r.error;
-        void registry.upsert({
-          runId: rec.id, agentId, status: r.status, goal: goal.description,
-          startedAt, updatedAt: Date.now(), host: hostName,
-          ...(principal?.tenantId !== undefined && { tenantId: principal.tenantId }),
-          ...(traceId !== undefined && { traceId }),
-          ...(specName !== undefined && { specName }),
-          ...(r.result !== undefined && { result: r.result }),
-          ...(r.error !== undefined && { error: r.error }),
-        });
-      }).catch((e) => {
-        rec.status = 'failed'; rec.error = e instanceof Error ? e.message : String(e);
-        void registry.upsert({
-          runId: rec.id, agentId, status: 'failed', goal: goal.description,
-          startedAt, updatedAt: Date.now(), host: hostName, error: rec.error,
-          ...(traceId !== undefined && { traceId }),
-          ...(specName !== undefined && { specName }),
-        });
-      });
-      return json(202, { runId: rec.id });
+      launch(id, goal, { template: body.template, principal });
+      return json(202, { runId: id });
     }
 
     return json(404, { error: 'not found' });

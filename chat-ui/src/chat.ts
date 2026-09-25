@@ -25,6 +25,29 @@ export async function renderRun(
 
   // The goal text is the first user message — what the person asked for.
   col.append(h('div', { class: 'msg-user' }, run.goal));
+
+  // Delegation context — a run is part of a trace tree (ADR 0028):
+  // children link to their parent, parents list their children, and the
+  // links navigate the sidebar's own run records, not a separate graph.
+  const parent = run.traceId !== undefined && run.traceId !== run.runId
+    ? deps.runs.find((r) => r.runId === run.traceId)
+    : undefined;
+  const children = deps.runs.filter((r) => r.runId !== run.runId && r.traceId === run.runId);
+  if (parent !== undefined || children.length > 0) {
+    const row = h('div', { class: 'delegation-row' });
+    if (parent !== undefined) {
+      const link = h('button', { class: 'del-link', type: 'button' }, icon('link'), `delegated from "${parent.goal.length > 40 ? `${parent.goal.slice(0, 40)}…` : parent.goal}"`);
+      link.addEventListener('click', () => { location.hash = runHash(deps.templates, parent); });
+      row.append(link);
+    }
+    for (const c of children) {
+      const link = h('button', { class: 'del-link', type: 'button' }, icon('link'), `delegated → ${c.goal.length > 40 ? `${c.goal.slice(0, 40)}…` : c.goal}`);
+      link.addEventListener('click', () => { location.hash = runHash(deps.templates, c); });
+      row.append(link);
+    }
+    col.append(row);
+  }
+
   const transcriptEl = h('div', {});
   col.append(transcriptEl);
   const statusEl = h('div', { class: 'msg-system' });
@@ -228,6 +251,13 @@ function renderResult(result: unknown): HTMLElement {
   }
   wrap.append(h('div', {}, 'Done.'));
   return wrap;
+}
+
+/** The hash route a run lives at — under its template when the specName
+ *  names one, otherwise the general list. */
+function runHash(templates: readonly ChatTemplate[], run: RunSummary): string {
+  const t = templates.find((x) => run.specName === `tpl:${x.id}` || run.specName === x.id);
+  return t !== undefined ? `#/t/${t.id}/runs/run/${encodeURIComponent(run.runId)}` : '#/general';
 }
 
 function formatValue(v: unknown): string {

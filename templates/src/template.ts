@@ -1,5 +1,6 @@
 import type { AgentDeps } from '@naro/runtime';
 import type { Model } from '@naro/model';
+import type { Tool } from '@naro/tools';
 
 /**
  * An outcome template — PRD-002's unit of packaging.
@@ -50,4 +51,14 @@ export interface TemplateDeps {
   readonly strong?: Model;
   /** Failed verifications before escalating. Default 2. */
   readonly escalateAfter?: number;
+  /**
+   * Deployment-added tools folded into the template's registry, reasoner
+   * specs, and policy — e.g. a `delegate` tool or a `remember` tool the
+   * deployment owns. ADR 0028: the template still owns strategy; this is
+   * where a deployment extends its own composition, not where template
+   * logic lives.
+   */
+  readonly extraTools?: readonly Tool[];
+  /** Grants the extra tools need — explicit, never auto-derived. */
+  readonly extraGrants?: readonly string[];
 }

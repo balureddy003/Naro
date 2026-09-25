@@ -102,6 +102,12 @@ export class NaroClient {
   }
 
   /** `traceId` restricts to one delegation tree — see `RunSummary.traceId`. */
+  /** ADR 0028: ask the module to probe its models' real capabilities —
+   *  verified facts, not catalog claims. 501 when the module declares none. */
+  async verifyModels(): Promise<{ models: unknown }> {
+    return this.request('POST', '/admin/models/verify');
+  }
+
   async listRuns(opts: { traceId?: string } = {}): Promise<readonly RunSummary[]> {
     const query = opts.traceId !== undefined ? `?traceId=${encodeURIComponent(opts.traceId)}` : '';
     return this.request('GET', `/runs${query}`);

@@ -140,7 +140,7 @@ export const transactionCategorizer: OutcomeTemplate<CategorizeInput> = {
 
   build(input, deps: TemplateDeps): AgentDeps {
     const registry = new ToolRegistry();
-    const tools = templateTools(input);
+    const tools = [...templateTools(input), ...(deps.extraTools ?? [])];
     for (const tool of tools) registry.register(tool);
     // The template owns strategy + tool wiring — each tier is a ReAct
     // reasoner built over the caller's model with THIS template's tools.
@@ -157,7 +157,7 @@ export const transactionCategorizer: OutcomeTemplate<CategorizeInput> = {
       // otherwise:'deny' closes every non-tool target; the tools' own
       // permissions gate on the finance.categorize grant below.
       policy: allOf(createToolPolicy(registry, { otherwise: 'deny' })),
-      grants: [CATEGORIZE_GRANT],
+      grants: [CATEGORIZE_GRANT, ...(deps.extraGrants ?? [])],
       verifier: categorizerVerifier(input),
       budgets: input.budget ?? { maxTotalTokens: 20_000, maxCostUsd: 0.02 },
     };

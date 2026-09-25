@@ -136,6 +136,7 @@ export const CHAT_UI_HTML = `<!doctype html>
   .tmpl-runs { display: none; margin: 2px 0 4px 29px; }
   .tmpl-group.open .tmpl-runs { display: block; }
   .run-row {
+    position: relative;
     display: flex; align-items: center; gap: 7px; padding: 6px 8px;
     border-radius: 6px; cursor: pointer; font-size: 13px;
   }
@@ -680,6 +681,27 @@ export const CHAT_UI_HTML = `<!doctype html>
     .composer { left: 0; }
     .backdrop { position: fixed; inset: 0; background: var(--overlay); z-index: 14; }
   }
+  .delegation-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 10px; }
+  .del-link {
+    display: inline-flex; align-items: center; gap: 7px;
+    border: 1px solid var(--border-soft); border-radius: 8px; padding: 5px 10px;
+    background: var(--surface); color: var(--ink-muted); font: inherit; font-size: 12px; cursor: pointer;
+    transition: color .12s ease, border-color .12s ease;
+  }
+  .del-link:hover { color: var(--accent); border-color: var(--accent-soft-border); }
+  .del-link .icon { width: 13px; height: 13px; color: var(--accent); }
+  .run-row.rr-child { padding-left: 26px; }
+  .run-row.rr-child .rr-title { font-style: normal; color: var(--ink-muted); }
+  .run-row.rr-child::before { content: '↳'; position: absolute; left: 10px; color: var(--ink-faint); font-size: 11px; }
+  .rr-delegated { font-size: 11.5px; color: var(--ink-faint); margin: 2px 0 0; font-family: var(--font-mono); }
+  .model-out { margin: 10px 0 4px; }
+  .model-head { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .model-bad { font-size: 12.5px; color: var(--danger); margin: 0; }
+  .model-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-muted); padding: 3px 0; }
+  .model-row.ok { color: var(--ink); }
+  .model-row .icon { width: 13px; height: 13px; }
+  .model-row.ok .icon { color: var(--accent); }
+  .model-row:not(.ok) .icon { color: var(--ink-faint); }
   .backdrop { display: none; }
   .backdrop.show { display: block; }
 

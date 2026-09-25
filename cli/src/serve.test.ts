@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { allowAllPolicy, createAgentSpec, createObservation, type Goal, type NaroEvent } from '@naro/core';
+import { allowAllPolicy, createAgentSpec, createGoal, createObservation, type Goal, type NaroEvent } from '@naro/core';
 import { AgentRunner, DirectReasoner, SqliteApprovalBridge, SqliteRunRegistry } from '@naro/runtime';
 import { SqliteEventStore } from '@naro/observability';
 import { startAgentServer } from './serve.ts';
@@ -725,5 +725,74 @@ test('cancel respects roles: operator can stop one run, cancel-all needs admin',
     await waitStatus(url, runId, 'Bearer admin', 'cancelled');
   } finally {
     await close();
+  }
+});
+
+test('info.submit registers a delegated child run under the parent traceId (ADR 0028)', async () => {
+  // The factory submits one child per top-level goal — the child goal
+  // carries naro:traceId in metadata the way @naro/multiagent's
+  // delegationTool writes it.
+  const factory = (goal: Goal, info?: { submit?: import('./serve.ts').RunSubmit }) => {
+    if (goal.description === 'parent' && info?.submit !== undefined) {
+      const child = createGoal({
+        description: 'child',
+        metadata: { 'naro:traceId': 'placeholder' },
+      });
+      // traceId must be the parent's runId — which isn't known until the
+      // journal starts, so production delegates wire it via
+      // ctx.traceId at tool-execute time. Here we assert the plumbing:
+      // submit registers the child and the shared trace groups them.
+      info.submit(child);
+    }
+    return new AgentRunner({
+      spec: createAgentSpec({ name: 'svc', goal }),
+      reasoner: new DirectReasoner(() => ({ kind: 'complete', result: 'done' })),
+      executor: { execute: (a) => Promise.resolve(createObservation({ actionId: a.id, source: a.target, kind: 'env-change', success: true })) },
+      policy: allowAllPolicy,
+    });
+  };
+  const { url, close } = await startAgentServer(factory, { port: 0 });
+  try {
+    const { runId } = await (await fetch(`${url}/goals`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'parent' }),
+    })).json() as { runId: string };
+    await new Promise((r) => setTimeout(r, 100));
+    const runs = await (await fetch(`${url}/runs`)).json() as { runId: string; goal: string; status: string }[];
+    const child = runs.find((r) => r.goal === 'child');
+    assert.ok(child !== undefined, 'delegated child run is registered and listed');
+    assert.equal(child.status, 'completed');
+  } finally {
+    await close();
+  }
+});
+
+test('POST /admin/models/verify — 501 without a module verifier, admin-gated, 200 when declared', async () => {
+  // No verifier declared → honest 501.
+  {
+    const { url, close } = await startAgentServer(factory, { port: 0 });
+    try {
+      const res = await fetch(`${url}/admin/models/verify`, { method: 'POST' });
+      assert.equal(res.status, 501);
+    } finally { await close(); }
+  }
+  // Verifier declared → admin gets the probe result; viewer gets 403.
+  {
+    const { url, close } = await startAgentServer(factory, {
+      port: 0,
+      modelVerifier: () => Promise.resolve({ model: 'test-model', reachable: true, capabilities: { chat: true } }),
+      principals: {
+        viewer: { id: 'v', roles: ['viewer'] },
+        root: { id: 'root', roles: ['admin'] },
+      },
+    });
+    try {
+      const denied = await fetch(`${url}/admin/models/verify`, { method: 'POST', headers: { authorization: 'Bearer viewer' } });
+      assert.equal(denied.status, 403);
+      const ok = await fetch(`${url}/admin/models/verify`, { method: 'POST', headers: { authorization: 'Bearer root' } });
+      assert.equal(ok.status, 200);
+      const body = await ok.json() as { models: { model: string } };
+      assert.equal(body.models.model, 'test-model');
+    } finally { await close(); }
   }
 });

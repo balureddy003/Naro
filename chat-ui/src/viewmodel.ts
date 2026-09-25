@@ -83,10 +83,17 @@ export function transcriptFromEvents(events: readonly RunEvent[]): Transcript {
     const d = e.data as Record<string, unknown>;
     switch (e.type) {
       case 'action.requested': {
-        const a = d['action'] as { id: string; capability: string; target: string };
+        const a = d['action'] as { id: string; capability: string; target: string; input?: unknown };
+        let label = actionLabel(a.capability, a.target);
+        // A delegation names its target agent in the input — label the
+        // chip with who the work went to, not the mechanism.
+        if (a.target === 'tool://delegate' && a.input !== null && typeof a.input === 'object') {
+          const agent = (a.input as { agent?: unknown }).agent;
+          if (typeof agent === 'string') label = `Delegated to ${agent}`;
+        }
         const chip: ChipItem = {
           kind: 'chip', actionId: a.id, capability: a.capability, target: a.target,
-          label: actionLabel(a.capability, a.target), status: 'pending',
+          label, status: 'pending',
           policy: 'unresolved', seq: e.seq,
         };
         chips.set(a.id, chip);

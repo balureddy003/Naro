@@ -57,7 +57,7 @@ function parseRoute(): Route {
     const tab = (['runs', 'settings', 'access'].includes(parts[2] ?? '') ? parts[2] : 'runs') as Route['tab'];
     return { view: 'template', templateId: decodeURIComponent(parts[1]), tab, ...(parts[3] === 'run' && parts[4] !== undefined && { runId: decodeURIComponent(parts[4]) }) };
   }
-  if (parts[0] === 'general') return { view: 'general' };
+  if (parts[0] === 'general') return { view: 'general', ...(parts[1] === 'run' && parts[2] !== undefined && { runId: decodeURIComponent(parts[2]) }) };
   if (parts[0] === 'sys' && parts[1] !== undefined) return { view: 'system', page: parts[1] };
   return { view: 'template' };
 }
@@ -156,15 +156,25 @@ function renderSidebar(state: AppState, route: Route): void {
     group.append(headRow);
 
     const runList = h('div', { class: 'tmpl-runs' });
-    for (const r of runsFor(state, t.id).slice(0, 20)) {
+    // Delegation trees render as they happened: a child run (traceId →
+    // parent's runId, specName outside this template) nests under its
+    // parent row, indented — the sidebar IS the trace view.
+    const roots = runsFor(state, t.id).slice(0, 20);
+    const childrenOf = (runId: string) =>
+      state.runs.filter((r) => r.runId !== runId && r.traceId === runId);
+    const rowFor = (r: RunSummary, child: boolean) => {
       const st = runStatusLabel(r.status);
-      const row = h('div', { class: `run-row${route.runId === r.runId ? ' active' : ''}` },
+      const row = h('div', { class: `run-row${route.runId === r.runId ? ' active' : ''}${child ? ' rr-child' : ''}` },
         h('span', { class: `status-dot ${st.cls}` }),
         h('span', { class: 'rr-title' }, r.goal.length > 34 ? `${r.goal.slice(0, 34)}…` : r.goal),
         h('span', { class: 'rr-time' }, ago_(r.startedAt)));
       if (r.tenantId !== undefined) row.append(h('span', { class: 'rr-tenant' }, r.tenantId));
-      row.addEventListener('click', () => { location.hash = `#/t/${t.id}/runs/run/${encodeURIComponent(r.runId)}`; });
-      runList.append(row);
+      row.addEventListener('click', () => { location.hash = child ? `#/general/run/${encodeURIComponent(r.runId)}` : `#/t/${t.id}/runs/run/${encodeURIComponent(r.runId)}`; });
+      return row;
+    };
+    for (const r of roots) {
+      runList.append(rowFor(r, false));
+      for (const c of childrenOf(r.runId)) runList.append(rowFor(c, true));
     }
     group.append(runList);
     body.append(group);
@@ -301,6 +311,10 @@ async function renderContent(state: AppState, route: Route): Promise<void> {
     return;
   }
   if (route.view === 'general') {
+    if (route.runId !== undefined) {
+      const run = state.runs.find((r) => r.runId === route.runId);
+      if (run !== undefined) { await renderRunInto(col, run); return; }
+    }
     col.append(h('div', { class: 'nav-section' }, 'Runs'));
     const list = generalRuns(state);
     if (list.length === 0) col.append(h('div', { class: 'empty' }, 'No runs outside a template yet.'));
@@ -309,7 +323,11 @@ async function renderContent(state: AppState, route: Route): Promise<void> {
       const row = h('div', { class: 'page-card', style: 'cursor:pointer' },
         h('h3', {}, r.goal.length > 60 ? `${r.goal.slice(0, 60)}…` : r.goal),
         h('p', {}, `${st.text} · ${ago_(r.startedAt)} ago${r.tenantId !== undefined ? ` · ${r.tenantId}` : ''}`));
-      row.addEventListener('click', () => { location.hash = `#/general`; void renderRunInto(col, r); });
+      if (r.traceId !== undefined && r.traceId !== r.runId) {
+        const parent = state.runs.find((x) => x.runId === r.traceId);
+        row.append(h('p', { class: 'rr-delegated' }, `delegated from "${parent?.goal.slice(0, 40) ?? r.traceId}${(parent?.goal.length ?? 0) > 40 ? '…' : ''}"`));
+      }
+      row.addEventListener('click', () => { location.hash = `#/general/run/${encodeURIComponent(r.runId)}`; });
       col.append(row);
     }
     return;
@@ -455,7 +473,7 @@ function hideComposer(): void {
 
 let state: AppState;
 function deps(): PageDeps {
-  return { client: state.client, me: state.me, templates: state.templates, refresh: () => refresh(state) };
+  return { client: state.client, me: state.me, templates: state.templates, runs: state.runs, refresh: () => refresh(state) };
 }
 const paletteDeps = (): PaletteDeps => ({
   ...deps(), runs: state.runs, isAdmin: state.me.roles.has('admin'),

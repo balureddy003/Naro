@@ -3,6 +3,7 @@ import type { ChatTemplate } from './app.ts';
 import { markActivated } from './app.ts';
 import { sdk } from './sdk.ts';
 import { toast } from './toast.ts';
+import { icon } from './icons.ts';
 import { errText } from './copy.ts';
 
 /** True for a 501 from `@naro/client` — checked via the typed `.status`
@@ -33,6 +34,7 @@ export interface PageDeps {
   readonly client: import('@naro/client').NaroClient;
   readonly me: { id: string; roles: ReadonlySet<string>; tenantId?: string };
   readonly templates: readonly ChatTemplate[];
+  readonly runs: readonly import('@naro/client').RunSummary[];
   readonly refresh: () => Promise<void>;
 }
 
@@ -191,6 +193,43 @@ export function renderSettingsTab(deps: PageDeps, col: HTMLElement, t: ChatTempl
   });
   card.append(list, approvalRow, save, note);
   col.append(card);
+  if (deps.me.roles.has('admin')) col.append(modelCard(deps));
+}
+
+/** ADR 0028 — "what can this deployment's models actually do", probed,
+ *  not catalog-claimed. The button asks the module to verify; the card
+ *  renders whatever the probe reports, including a clean unreachable or
+ *  "module declares no verifier" state. */
+function modelCard(deps: PageDeps): HTMLElement {
+  const card = h('div', { class: 'page-card' },
+    h('h3', {}, 'Local models'),
+    h('p', {}, 'What this deployment\'s models are verified to do — probed live, not read from a catalog. Verification exercises the real endpoint.'));
+  const out = h('div', { class: 'model-out' });
+  const btn = h('button', { class: 'btn-fill form-action', type: 'button' }, 'Verify capabilities');
+  btn.addEventListener('click', () => {
+    btn.setAttribute('disabled', '');
+    btn.replaceChildren(h('span', { class: 'spinner' }), 'Probing…');
+    clear(out);
+    void deps.client.verifyModels()
+      .then((res) => {
+        const models = res.models as { model?: string; reachable?: boolean; capabilities?: Record<string, boolean>; failures?: Record<string, string> } | undefined;
+        if (models === undefined || typeof models !== 'object') { out.append(h('p', {}, 'Probe returned no model report.')); return; }
+        if (models.reachable === false) {
+          out.append(h('p', { class: 'model-bad' }, `${models.model ?? 'model'} — unreachable (is the local model server running?)`));
+          return;
+        }
+        out.append(h('p', { class: 'model-head' }, `${models.model ?? 'model'} — verified just now`));
+        const caps = models.capabilities ?? {};
+        for (const [cap, ok] of Object.entries(caps)) {
+          out.append(h('div', { class: `model-row${ok ? ' ok' : ''}` },
+            icon(ok ? 'check' : 'alert'), h('span', {}, cap)));
+        }
+      })
+      .catch((e: Error) => { out.append(h('p', { class: 'model-bad' }, errText(e))); })
+      .finally(() => { btn.removeAttribute('disabled'); btn.replaceChildren('Verify capabilities'); });
+  });
+  card.append(out, btn);
+  return card;
 }
 
 export function renderAccessTab(deps: PageDeps, col: HTMLElement, t: ChatTemplate): void {

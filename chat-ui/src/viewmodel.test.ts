@@ -71,3 +71,13 @@ test('attachApprovalId pairs the pending card with its real id', () => {
   const card = t.items.find((i) => i.kind === 'approval')! as { approvalId?: string };
   assert.equal(card.approvalId, 'appr_1');
 });
+
+test('delegate chip names the child agent, not the mechanism', () => {
+  const t = transcriptFromEvents([
+    ev(1, 'action.requested', { action: { id: 'a1', capability: 'tool.invoke', target: 'tool://delegate', input: { agent: 'vendor-researcher', goal: 'x' } } }),
+    ev(2, 'action.requested', { action: { id: 'a2', capability: 'tool.invoke', target: 'tool://remember' } }),
+  ]);
+  const chips = t.items.filter((i) => i.kind === 'chip') as { label: string }[];
+  assert.equal(chips[0]!.label, 'Delegated to vendor-researcher');
+  assert.equal(chips[1]!.label, 'Remembered this vendor');
+});
