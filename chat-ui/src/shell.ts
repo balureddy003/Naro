@@ -444,8 +444,19 @@ export const CHAT_UI_HTML = `<!doctype html>
 
   /* sign-in — the deployment's actual front door: no self-registration
      by design (ADR 0012/0025, admin-issued tokens), but presented like
-     a real product's first screen, not a debug form. */
-  .signin { max-width: 400px; margin: 12vh auto 0; padding-bottom: 40px; }
+     a real product's first screen, not a debug form. On the auth screen
+     the app chrome (sidebar/topbar/composer) hides entirely — the card
+     centers in the real viewport, not inside the leftover app frame. */
+  .app.auth .sidebar, .app.auth .topbar, .app.auth .composer { display: none; }
+  .app.auth .content {
+    display: flex;
+    background: radial-gradient(720px 340px at 50% 36%, var(--accent-soft), transparent 72%);
+  }
+  .signin {
+    max-width: 400px; width: 100%; margin: auto; padding: 40px 20px;
+    align-self: center;
+  }
+  .signin-card { box-shadow: var(--shadow-md); }
   .signin-card { padding: 28px 28px 24px; text-align: center; }
   .signin-mark {
     width: 44px; height: 44px; margin: 0 auto 16px; border-radius: 12px;

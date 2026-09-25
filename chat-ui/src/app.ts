@@ -513,6 +513,7 @@ async function boot(): Promise<void> {
  * (`accountsEnabled`), never a client-side choice.
  */
 function renderTokenSignIn(templates: ChatTemplate[]): void {
+  document.querySelector('.app')!.classList.add('auth');
   const content = document.getElementById('content')!;
   clear(content);
   const col = h('div', { class: 'column signin' });
@@ -567,6 +568,7 @@ function renderTokenSignIn(templates: ChatTemplate[]): void {
  * a navigation.
  */
 function renderAccountAuth(templates: ChatTemplate[]): void {
+  document.querySelector('.app')!.classList.add('auth');
   const content = document.getElementById('content')!;
   clear(content);
   const col = h('div', { class: 'column signin' });
