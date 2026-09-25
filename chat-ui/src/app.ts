@@ -553,7 +553,7 @@ function renderTokenSignIn(templates: ChatTemplate[]): void {
       h('strong', {}, 'Someone gave you access? '),
       "Use the token they shared with you — it's issued to you personally and works the moment they generate it, no invite email, no password to set."));
 
-  col.append(card, help);
+  col.append(card, help, h('div', { class: 'signin-foot' }, icon('shield'), 'naro serve — policy-checked · provable · self-hosted'));
   content.append(col);
   input.focus();
 }
@@ -646,7 +646,7 @@ function renderAccountAuth(templates: ChatTemplate[]): void {
   passwordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') void submit(); });
 
   applyMode();
-  col.append(card, help);
+  col.append(card, help, h('div', { class: 'signin-foot' }, icon('shield'), 'naro serve — policy-checked · provable'));
   content.append(col);
   emailInput.focus();
 }

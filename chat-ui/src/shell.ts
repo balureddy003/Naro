@@ -453,28 +453,46 @@ export const CHAT_UI_HTML = `<!doctype html>
     background: radial-gradient(720px 340px at 50% 36%, var(--accent-soft), transparent 72%);
   }
   .signin {
-    max-width: 400px; width: 100%; margin: auto; padding: 40px 20px;
+    max-width: 420px; width: 100%; margin: auto; padding: 40px 20px;
     align-self: center;
   }
-  .signin-card { box-shadow: var(--shadow-md); }
-  .signin-card { padding: 28px 28px 24px; text-align: center; }
+  .signin-card {
+    padding: 36px 32px 28px; text-align: center;
+    box-shadow: var(--shadow-md);
+    /* the thinnest accent thread along the top edge — the one touch of
+       brand color a front door earns */
+    border-top: 2px solid var(--accent-soft-border);
+  }
   .signin-mark {
-    width: 44px; height: 44px; margin: 0 auto 16px; border-radius: 12px;
+    width: 52px; height: 52px; margin: 0 auto 18px; border-radius: 14px;
     background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-soft-border);
     display: flex; align-items: center; justify-content: center;
+    box-shadow: var(--shadow-sm);
   }
-  .signin-mark .icon { width: 22px; height: 22px; }
-  .signin-title { margin: 0 0 8px; font-size: 19px; font-weight: 650; letter-spacing: -.01em; }
-  .signin-lede { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-muted); }
-  .signin-rule { height: 1px; background: var(--border-soft); margin: 20px 0 16px; }
-  .signin-card .field-label { text-align: left; }
-  .signin-card .text-input { text-align: left; }
+  .signin-mark .icon { width: 26px; height: 26px; }
+  .signin-title { margin: 0 0 8px; font-size: 22px; font-weight: 650; letter-spacing: -.015em; }
+  .signin-lede { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-muted); }
+  .signin-rule { height: 1px; background: var(--border-soft); margin: 22px 0 20px; }
+  .signin-card .field-label { text-align: left; font-weight: 550; }
+  .signin-card .text-input { text-align: left; padding: 10px 12px; }
+  .signin-card .text-input:focus {
+    border-color: var(--accent); outline: none;
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .signin-card .btn-fill { transition: filter .12s ease, transform .06s ease; }
+  .signin-card .btn-fill:hover { filter: brightness(1.06); }
+  .signin-card .btn-fill:active { transform: translateY(1px); }
   .signin-err { color: var(--danger); font-size: 12.5px; margin: 6px 0 0; text-align: left; }
   .signin-card .btn-icon { width: 12px; height: 12px; }
   .signin-help {
     margin-top: 16px; padding: 14px 16px; border: 1px solid var(--border-soft);
     border-radius: 12px; background: var(--surface-alt);
   }
+  .signin-foot {
+    margin-top: 24px; text-align: center; font-size: 11px; color: var(--ink-faint);
+    letter-spacing: .02em;
+  }
+  .signin-foot .icon { width: 11px; height: 11px; vertical-align: -1.5px; margin-right: 4px; }
   .signin-help p { margin: 0 0 10px; font-size: 12.5px; line-height: 1.6; color: var(--ink-muted); }
   .signin-help p:last-child { margin-bottom: 0; }
   .signin-help strong { color: var(--ink); font-weight: 600; }
