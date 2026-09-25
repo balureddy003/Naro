@@ -494,67 +494,107 @@ async function boot(): Promise<void> {
 }
 
 /**
- * The self-hosted sign-in screen — deliberately no signup form here.
- * Naro's self-hosted posture has no self-service registration (ADR
- * 0012/0025): every person's access is issued by an admin, never created
- * by the person themselves, the same posture as Grafana or Metabase's own
- * self-hosted admin-invites-you model. What *was* wrong with this screen
- * wasn't the architecture, it was that it read like a debug form instead
- * of a real product's first screen — no mark, no explanation of why
- * there's no "create account" link, one generic sentence. Fixed here
- * without changing what's actually true: still token-based, still
- * admin-issued, just presented like it means it, and honest about the two
- * real cases (you're the admin bootstrapping this deployment for the
- * first time, or someone gave you a token).
- *
- * `renderAccountAuth` below is the *other* screen — real email/password
- * signup, for a deployment that opted into ADR 0027's hosted accounts.
- * Which one a given deployment shows is a server-side config flag
- * (`accountsEnabled`), never a client-side choice.
+ * The front door, shared by both auth modes. Split layout: a hero panel
+ * tells the deployment's one true story (no marketing — every line is a
+ * verifiable property of this binary), the form panel collects proof of
+ * identity. `hero` copy differs by mode only where the truth differs:
+ * self-hosted deployments hold keys in files the operator passed;
+ * accounts-enabled ones hold sessions.
  */
-function renderTokenSignIn(templates: ChatTemplate[]): void {
+function authScaffold(
+  content: HTMLElement,
+  lede: string,
+  points: [Parameters<typeof icon>[0], string, string][],
+): { col: HTMLElement; panel: HTMLElement; help: HTMLElement } {
   document.querySelector('.app')!.classList.add('auth');
-  const content = document.getElementById('content')!;
   clear(content);
-  const col = h('div', { class: 'column signin' });
+  const col = h('div', { class: 'signin' });
+  const hero = h('div', { class: 'signin-hero' },
+    h('div', { class: 'hero-mark' }, icon('shield')),
+    h('h1', { class: 'hero-title' }, 'Naro'),
+    h('p', { class: 'hero-lede' }, lede),
+    h('div', { class: 'hero-points' },
+      ...points.map(([ic, strong, sub]) => h('div', { class: 'hero-point' },
+        icon(ic), h('span', {}, h('strong', {}, strong), sub)))));
+  const panel = h('div', { class: 'signin-panel' });
+  col.append(h('div', { class: 'signin-split' }, hero, panel));
+  const help = h('div', { class: 'signin-help' });
+  content.append(col);
+  return { col, panel, help };
+}
 
-  const mark = h('div', { class: 'signin-mark' }, icon('shield'));
-  const card = h('div', { class: 'page-card signin-card' },
-    mark,
-    h('h2', { class: 'signin-title' }, 'Naro'),
-    h('p', { class: 'signin-lede' },
-      templates.length > 0
-        ? `${templates.length} outcome template${templates.length === 1 ? '' : 's'} configured on this deployment. Every action they take is policy-checked and provable — sign in to see it.`
-        : 'Self-hosted, policy-checked, provable. Sign in to get started.'),
-    h('div', { class: 'signin-rule' }),
-    h('label', { class: 'field-label', for: 'tok' }, 'Access token'));
-  const input = h('input', { class: 'text-input mono', id: 'tok', type: 'password', placeholder: 'naro_…', autocomplete: 'off', spellcheck: 'false' });
-  const btn = h('button', { class: 'btn-fill', type: 'button' }, icon('arrow', 'btn-icon'), 'Continue');
-  btn.style.cssText = 'width:100%;margin-top:14px;display:flex;align-items:center;justify-content:center;gap:8px';
-  const err = h('p', { class: 'signin-err', style: 'display:none' });
+const ERR_HIDE = { style: 'display:none' } as const;
+function authError(msg: string): HTMLElement {
+  return h('p', { class: 'signin-err' }, icon('alert'), h('span', {}, msg));
+}
+function showErr(slot: HTMLElement, msg: string): void {
+  const el = authError(msg);
+  slot.replaceWith(el);
+}
+
+/** Password input with a show/hide toggle — the standard affordance. */
+function passwordField(id: string, autocomplete: string, mono = false): { wrap: HTMLElement; input: HTMLInputElement } {
+  const input = h('input', { class: `text-input${mono ? ' mono' : ''}`, id, type: 'password', autocomplete }) as HTMLInputElement;
+  const wrap = h('div', { class: 'pw-wrap' }, input);
+  const toggle = h('button', { class: 'pw-toggle', type: 'button', 'aria-label': 'Show password', title: 'Show password' }, icon('eye'));
+  toggle.addEventListener('click', () => {
+    const showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    toggle.replaceChildren(icon(showing ? 'eye' : 'eyeoff'));
+    toggle.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+  });
+  wrap.append(toggle);
+  return { wrap, input };
+}
+
+/** The self-hosted sign-in screen — no self-service registration by
+ *  design (ADR 0012/0025, admin-issued tokens, same posture as Grafana
+ *  or Metabase's own admin-invites-you model). The form collects the
+ *  token; the hero says what this deployment actually is. */
+function renderTokenSignIn(templates: ChatTemplate[]): void {
+  const content = document.getElementById('content')!;
+  const { col, panel, help } = authScaffold(content,
+    templates.length > 0
+      ? `${templates.length} outcome template${templates.length === 1 ? '' : 's'} configured on this deployment. Sign in to see them work.`
+      : 'A self-hosted control plane for agents whose actions are checked and whose records verify.',
+    [
+      ['lock', 'Self-hosted', 'This page is served by your own naro serve — nothing leaves the machine.'],
+      ['shield', 'Policy-checked', 'Every action an agent takes passes policy before it runs.'],
+      ['link', 'Provable', 'Each run leaves a hash-chained journal you can verify, not a log you have to trust.'],
+    ]);
+
+  panel.append(h('h1', { class: 'signin-title' }, 'Sign in'));
+  panel.append(h('p', { class: 'signin-sub' }, 'Access is admin-issued — there are no accounts on a self-hosted deployment, by design.'));
+  panel.append(h('label', { class: 'field-label', for: 'tok' }, 'Access token'));
+  const { wrap, input } = passwordField('tok', 'off', true);
+  input.setAttribute('placeholder', 'naro_…');
+  input.setAttribute('spellcheck', 'false');
+  panel.append(wrap);
+  const errSlot = h('p', ERR_HIDE);
+  panel.append(errSlot);
+  const btn = h('button', { class: 'btn-fill signin-btn', type: 'button' }, icon('arrow', 'btn-icon'), 'Continue');
+  panel.append(btn);
+
   const save = () => {
     const v = input.value.trim();
-    if (v === '') { err.textContent = 'Enter a token to continue.'; err.style.display = ''; input.focus(); return; }
+    if (v === '') { showErr(errSlot, 'Enter a token to continue.'); input.focus(); return; }
     localStorage.setItem(TOKEN_KEY, v);
     location.reload();
   };
   btn.addEventListener('click', save);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
-  input.addEventListener('input', () => { err.style.display = 'none'; });
-  card.append(input, err, btn);
+  input.addEventListener('input', () => { errSlot.querySelector('.signin-err')?.remove(); });
 
-  const help = h('div', { class: 'signin-help' },
+  help.append(
     h('p', {},
-      h('strong', {}, "Setting this up for the first time? "),
+      h('strong', {}, 'Setting this up for the first time? '),
       "You already have a token — it's the one you passed to naro serve with ",
-      h('code', {}, '--principals'),
-      ' or ', h('code', {}, '--token'), ' when you started it.'),
+      h('code', {}, '--principals'), ' or ', h('code', {}, '--token'), ' when you started it.'),
     h('p', {},
       h('strong', {}, 'Someone gave you access? '),
       "Use the token they shared with you — it's issued to you personally and works the moment they generate it, no invite email, no password to set."));
-
-  col.append(card, help, h('div', { class: 'signin-foot' }, icon('shield'), 'naro serve — policy-checked · provable · self-hosted'));
-  content.append(col);
+  col.append(help);
+  col.append(h('div', { class: 'signin-foot' }, icon('shield'), 'naro serve — policy-checked · provable · self-hosted'));
   input.focus();
 }
 
@@ -567,87 +607,107 @@ function renderTokenSignIn(templates: ChatTemplate[]): void {
  * identical and a mis-click between them should be one tap to fix, not
  * a navigation.
  */
+/**
+ * ADR 0027's hosted signup/login — real email + password, a session
+ * cookie on success, no token the visitor ever sees or copies. One
+ * screen, a tab toggle between the two modes (defaulting to Sign up,
+ * the first thing a new visitor to a hosted product needs).
+ */
 function renderAccountAuth(templates: ChatTemplate[]): void {
-  document.querySelector('.app')!.classList.add('auth');
   const content = document.getElementById('content')!;
-  clear(content);
-  const col = h('div', { class: 'column signin' });
+  const { col, panel, help } = authScaffold(content,
+    templates.length > 0
+      ? `${templates.length} outcome template${templates.length === 1 ? '' : 's'} configured on this deployment. Sign up to see them work.`
+      : 'A control plane for agents whose actions are checked and whose records verify.',
+    [
+      ['shield', 'Policy-checked', 'Every action an agent takes passes policy before it runs.'],
+      ['link', 'Provable', 'Each run leaves a hash-chained journal you can verify, not a log you have to trust.'],
+      ['key', 'Sessions, not tokens', 'Your browser holds a session cookie — you never see or copy a bearer token.'],
+    ]);
 
   let mode: 'signup' | 'login' = 'signup';
 
-  const mark = h('div', { class: 'signin-mark' }, icon('shield'));
-  const title = h('h2', { class: 'signin-title' }, 'Naro');
-  const lede = h('p', { class: 'signin-lede' });
+  const title = h('h1', { class: 'signin-title' });
+  const sub = h('p', { class: 'signin-sub' });
   const tabs = h('div', { class: 'auth-tabs' },
-    h('button', { class: 'auth-tab', type: 'button', id: 'tab-signup' }, 'Sign up'),
-    h('button', { class: 'auth-tab', type: 'button', id: 'tab-login' }, 'Log in'));
+    h('button', { class: 'auth-tab', type: 'button' }, 'Sign up'),
+    h('button', { class: 'auth-tab', type: 'button' }, 'Log in'));
 
-  const emailInput = h('input', { class: 'text-input', id: 'auth-email', type: 'email', placeholder: 'you@company.com', autocomplete: 'email' });
-  const passwordInput = h('input', { class: 'text-input mono', id: 'auth-password', type: 'password', placeholder: '••••••••••', autocomplete: 'current-password' });
+  const emailInput = h('input', { class: 'text-input', type: 'email', placeholder: 'you@company.com', autocomplete: 'email' }) as HTMLInputElement;
+  const pw = passwordField('auth-password', 'current-password');
   const passwordHint = h('p', { class: 'field-hint' }, 'At least 10 characters.');
-  const err = h('p', { class: 'signin-err', style: 'display:none' });
-  const btn = h('button', { class: 'btn-fill', type: 'button' }, icon('arrow', 'btn-icon'), 'Create account');
-  btn.style.cssText = 'width:100%;margin-top:4px;display:flex;align-items:center;justify-content:center;gap:8px';
+  const errSlot = h('p', ERR_HIDE);
+  const btn = h('button', { class: 'btn-fill signin-btn', type: 'button' });
+  const btnIcon = h('span', {});
+  const btnLabel = h('span', {});
+  btn.append(btnIcon, btnLabel);
 
-  const card = h('div', { class: 'page-card signin-card' },
-    mark, title, lede, tabs, h('div', { class: 'signin-rule' }),
-    h('label', { class: 'field-label', for: 'auth-email' }, 'Email'), emailInput,
-    h('label', { class: 'field-label', for: 'auth-password' }, 'Password'), passwordInput, passwordHint,
-    err, btn);
-
-  const help = h('div', { class: 'signin-help' });
+  panel.append(title, sub, tabs,
+    h('label', { class: 'field-label' }, 'Email'), emailInput,
+    h('label', { class: 'field-label', style: 'margin-top:14px' }, 'Password'), pw.wrap, passwordHint,
+    errSlot, btn);
 
   const applyMode = () => {
-    err.style.display = 'none';
-    // Direct references, not getElementById — this runs once before
-    // these nodes are attached to `document` at all (the initial
-    // applyMode() call, right before col/card get appended below).
+    errSlot.querySelector('.signin-err')?.remove();
     tabs.children[0]!.classList.toggle('active', mode === 'signup');
     tabs.children[1]!.classList.toggle('active', mode === 'login');
-    passwordInput.setAttribute('autocomplete', mode === 'signup' ? 'new-password' : 'current-password');
+    title.textContent = mode === 'signup' ? 'Create your account' : 'Welcome back';
+    sub.textContent = mode === 'signup'
+      ? 'The first account on this deployment becomes its admin.'
+      : 'Log in with your email and password.';
+    pw.input.setAttribute('autocomplete', mode === 'signup' ? 'new-password' : 'current-password');
     passwordHint.style.display = mode === 'signup' ? '' : 'none';
-    btn.lastChild!.textContent = mode === 'signup' ? 'Create account' : 'Log in';
-    lede.textContent = templates.length > 0
-      ? `${templates.length} outcome template${templates.length === 1 ? '' : 's'} configured on this deployment. Every action they take is policy-checked and provable.`
-      : 'Self-hosted, policy-checked, provable.';
+    btnIcon.replaceChildren(icon('arrow', 'btn-icon'));
+    btnLabel.textContent = mode === 'signup' ? 'Create account' : 'Log in';
     clear(help);
     help.append(mode === 'signup'
       ? h('p', {}, "You're in immediately — no email verification yet, this is a v1. Signing up makes you this deployment's first admin.")
       : h('p', {}, h('strong', {}, "Don't have an account? "), 'Use the "Sign up" tab above — anyone can create the first account on a fresh deployment.'));
   };
 
-  tabs.children[0]!.addEventListener('click', () => { mode = 'signup'; applyMode(); });
-  tabs.children[1]!.addEventListener('click', () => { mode = 'login'; applyMode(); });
+  tabs.children[0]!.addEventListener('click', () => { mode = 'signup'; applyMode(); emailInput.focus(); });
+  tabs.children[1]!.addEventListener('click', () => { mode = 'login'; applyMode(); emailInput.focus(); });
+
+  const setBusy = (busy: boolean) => {
+    if (busy) {
+      btn.setAttribute('disabled', '');
+      btnIcon.replaceChildren(h('span', { class: 'spinner' }));
+      btnLabel.textContent = mode === 'signup' ? 'Creating account…' : 'Logging in…';
+    } else {
+      btn.removeAttribute('disabled');
+      btnIcon.replaceChildren(icon('arrow', 'btn-icon'));
+      btnLabel.textContent = mode === 'signup' ? 'Create account' : 'Log in';
+    }
+  };
 
   const submit = async () => {
     const email = emailInput.value.trim();
-    const password = passwordInput.value;
-    if (email === '' || password === '') { err.textContent = 'Email and password are both required.'; err.style.display = ''; return; }
-    btn.setAttribute('disabled', '');
+    const password = pw.input.value;
+    errSlot.querySelector('.signin-err')?.remove();
+    if (email === '' || password === '') { errSlot.replaceWith(authError('Email and password are both required.')); return; }
+    setBusy(true);
     try {
       const res = await fetch(`${location.origin}/accounts/${mode === 'signup' ? 'signup' : 'login'}`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({})) as { error?: string };
-        err.textContent = body.error ?? `${mode === 'signup' ? 'Sign up' : 'Log in'} failed.`;
-        err.style.display = '';
+        errSlot.replaceWith(authError(body.error ?? `${mode === 'signup' ? 'Sign up' : 'Log in'} failed.`));
         return;
       }
       location.reload();
     } catch {
-      err.textContent = 'Could not reach the server — check your connection and try again.';
-      err.style.display = '';
+      errSlot.replaceWith(authError('Could not reach the server — check your connection and try again.'));
     } finally {
-      btn.removeAttribute('disabled');
+      setBusy(false);
     }
   };
   btn.addEventListener('click', () => void submit());
-  passwordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') void submit(); });
+  for (const field of [emailInput, pw.input]) field.addEventListener('keydown', (e) => { if (e.key === 'Enter') void submit(); });
 
   applyMode();
-  col.append(card, help, h('div', { class: 'signin-foot' }, icon('shield'), 'naro serve — policy-checked · provable'));
-  content.append(col);
+  col.append(help);
+  col.append(h('div', { class: 'signin-foot' }, icon('shield'), 'naro serve — policy-checked · provable'));
   emailInput.focus();
 }
 

@@ -449,50 +449,113 @@ export const CHAT_UI_HTML = `<!doctype html>
      centers in the real viewport, not inside the leftover app frame. */
   .app.auth .sidebar, .app.auth .topbar, .app.auth .composer { display: none; }
   .app.auth .content {
-    display: flex;
-    background: radial-gradient(720px 340px at 50% 36%, var(--accent-soft), transparent 72%);
+    display: flex; position: relative; overflow: hidden;
+  }
+  /* layered backdrop: one broad accent wash top-center + a faint second
+     light lower-right — depth without a photo or gradient mesh */
+  .app.auth .content::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(900px 420px at 30% 24%, var(--accent-soft), transparent 70%),
+      radial-gradient(700px 380px at 78% 82%, var(--accent-soft), transparent 65%);
+    opacity: .55;
   }
   .signin {
-    max-width: 420px; width: 100%; margin: auto; padding: 40px 20px;
-    align-self: center;
+    max-width: 940px; width: 100%; margin: auto; padding: 48px 24px;
+    align-self: center; position: relative;
+    animation: signin-in .45s cubic-bezier(.16,1,.3,1);
   }
-  .signin-card {
-    padding: 36px 32px 28px; text-align: center;
-    box-shadow: var(--shadow-md);
-    /* the thinnest accent thread along the top edge — the one touch of
-       brand color a front door earns */
-    border-top: 2px solid var(--accent-soft-border);
+  @keyframes signin-in { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+  @media (prefers-reduced-motion: reduce) { .signin { animation: none; } }
+  .signin-split {
+    display: flex; border-radius: 20px; overflow: hidden;
+    border: 1px solid var(--border); background: var(--surface);
+    box-shadow: var(--shadow-md), 0 30px 80px rgba(0,0,0,.14);
   }
-  .signin-mark {
-    width: 52px; height: 52px; margin: 0 auto 18px; border-radius: 14px;
-    background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-soft-border);
+  /* hero — the one true story, told once */
+  .signin-hero {
+    flex: 1.15; min-width: 0; padding: 52px 48px;
+    display: flex; flex-direction: column; justify-content: center;
+    background: linear-gradient(160deg, var(--accent-soft), var(--surface-alt) 85%);
+    border-right: 1px solid var(--border-soft);
+  }
+  .hero-mark {
+    width: 56px; height: 56px; border-radius: 16px;
+    background: var(--accent); color: var(--accent-ink);
     display: flex; align-items: center; justify-content: center;
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-sm); margin-bottom: 24px;
   }
-  .signin-mark .icon { width: 26px; height: 26px; }
-  .signin-title { margin: 0 0 8px; font-size: 22px; font-weight: 650; letter-spacing: -.015em; }
-  .signin-lede { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-muted); }
-  .signin-rule { height: 1px; background: var(--border-soft); margin: 22px 0 20px; }
-  .signin-card .field-label { text-align: left; font-weight: 550; }
-  .signin-card .text-input { text-align: left; padding: 10px 12px; }
-  .signin-card .text-input:focus {
+  .hero-mark .icon { width: 28px; height: 28px; }
+  .hero-title { font-size: 26px; font-weight: 650; letter-spacing: -.02em; margin: 0 0 10px; }
+  .hero-lede { font-size: 14px; line-height: 1.65; color: var(--ink-muted); margin: 0 0 32px; max-width: 340px; }
+  .hero-points { display: flex; flex-direction: column; gap: 14px; }
+  .hero-point {
+    display: flex; align-items: flex-start; gap: 12px;
+    font-size: 13.5px; line-height: 1.5; color: var(--ink);
+  }
+  .hero-point .icon { width: 17px; height: 17px; color: var(--accent); margin-top: 1px; flex: none; }
+  .hero-point span { color: var(--ink-muted); }
+  .hero-point strong { display: block; font-weight: 600; color: var(--ink); }
+  /* form panel */
+  .signin-panel {
+    flex: 1; min-width: 360px; padding: 52px 48px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .signin-title { margin: 0 0 6px; font-size: 21px; font-weight: 650; letter-spacing: -.015em; }
+  .signin-sub { margin: 0 0 24px; font-size: 13px; color: var(--ink-muted); }
+  .auth-tabs {
+    display: flex; gap: 3px; margin: 0 0 24px; padding: 3px;
+    background: var(--surface-alt); border: 1px solid var(--border-soft); border-radius: 10px;
+  }
+  .auth-tab {
+    flex: 1; border: 0; background: none; padding: 8px 0; border-radius: 8px;
+    font: inherit; font-size: 13px; font-weight: 550; color: var(--ink-muted); cursor: pointer;
+    transition: background .12s ease, color .12s ease;
+  }
+  .auth-tab.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+  .field-label { font-weight: 550; }
+  .pw-wrap { position: relative; }
+  .pw-toggle {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    border: 0; background: none; color: var(--ink-faint); cursor: pointer; padding: 4px;
+    display: flex; align-items: center;
+  }
+  .pw-toggle:hover { color: var(--ink-muted); }
+  .pw-toggle .icon { width: 16px; height: 16px; }
+  .signin .text-input { padding: 11px 13px; font-size: 14px; }
+  .signin .text-input:focus {
     border-color: var(--accent); outline: none;
     box-shadow: 0 0 0 3px var(--accent-soft);
   }
-  .signin-card .btn-fill { transition: filter .12s ease, transform .06s ease; }
-  .signin-card .btn-fill:hover { filter: brightness(1.06); }
-  .signin-card .btn-fill:active { transform: translateY(1px); }
-  .signin-err { color: var(--danger); font-size: 12.5px; margin: 6px 0 0; text-align: left; }
-  .signin-card .btn-icon { width: 12px; height: 12px; }
+  .signin-btn {
+    width: 100%; margin-top: 16px; padding: 12px 16px; min-height: 46px;
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    font-size: 14px; transition: filter .12s ease, transform .06s ease;
+  }
+  .signin-btn:hover:not([disabled]) { filter: brightness(1.07); }
+  .signin-btn:active:not([disabled]) { transform: translateY(1px); }
+  .signin-btn[disabled] { opacity: .75; cursor: default; }
+  .btn-icon { width: 13px; height: 13px; }
+  .spinner {
+    width: 15px; height: 15px; border-radius: 50%; flex: none;
+    border: 2px solid currentColor; border-top-color: transparent;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.8s; } }
+  .signin-err {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--danger); font-size: 12.5px; margin: 10px 0 0; text-align: left;
+    animation: err-in .18s ease;
+  }
+  @keyframes err-in { from { opacity: 0; transform: translateY(-3px); } }
+  @media (prefers-reduced-motion: reduce) { .signin-err { animation: none; } }
+  .signin-err .icon { width: 13px; height: 13px; flex: none; }
+  .field-hint { margin: 6px 0 0; font-size: 11.5px; color: var(--ink-faint); }
   .signin-help {
-    margin-top: 16px; padding: 14px 16px; border: 1px solid var(--border-soft);
-    border-radius: 12px; background: var(--surface-alt);
+    margin-top: 20px; padding: 14px 16px; border: 1px solid var(--border-soft);
+    border-radius: 12px; background: var(--surface-alt); max-width: 460px; margin-left: auto; margin-right: auto;
   }
-  .signin-foot {
-    margin-top: 24px; text-align: center; font-size: 11px; color: var(--ink-faint);
-    letter-spacing: .02em;
-  }
-  .signin-foot .icon { width: 11px; height: 11px; vertical-align: -1.5px; margin-right: 4px; }
   .signin-help p { margin: 0 0 10px; font-size: 12.5px; line-height: 1.6; color: var(--ink-muted); }
   .signin-help p:last-child { margin-bottom: 0; }
   .signin-help strong { color: var(--ink); font-weight: 600; }
@@ -500,19 +563,24 @@ export const CHAT_UI_HTML = `<!doctype html>
     font-family: var(--font-mono); font-size: 11.5px; background: var(--surface);
     border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
   }
-
-  /* ADR 0027 — hosted signup/login tab toggle */
-  .auth-tabs {
-    display: flex; gap: 3px; margin: 16px 0 0; padding: 3px;
-    background: var(--surface-alt); border: 1px solid var(--border-soft); border-radius: 10px;
+  .signin-foot {
+    margin-top: 28px; text-align: center; font-size: 11px; color: var(--ink-faint);
+    letter-spacing: .02em;
   }
-  .auth-tab {
-    flex: 1; border: 0; background: none; padding: 7px 0; border-radius: 7px;
-    font: inherit; font-size: 13px; font-weight: 550; color: var(--ink-muted); cursor: pointer;
-    transition: background .12s ease, color .12s ease;
+  .signin-foot .icon { width: 11px; height: 11px; vertical-align: -1.5px; margin-right: 4px; }
+  @media (max-width: 760px) {
+    .signin-split { flex-direction: column; }
+    .signin-hero { padding: 36px 32px; border-right: 0; border-bottom: 1px solid var(--border-soft); }
+    .hero-points { display: none; }
+    .signin-panel { min-width: 0; padding: 36px 32px; }
   }
-  .auth-tab.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
-  .field-hint { margin: 4px 0 0; font-size: 11.5px; color: var(--ink-faint); text-align: left; }
+  .signin-help p { margin: 0 0 10px; font-size: 12.5px; line-height: 1.6; color: var(--ink-muted); }
+  .signin-help p:last-child { margin-bottom: 0; }
+  .signin-help strong { color: var(--ink); font-weight: 600; }
+  .signin-help code {
+    font-family: var(--font-mono); font-size: 11.5px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
+  }
 
   @media (max-width: 780px) {
     .sidebar { position: fixed; z-index: 15; height: 100%; transform: translateX(-100%); transition: transform .2s; }
