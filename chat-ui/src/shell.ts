@@ -161,9 +161,15 @@ export const CHAT_UI_HTML = `<!doctype html>
   /* ---------------- main ---------------- */
   .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .topbar {
-    display: flex; align-items: center; gap: 10px; padding: 10px 20px;
+    display: flex; align-items: center; gap: 10px; padding: 10px 16px;
     border-bottom: 1px solid var(--border); background: var(--surface);
     position: sticky; top: 0; z-index: 5; box-shadow: var(--shadow-sm);
+  }
+  /* one axis for the whole app: topbar-inner, .column, .composer-inner
+     all share the same 720px centered column */
+  .topbar-inner {
+    max-width: 720px; width: 100%; margin: 0 auto;
+    display: flex; align-items: center; gap: 10px;
   }
   .menu-btn { display: none; border: 0; background: none; cursor: pointer; padding: 2px 6px; color: var(--ink-muted); }
   .topbar-title { font-weight: 650; font-size: 15px; letter-spacing: -.005em; }

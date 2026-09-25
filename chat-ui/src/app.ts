@@ -251,9 +251,14 @@ function renderTopbar(state: AppState, route: Route): void {
   });
   el.append(menu);
 
+  // The title block rides the same centered 720px column as the content
+  // and composer — header, body, and input all share one axis.
+  const inner = h('div', { class: 'topbar-inner' });
+  el.append(inner);
+
   if (route.view === 'template' && route.templateId !== undefined) {
     const t = state.templates.find((x) => x.id === route.templateId);
-    el.append(h('div', {},
+    inner.append(h('div', {},
       h('div', { class: 'topbar-title' }, t?.name ?? route.templateId),
       h('div', { class: 'topbar-sub' }, t?.tagline ?? 'outcome template')));
     if (isAdminRoles(state) && t !== undefined) {
@@ -263,15 +268,15 @@ function renderTopbar(state: AppState, route: Route): void {
         b.addEventListener('click', () => { location.hash = `#/t/${t.id}/${tab}`; });
         tabs.append(b);
       }
-      el.append(tabs);
+      inner.append(tabs);
     }
   } else if (route.view === 'system') {
     const names: Record<string, string> = { fleet: 'Fleet control', collisions: 'Tool collisions', definitions: 'Definition changes', retention: 'Retention' };
-    el.append(h('div', {},
+    inner.append(h('div', {},
       h('div', { class: 'topbar-title' }, names[route.page ?? ''] ?? 'System'),
       h('div', { class: 'topbar-sub' }, 'fleet-wide · admin')));
   } else {
-    el.append(h('div', {},
+    inner.append(h('div', {},
       h('div', { class: 'topbar-title' }, 'Other runs'),
       h('div', { class: 'topbar-sub' }, 'runs not tied to a template')));
   }
