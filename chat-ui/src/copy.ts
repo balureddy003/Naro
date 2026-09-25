@@ -37,3 +37,15 @@ export function runStatusLabel(status: string): { cls: string; text: string } {
     default: return { cls: 'warn', text: status };
   }
 }
+
+/** `NaroApiError.message` is the raw response body — usually
+ *  `{"error":"…"}` — so unwrap it to the sentence rather than showing
+ *  JSON to a person. Non-JSON bodies pass through unchanged. */
+export function errText(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  try {
+    const parsed = JSON.parse(raw) as { error?: unknown };
+    if (typeof parsed.error === 'string') return parsed.error;
+  } catch { /* not JSON — raw text is the message */ }
+  return raw;
+}

@@ -2,6 +2,8 @@ import { h, clear } from './dom.ts';
 import type { ChatTemplate } from './app.ts';
 import { markActivated } from './app.ts';
 import { sdk } from './sdk.ts';
+import { toast } from './toast.ts';
+import { errText } from './copy.ts';
 
 /** True for a 501 from `@naro/client` — checked via the typed `.status`
  *  field `NaroApiError` carries, never by string-matching `.message`
@@ -10,6 +12,7 @@ import { sdk } from './sdk.ts';
 function isNotConfigured(e: unknown): boolean {
   return e instanceof sdk.NaroApiError && e.status === 501;
 }
+
 
 /**
  * Everything that isn't the transcript: the System section (ADR 0024's
@@ -48,8 +51,8 @@ function renderFleet(deps: PageDeps, col: HTMLElement): void {
   const card = h('div', { class: 'page-card' },
     h('h3', {}, 'Stop every running agent'),
     h('p', {}, 'Halts every in-flight run this deployment can see. Each stop is recorded with your name and the reason below — this is the same control as POST /runs/cancel-all.'));
-  const reason = h('input', { class: 'text-input', placeholder: 'Why are you stopping the fleet? (required — it goes on every run\'s record)' });
-  const btn = h('button', { class: 'btn-fill', type: 'button', style: 'margin-top:10px;background:var(--danger)' }, 'Halt all runs');
+  const reason = h('input', { class: 'text-input', placeholder: 'e.g. deploy freeze — investigating a bad batch' });
+  const btn = h('button', { class: 'btn-fill btn-danger form-action', type: 'button' }, 'Halt all runs');
   const note = h('p', {});
   btn.addEventListener('click', () => {
     const r = reason.value.trim();
@@ -57,16 +60,17 @@ function renderFleet(deps: PageDeps, col: HTMLElement): void {
     btn.setAttribute('disabled', '');
     void deps.client.cancelAllRuns(r).then((res) => {
       note.textContent = `Stopped ${res.cancelled} run${res.cancelled === 1 ? '' : 's'} — recorded under ${deps.me.id}.`;
+      toast(`Halted ${res.cancelled} run${res.cancelled === 1 ? '' : 's'}`, res.cancelled > 0 ? 'warn' : 'ok');
       void deps.refresh();
-    }).catch((e: Error) => { note.textContent = e.message; })
+    }).catch((e: Error) => { note.textContent = errText(e); })
       .finally(() => btn.removeAttribute('disabled'));
   });
-  card.append(reason, btn, note);
+  card.append(h('label', { class: 'field-label' }, 'Reason — required, recorded on every run it stops'), reason, btn, note);
   col.append(card);
 }
 
 function renderCollisions(deps: PageDeps, col: HTMLElement): void {
-  const wrap = h('div', {}, h('div', { class: 'empty' }, 'Loading…'));
+  const wrap = h('div', {}, h('div', { class: 'sk sk-card' }), h('div', { class: 'sk sk-card' }));
   col.append(wrap);
   void deps.client.listToolCollisions().then((rows) => {
     clear(wrap);
@@ -79,8 +83,8 @@ function renderCollisions(deps: PageDeps, col: HTMLElement): void {
         const b = h('button', { class: 'btn-ghost', type: 'button', style: 'margin-right:8px' }, `Use ${src}`);
         b.addEventListener('click', () => {
           void deps.client.resolveToolCollision(c.name, src)
-            .then(() => { card.replaceChildren(h('div', { class: 'approval-done' }, `Resolved — "${c.name}" now answers to ${src}.`)); })
-            .catch((e: Error) => { card.append(h('p', { style: 'color:var(--danger)' }, e.message)); });
+            .then(() => { card.replaceChildren(h('div', { class: 'approval-done' }, `Resolved — "${c.name}" now answers to ${src}.`)); toast(`Collision resolved — "${c.name}" → ${src}`); })
+            .catch((e: Error) => { card.append(h('p', { style: 'color:var(--danger)' }, errText(e))); });
         });
         card.append(b);
       }
@@ -88,12 +92,12 @@ function renderCollisions(deps: PageDeps, col: HTMLElement): void {
     }
   }).catch((e: Error) => {
     clear(wrap);
-    wrap.append(h('div', { class: 'empty' }, isNotConfigured(e) ? 'This deployment has no tool registry wired to serve — nothing to resolve.' : e.message));
+    wrap.append(h('div', { class: 'empty' }, isNotConfigured(e) ? 'This deployment has no tool registry wired to serve — nothing to resolve.' : errText(e)));
   });
 }
 
 function renderDefinitions(deps: PageDeps, col: HTMLElement): void {
-  const wrap = h('div', {}, h('div', { class: 'empty' }, 'Loading…'));
+  const wrap = h('div', {}, h('div', { class: 'sk sk-card' }), h('div', { class: 'sk sk-card' }));
   col.append(wrap);
   void deps.client.listChangedDefinitions().then((rows) => {
     clear(wrap);
@@ -107,15 +111,15 @@ function renderDefinitions(deps: PageDeps, col: HTMLElement): void {
       const b = h('button', { class: 'btn-fill', type: 'button' }, `Acknowledge "${d.name}"`);
       b.addEventListener('click', () => {
         void deps.client.acknowledgeDefinition(d.name, d.sourceId)
-          .then(() => { card.replaceChildren(h('div', { class: 'approval-done' }, `Acknowledged — "${d.name}" is back to its declared behavior.`)); })
-          .catch((e: Error) => { card.append(h('p', { style: 'color:var(--danger)' }, e.message)); });
+          .then(() => { card.replaceChildren(h('div', { class: 'approval-done' }, `Acknowledged — "${d.name}" is back to its declared behavior.`)); toast(`Definition "${d.name}" acknowledged`); })
+          .catch((e: Error) => { card.append(h('p', { style: 'color:var(--danger)' }, errText(e))); });
       });
       card.append(b);
       wrap.append(card);
     }
   }).catch((e: Error) => {
     clear(wrap);
-    wrap.append(h('div', { class: 'empty' }, isNotConfigured(e) ? 'This deployment has no tool registry wired to serve.' : e.message));
+    wrap.append(h('div', { class: 'empty' }, isNotConfigured(e) ? 'This deployment has no tool registry wired to serve.' : errText(e)));
   });
 }
 
@@ -127,7 +131,7 @@ function renderRetention(deps: PageDeps, col: HTMLElement): void {
   const seq = h('input', { class: 'text-input', placeholder: 'prune through seq — e.g. 42' });
   const policy = h('input', { class: 'text-input', placeholder: 'Policy citation — e.g. GDPR Art. 5(1)(e) (required)' });
   const note = h('p', {});
-  const btn = h('button', { class: 'btn-fill', type: 'button', style: 'margin-top:10px' }, 'Prune');
+  const btn = h('button', { class: 'btn-fill form-action', type: 'button' }, 'Prune');
   btn.addEventListener('click', () => {
     const through = Number(seq.value.trim());
     if (runId.value.trim() === '' || !Number.isInteger(through) || through < 0 || policy.value.trim() === '') {
@@ -136,8 +140,8 @@ function renderRetention(deps: PageDeps, col: HTMLElement): void {
     }
     btn.setAttribute('disabled', '');
     void deps.client.pruneRun(runId.value.trim(), through, policy.value.trim())
-      .then((r) => { note.textContent = `Pruned ${r.pruned} events — anchor ${r.anchorHash.slice(0, 16)}… is the chain's new start.`; })
-      .catch((e: Error) => { note.textContent = isNotConfigured(e) ? "This deployment's event store doesn't support pruning (needs a durable store)." : e.message; })
+      .then((r) => { note.textContent = `Pruned ${r.pruned} events — anchor ${r.anchorHash.slice(0, 16)}… is the chain's new start.`; toast(`Run pruned — ${r.pruned} events`); })
+      .catch((e: Error) => { note.textContent = isNotConfigured(e) ? "This deployment's event store doesn't support pruning (needs a durable store)." : errText(e); })
       .finally(() => btn.removeAttribute('disabled'));
   });
   card.append(
@@ -159,7 +163,11 @@ export function renderSettingsTab(deps: PageDeps, col: HTMLElement, t: ChatTempl
     ['Balanced', 'Start mid-tier; escalate on low confidence.'],
     ['Careful first', 'Use the strongest model every run.'],
   ];
-  let picked = 'Cheapest first';
+  // UI-only persistence — the copy above is explicit this is browser-local.
+  // localStorage makes the choice survive reload so the affordance isn't a
+  // lie: "remembered in this browser" literally, nothing more.
+  const key = `naro.chat.settings.${t.id}`;
+  let picked = localStorage.getItem(key) ?? 'Cheapest first';
   const list = h('div', {});
   const paint = () => {
     clear(list);
@@ -177,7 +185,9 @@ export function renderSettingsTab(deps: PageDeps, col: HTMLElement, t: ChatTempl
   const save = h('button', { class: 'btn-fill', type: 'button' }, 'Save');
   const note = h('p', {});
   save.addEventListener('click', () => {
+    localStorage.setItem(key, picked);
     note.textContent = `Saved "${picked}" for ${t.name} — takes effect on the next run (browser-only until template settings persist server-side).`;
+    toast(`Saved "${picked}" for ${t.name}`);
   });
   card.append(list, approvalRow, save, note);
   col.append(card);
@@ -189,7 +199,7 @@ export function renderAccessTab(deps: PageDeps, col: HTMLElement, t: ChatTemplat
 
   const listCard = h('div', { class: 'page-card' },
     h('h3', {}, `Who can use ${t.name}`));
-  const listWrap = h('div', {}, h('div', { class: 'empty' }, 'Loading…'));
+  const listWrap = h('div', {}, h('div', { class: 'sk sk-row' }), h('div', { class: 'sk sk-row' }), h('div', { class: 'sk sk-row' }));
   listCard.append(listWrap);
   wrap.append(listCard);
 
@@ -201,11 +211,11 @@ export function renderAccessTab(deps: PageDeps, col: HTMLElement, t: ChatTemplat
         const row = h('div', { style: 'display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border-soft)' },
           h('span', { style: 'flex:1;font-size:13.5px' }, p.id),
           h('span', { style: 'font-size:12px;color:var(--ink-faint)' }, [...p.roles].join(', ')),
-          h('span', { style: 'font-size:11.5px;color:var(--ink-faint);font-family:ui-monospace,monospace' }, `…${p.tokenLast4}`));
+          h('span', { style: 'font-size:11.5px;color:var(--ink-faint);font-family:var(--font-mono)' }, `…${p.tokenLast4}`));
         const del = h('button', { class: 'btn-ghost', type: 'button', style: 'font-size:11.5px;padding:3px 8px' }, 'Revoke');
         del.addEventListener('click', () => {
           if (!window.confirm(`Revoke ${p.id}'s access? Their token stops working on the next request.`)) return;
-          void deps.client.revokePrincipal(p.id).then(refreshList).catch((e: Error) => { row.append(h('span', { style: 'color:var(--danger);font-size:11.5px' }, e.message)); });
+          void deps.client.revokePrincipal(p.id).then(() => { toast(`Revoked ${p.id}'s access`, 'warn'); refreshList(); }).catch((e: Error) => { row.append(h('span', { style: 'color:var(--danger);font-size:11.5px' }, errText(e))); });
         });
         row.append(del);
         listWrap.append(row);
@@ -214,7 +224,7 @@ export function renderAccessTab(deps: PageDeps, col: HTMLElement, t: ChatTemplat
       clear(listWrap);
       listWrap.append(h('p', {}, isNotConfigured(e)
         ? 'This deployment uses a static token file — teammates are added by editing it, not here.'
-        : e.message));
+        : errText(e)));
     });
   };
   refreshList();
@@ -234,7 +244,7 @@ export function renderAccessTab(deps: PageDeps, col: HTMLElement, t: ChatTemplat
   const levelSel = h('select', {});
   for (const [label] of LEVELS) levelSel.append(h('option', { value: label }, label));
   const out = h('div', {});
-  const gen = h('button', { class: 'btn-fill', type: 'button', style: 'margin-top:10px' }, 'Generate access');
+  const gen = h('button', { class: 'btn-fill form-action', type: 'button' }, 'Generate access');
   gen.addEventListener('click', () => {
     const id = nameInput.value.trim();
     if (id === '') { out.textContent = 'Give them a name first — it becomes their identity on the record.'; return; }
@@ -246,9 +256,10 @@ export function renderAccessTab(deps: PageDeps, col: HTMLElement, t: ChatTemplat
         out.append(
           h('p', {}, `Access created for ${res.id}. This token is shown once — share it with them like a password:`),
           h('div', { class: 'token-once' }, res.token));
+        toast(`Access created for ${res.id}`);
         refreshList();
       })
-      .catch((e: Error) => { out.textContent = e.message; })
+      .catch((e: Error) => { out.textContent = isNotConfigured(e) ? 'This deployment uses a static token file — teammates are added by editing it, not here.' : errText(e); })
       .finally(() => gen.removeAttribute('disabled'));
   });
   invite.append(

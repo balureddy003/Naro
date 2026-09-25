@@ -1,6 +1,6 @@
 import { h, clear, shortHash } from './dom.ts';
 import { icon } from './icons.ts';
-import { policyBadge, runStatusLabel } from './copy.ts';
+import { policyBadge, runStatusLabel, errText } from './copy.ts';
 import { attachApprovalId, transcriptFromEvents, type ApprovalItem, type ChipItem, type Transcript } from './viewmodel.ts';
 import type { PageDeps } from './pages.ts';
 import type { RunSummary } from '@naro/client';
@@ -30,6 +30,11 @@ export async function renderRun(
   const statusEl = h('div', { class: 'msg-system' });
   col.append(statusEl);
 
+  // Skeleton while the first journal events arrive — the frame is
+  // instant, the stream isn't. Two chips + a card match a real run's
+  // shape, so the swap doesn't jump the layout.
+  for (const cls of ['sk sk-chip', 'sk sk-chip', 'sk sk-card']) transcriptEl.append(h('div', { class: cls }));
+
   // Cross-tenant (unscoped) principals get the chain banner pinned over
   // the transcript — "what you're looking at is the same record
   // naro verify would print" (PRD-006, ADR 0013 visibility).
@@ -46,10 +51,15 @@ export async function renderRun(
     }).catch(() => { banner.remove(); });
   }
 
+  const painted = new Set<number>();
   const repaint = (): void => {
     clear(transcriptEl);
     for (const item of transcript.items) {
-      if (item.kind === 'chip') transcriptEl.append(renderChip(item));
+      if (item.kind === 'chip') {
+        const el = renderChip(item);
+        if (!painted.has(item.seq)) { el.classList.add('chip-enter'); painted.add(item.seq); }
+        transcriptEl.append(el);
+      }
       else if (item.kind === 'approval') transcriptEl.append(renderApproval(deps, item));
       else if (item.result !== undefined) transcriptEl.append(renderResult(item.result));
       else transcriptEl.append(h('div', { class: `msg-${item.role === 'user' ? 'user' : item.role === 'system' ? 'system' : 'assistant'}` }, item.text));
@@ -154,10 +164,27 @@ function renderApproval(deps: PageDeps, item: ApprovalItem): HTMLElement {
   if (!can) card.append(h('div', { class: 'approval-detail' }, 'Waiting for someone with approve permission.'));
   const answer = (approved: boolean) => {
     if (item.approvalId === undefined) return;
+    // Optimistic: commit the visual state the instant they click — the
+    // journal event reconciles it for real on the next poll. A failed
+    // request rolls the card back with a visible error, never a lie.
+    card.classList.add(approved ? 'resolved' : 'rejected', 'confirming');
+    const confirming = h('div', { class: `approval-done${approved ? '' : ' no'}` },
+      approved ? 'Confirming…' : 'Recording the decline…');
+    actions.replaceChildren(confirming);
     yes.setAttribute('disabled', ''); no.setAttribute('disabled', '');
     void deps.client.answerApproval(item.approvalId, { approved, ...(input.value.trim() !== '' && { text: input.value.trim() }) })
-      .then(() => deps.refresh())
-      .catch(() => { yes.removeAttribute('disabled'); no.removeAttribute('disabled'); });
+      .then(() => {
+        confirming.textContent = approved ? `Confirmed — recorded by ${deps.me.id}` : `Declined — recorded by ${deps.me.id}`;
+        card.classList.remove('confirming');
+        void deps.refresh();
+      })
+      .catch((e: Error) => {
+        // Rollback — restore the live card and say why.
+        card.classList.remove('resolved', 'rejected', 'confirming');
+        actions.replaceChildren(yes, no);
+        yes.removeAttribute('disabled'); no.removeAttribute('disabled');
+        card.append(h('p', { style: 'color:var(--danger);font-size:12.5px;margin:8px 0 0' }, errText(e)));
+      });
   };
   yes.addEventListener('click', () => answer(true));
   no.addEventListener('click', () => answer(false));

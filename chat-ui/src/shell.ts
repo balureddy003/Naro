@@ -89,7 +89,7 @@ export const CHAT_UI_HTML = `<!doctype html>
     width: 264px; flex: none; display: flex; flex-direction: column;
     background: var(--sidebar-bg); border-right: 1px solid var(--border);
   }
-  .sidebar-head { padding: 14px 14px 10px; border-bottom: 1px solid var(--border-soft); }
+  .sidebar-head { padding: 16px 16px 12px; border-bottom: 1px solid var(--border-soft); }
   .workspace { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   .workspace-mark {
     width: 30px; height: 30px; border-radius: 8px; flex: none;
@@ -134,7 +134,7 @@ export const CHAT_UI_HTML = `<!doctype html>
   .tmpl-runs { display: none; margin: 2px 0 4px 29px; }
   .tmpl-group.open .tmpl-runs { display: block; }
   .run-row {
-    display: flex; align-items: center; gap: 7px; padding: 5px 8px;
+    display: flex; align-items: center; gap: 7px; padding: 6px 8px;
     border-radius: 6px; cursor: pointer; font-size: 13px;
   }
   .run-row:hover { background: var(--surface-alt); }
@@ -223,7 +223,7 @@ export const CHAT_UI_HTML = `<!doctype html>
   /* approval card — a decision point, not a chat bubble */
   .approval-card {
     border: 1.5px solid var(--warn-soft-border); border-radius: 12px;
-    background: var(--warn-soft); padding: 14px 16px; margin: 14px 0;
+    background: var(--warn-soft); padding: 16px; margin: 16px 0;
   }
   .approval-card.resolved { border-color: var(--accent-soft-border); background: var(--accent-soft); }
   .approval-card.rejected { border-color: var(--danger-soft-border); background: var(--danger-soft); }
@@ -232,7 +232,7 @@ export const CHAT_UI_HTML = `<!doctype html>
   .approval-input {
     width: 100%; border: 1px solid var(--border); border-radius: 8px;
     padding: 8px 10px; font: inherit; background: var(--surface); color: var(--ink);
-    margin-bottom: 10px;
+    margin-bottom: 12px;
   }
   .approval-actions { display: flex; gap: 8px; }
   .btn-fill {
@@ -243,6 +243,8 @@ export const CHAT_UI_HTML = `<!doctype html>
     border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px;
     cursor: pointer; background: var(--surface);
   }
+  .btn-danger { background: var(--danger); }
+  .form-action { margin-top: 12px; }
   .approval-done { font-size: 13.5px; color: var(--accent); font-weight: 550; }
   .approval-done.no { color: var(--danger); }
 
@@ -254,8 +256,8 @@ export const CHAT_UI_HTML = `<!doctype html>
   .composer-inner { max-width: 720px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
   .composer textarea {
     flex: 1; resize: none; border: 1px solid var(--border); border-radius: 12px;
-    padding: 11px 14px; font: inherit; background: var(--surface); color: var(--ink);
-    min-height: 46px; max-height: 160px;
+    padding: 12px 14px; font: inherit; background: var(--surface); color: var(--ink);
+    min-height: 48px; max-height: 160px;
   }
   .composer .btn-fill { padding: 11px 18px; border-radius: 12px; }
   .stop-btn {
@@ -272,10 +274,125 @@ export const CHAT_UI_HTML = `<!doctype html>
   @keyframes blink { 0%, 80%, 100% { opacity: .25 } 40% { opacity: 1 } }
   @media (prefers-reduced-motion: reduce) { .dots span { animation: none; opacity: .5; } }
 
+  /* skeletons — content-shaped placeholders while a view's real data is
+     still on the wire. One shimmer rule, several block sizes; the block
+     heights match what real content lands as, so the swap doesn't jump. */
+  .sk {
+    position: relative; overflow: hidden; border-radius: 8px;
+    background: var(--surface-alt); border: 1px solid var(--border-soft);
+  }
+  .sk::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
+    transform: translateX(-100%); animation: shimmer 1.4s infinite;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .sk::after {
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.05), transparent);
+    }
+  }
+  :root[data-theme="dark"] .sk::after {
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.05), transparent);
+  }
+  @keyframes shimmer { to { transform: translateX(100%); } }
+  @media (prefers-reduced-motion: reduce) { .sk::after { animation: none; } }
+  .sk-row { height: 30px; margin: 6px 0; }
+  .sk-card { height: 92px; margin-bottom: 14px; }
+  .sk-chip { height: 28px; width: 180px; border-radius: 20px; margin: 4px 0; }
+  .sk-msg { height: 44px; width: 55%; border-radius: 16px; margin: 10px 0 10px auto; }
+
+  /* toasts — bottom-corner confirmation for actions taken away from
+     their context (palette commands, background polls). In-place actions
+     keep their inline confirmation instead of double-reporting. */
+  .toasts {
+    position: fixed; bottom: 20px; right: 20px; z-index: 40;
+    display: flex; flex-direction: column; gap: 8px; max-width: 340px;
+  }
+  .toast {
+    display: flex; align-items: center; gap: 9px; padding: 10px 14px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: var(--shadow-md);
+    font-size: 13px; animation: toast-in .18s ease;
+  }
+  .toast .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .toast.ok .dot { background: var(--accent); }
+  .toast.warn .dot { background: var(--warn); }
+  .toast.danger .dot { background: var(--danger); }
+  .toast.out { opacity: 0; transform: translateY(6px); transition: opacity .25s, transform .25s; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+  @media (prefers-reduced-motion: reduce) {
+    .toast { animation: none; }
+    .toast.out { transition: none; }
+  }
+
+  /* command palette — Linear's pattern scoped to what this app actually
+     has: navigation + the few real commands, not a universal search. */
+  .palette { position: fixed; inset: 0; z-index: 30; display: flex; justify-content: center; align-items: flex-start; padding-top: 14vh; background: var(--overlay); }
+  .palette-box {
+    width: 560px; max-width: calc(100vw - 32px); max-height: 60vh; overflow: hidden;
+    display: flex; flex-direction: column;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: var(--shadow-md), 0 24px 64px rgba(0,0,0,.22);
+    animation: palette-in .12s ease;
+  }
+  @keyframes palette-in { from { opacity: 0; transform: translateY(-6px) scale(.99); } }
+  @media (prefers-reduced-motion: reduce) { .palette-box { animation: none; } }
+  .palette-input {
+    border: 0; border-bottom: 1px solid var(--border-soft); padding: 14px 16px;
+    font: inherit; font-size: 14.5px; background: none; color: var(--ink); outline: none;
+  }
+  .palette-list { overflow-y: auto; padding: 6px; }
+  .palette-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    border-radius: 8px; cursor: pointer; font-size: 13.5px;
+  }
+  .palette-item .icon { color: var(--ink-faint); }
+  .palette-item.sel { background: var(--accent-soft); }
+  .palette-item .pi-hint { margin-left: auto; font-size: 11.5px; color: var(--ink-faint); }
+  .palette-empty { padding: 18px; font-size: 13px; color: var(--ink-faint); text-align: center; }
+  .kbd {
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-faint);
+    border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px;
+  }
+
+  /* first-run checklist — one dismissible card on the empty Runs state,
+     only while there's genuinely nothing done yet (zero runs, admin). */
+  .firstrun {
+    border: 1px solid var(--accent-soft-border); background: var(--accent-soft);
+    border-radius: 12px; padding: 16px 20px; margin-bottom: 14px;
+  }
+  .firstrun h3 { margin: 0 0 2px; font-size: 14.5px; }
+  .firstrun .fr-sub { font-size: 12.5px; color: var(--ink-muted); margin: 0 0 12px; }
+  .firstrun-item {
+    display: flex; align-items: center; gap: 9px; padding: 5px 0;
+    font-size: 13.5px; color: var(--ink); cursor: pointer; border-radius: 6px;
+    background: none; border: 0; text-align: left; width: 100%;
+  }
+  .firstrun-item:hover .fr-link { text-decoration: underline; }
+  .firstrun-item.done { color: var(--ink-muted); }
+  .firstrun-item .box {
+    width: 15px; height: 15px; border-radius: 4px; flex: none;
+    border: 1.5px solid var(--accent); display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: var(--accent-ink);
+  }
+  .firstrun-item.done .box { background: var(--accent); }
+  .firstrun-dismiss {
+    border: 0; background: none; color: var(--ink-faint); cursor: pointer;
+    float: right; font-size: 12px; padding: 2px 4px;
+  }
+
+  /* optimistic states — the DOM commits before the server answers. */
+  .msg-user.pending { opacity: .65; }
+  .msg-user.failed { background: var(--danger); }
+  .approval-card.confirming { opacity: .7; }
+  .chip-enter { animation: chip-in .16s ease; }
+  @keyframes chip-in { from { opacity: 0; transform: translateY(4px); } }
+  @media (prefers-reduced-motion: reduce) { .chip-enter { animation: none; } }
+
   /* pages (system, settings, access) */
   .page-card {
     border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
-    padding: 16px 18px; margin-bottom: 14px; box-shadow: var(--shadow-sm);
+    padding: 16px 20px; margin-bottom: 14px; box-shadow: var(--shadow-sm);
   }
   .page-card h3 { margin: 0 0 4px; font-size: 14.5px; }
   .page-card p { margin: 4px 0 10px; font-size: 13.5px; color: var(--ink-muted); }
@@ -304,7 +421,7 @@ export const CHAT_UI_HTML = `<!doctype html>
   }
   .wizard {
     width: 560px; max-width: 100%; max-height: 88vh; overflow-y: auto;
-    background: var(--surface); border-radius: 16px; padding: 26px 28px;
+    background: var(--surface); border-radius: 16px; padding: 24px 28px;
     box-shadow: var(--shadow-md), 0 20px 60px rgba(0,0,0,.18);
   }
   .wizard h2 { margin: 0 0 6px; }
@@ -329,7 +446,7 @@ export const CHAT_UI_HTML = `<!doctype html>
      by design (ADR 0012/0025, admin-issued tokens), but presented like
      a real product's first screen, not a debug form. */
   .signin { max-width: 400px; margin: 12vh auto 0; padding-bottom: 40px; }
-  .signin-card { padding: 30px 28px 26px; text-align: center; }
+  .signin-card { padding: 28px 28px 24px; text-align: center; }
   .signin-mark {
     width: 44px; height: 44px; margin: 0 auto 16px; border-radius: 12px;
     background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-soft-border);
@@ -389,6 +506,7 @@ export const CHAT_UI_HTML = `<!doctype html>
   </main>
 </div>
 <div id="overlays"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
 <div class="composer" id="composer" style="display:none"></div>
 <script>window.NARO_CHAT_CONFIG = __NARO_CHAT_CONFIG__;</script>
 <script type="module" src="/chat-ui/app.js"></script>

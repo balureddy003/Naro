@@ -2,9 +2,11 @@ import { sdk } from './sdk.ts';
 import { h, clear } from './dom.ts';
 import { icon } from './icons.ts';
 import { disposeAll } from './lifecycle.ts';
-import { runStatusLabel } from './copy.ts';
+import { runStatusLabel, errText } from './copy.ts';
 import { renderRun } from './chat.ts';
 import { renderSystemPage, renderSettingsTab, renderAccessTab, openWizard, type PageDeps } from './pages.ts';
+import { toast } from './toast.ts';
+import { installPalette, openPalette, type PaletteDeps } from './palette.ts';
 import type { ApprovalRequest, RunSummary } from '@naro/client';
 
 /**
@@ -117,6 +119,12 @@ function renderSidebar(state: AppState, route: Route): void {
     newBtn.addEventListener('click', () => openWizard(deps()));
     head.append(newBtn);
   }
+  // ⌘K affordance — the palette exists whether or not the user knows the
+  // shortcut; a visible trigger is how they find out.
+  const palTrigger = h('button', { class: 'new-btn', type: 'button', style: 'display:flex;align-items:center;gap:8px;color:var(--ink-faint);margin-top:8px' },
+    h('span', {}, 'Search or jump to…'), h('span', { class: 'kbd', style: 'margin-left:auto' }, '⌘K'));
+  palTrigger.addEventListener('click', () => openPalette(paletteDeps));
+  head.append(palTrigger);
   el.append(head);
 
   const body = h('div', { class: 'sidebar-body' });
@@ -302,6 +310,7 @@ async function renderContent(state: AppState, route: Route): Promise<void> {
     col.append(h('div', { class: 'page-card' },
       h('h3', {}, `${t.name} is on, waiting for its first trigger`),
       h('p', {}, 'Nothing has invoked this template yet — when it runs, the conversation appears here.')));
+    renderFirstRun(d, col, t);
   } else {
     await renderRunInto(col, list[0]!, t);
   }
@@ -311,6 +320,50 @@ async function renderContent(state: AppState, route: Route): Promise<void> {
 async function renderRunInto(col: HTMLElement, run: RunSummary, t?: ChatTemplate): Promise<void> {
   clear(col);
   await renderRun(deps(), col, run, t);
+}
+
+/**
+ * First-run checklist — a new admin staring at "waiting for its first
+ * trigger" gets three real next steps, each linked to the actual action.
+ * Items check themselves off from observable state (not optimistic
+ * localStorage ticks): a template exists, a teammate principal exists,
+ * a run exists. Dismissed permanently per browser.
+ */
+const FIRSTRUN_KEY = 'naro.chat.firstrun.dismissed';
+
+function renderFirstRun(d: PageDeps, col: HTMLElement, t: ChatTemplate): void {
+  if (!d.me.roles.has('admin')) return;
+  if (localStorage.getItem(FIRSTRUN_KEY) === '1') return;
+  if (state.runs.length > 0) return;
+
+  const card = h('div', { class: 'firstrun' });
+  const dismiss = h('button', { class: 'firstrun-dismiss', type: 'button' }, 'Dismiss');
+  dismiss.addEventListener('click', () => { localStorage.setItem(FIRSTRUN_KEY, '1'); card.remove(); });
+  card.append(dismiss, h('h3', {}, 'Get started'), h('p', { class: 'fr-sub' }, 'Three steps — each is a real action, not a tour.'));
+
+  const item = (done: boolean, label: string, go: () => void) => {
+    const b = h('button', { class: `firstrun-item${done ? ' done' : ''}`, type: 'button' },
+      h('span', { class: 'box' }, done ? '✓' : ''),
+      h('span', { class: 'fr-link' }, label));
+    b.addEventListener('click', () => { if (!done) go(); });
+    card.append(b);
+  };
+
+  item(state.templates.some((x) => isConfigured(state, x)), 'Configure your first template', () => { location.hash = `#/t/${t.id}/settings`; });
+  const inviteItem = h('button', { class: 'firstrun-item', type: 'button' },
+    h('span', { class: 'box' }), h('span', { class: 'fr-link' }, 'Invite a teammate — issue their access token'));
+  inviteItem.addEventListener('click', () => { location.hash = `#/t/${t.id}/access`; });
+  card.append(inviteItem);
+  // Check "teammate invited" against the real principal list — not a
+  // remembered click. If the store isn't configured (501), the item
+  // stays unchecked; it can't be proven done, so we don't claim it.
+  void d.client.listPrincipals()
+    .then((rows) => { if (rows.length > 1) { inviteItem.classList.add('done'); inviteItem.querySelector('.box')!.textContent = '✓'; } })
+    .catch(() => {});
+  item(false, 'Send a test goal — watch it verify itself', () => {
+    (document.querySelector('.composer textarea') as HTMLElement | null)?.focus();
+  });
+  col.append(card);
 }
 
 // ---------- composer ----------
@@ -326,14 +379,30 @@ function mountComposer(state: AppState, t: ChatTemplate): void {
   const submit = async () => {
     const text = ta.value.trim();
     if (text === '') return;
+    // Optimistic: the message lands in the transcript now, dimmed while
+    // the server catches up — and rolls back to a failed bubble + toast
+    // if it never does.
+    const content = document.getElementById('content')!;
+    let col = content.querySelector('.column');
+    if (col === null) { col = h('div', { class: 'column' }); content.append(col); }
+    const bubble = h('div', { class: 'msg-user pending' }, text);
+    const pending = h('div', { class: 'msg-assistant' }, h('div', { class: 'dots' }, h('span'), h('span'), h('span')));
+    col.append(bubble, pending);
+    bubble.scrollIntoView({ block: 'nearest' });
+    ta.value = '';
     send.setAttribute('disabled', '');
     try {
       const { runId } = await state.client.submitGoal({ description: text, template: t.id });
       location.hash = `#/t/${t.id}/runs/run/${encodeURIComponent(runId)}`;
       await refresh(state);
+    } catch (e) {
+      bubble.classList.remove('pending');
+      bubble.classList.add('failed');
+      pending.remove();
+      toast(e instanceof Error ? errText(e) : 'Failed to send — the goal never reached the server', 'danger');
+      ta.value = text; // restore the draft — a failed send mustn't eat it
     } finally {
       send.removeAttribute('disabled');
-      ta.value = '';
     }
   };
   send.addEventListener('click', () => void submit());
@@ -356,6 +425,11 @@ let state: AppState;
 function deps(): PageDeps {
   return { client: state.client, me: state.me, templates: state.templates, refresh: () => refresh(state) };
 }
+const paletteDeps = (): PaletteDeps => ({
+  ...deps(), runs: state.runs, isAdmin: state.me.roles.has('admin'),
+  signOut: () => void signOutAndReload(state),
+  openWizard: () => openWizard(deps()),
+});
 
 async function refresh(s: AppState): Promise<void> {
   try {
@@ -394,8 +468,16 @@ async function boot(): Promise<void> {
   }
 
   state = { client, me, templates, runs: [], approvals: [], accountsEnabled };
+  // Skeleton before the first /runs + /approvals land — the shell's
+  // frame is instant, the data isn't; a shimmer beats a blank column.
+  const content = document.getElementById('content')!;
+  const bootCol = h('div', { class: 'column' });
+  for (const cls of ['sk sk-msg', 'sk sk-card', 'sk sk-chip', 'sk sk-card']) bootCol.append(h('div', { class: cls }));
+  content.append(bootCol);
+
   await refresh(state);
   window.addEventListener('hashchange', () => void render());
+  installPalette(paletteDeps);
   await render();
 
   // Light polling — runs/approvals lists refresh the sidebar counts.
