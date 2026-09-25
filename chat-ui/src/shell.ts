@@ -91,6 +91,8 @@ export const CHAT_UI_HTML = `<!doctype html>
   }
   .sidebar-head { padding: 16px 16px 12px; border-bottom: 1px solid var(--border-soft); }
   .workspace { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .workspace.clickable { cursor: pointer; border-radius: 8px; padding: 4px; margin: -4px -4px 6px; transition: background .12s ease; }
+  .workspace.clickable:hover { background: var(--surface-alt); }
   .workspace-mark {
     width: 30px; height: 30px; border-radius: 8px; flex: none;
     background: var(--accent); color: var(--accent-ink);
@@ -661,6 +663,25 @@ export const CHAT_UI_HTML = `<!doctype html>
   }
   .backdrop { display: none; }
   .backdrop.show { display: block; }
+
+  /* account menu — identity + sign out, anchored to the workspace row */
+  .account-menu {
+    position: fixed; z-index: 45; min-width: 210px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: var(--shadow-md); padding: 12px 8px 6px;
+    animation: palette-in .12s ease;
+  }
+  .am-id { font-size: 13px; font-weight: 600; padding: 0 8px; word-break: break-all; }
+  .am-roles { font-size: 11.5px; color: var(--ink-faint); padding: 2px 8px 8px; }
+  .am-rule { height: 1px; background: var(--border-soft); margin: 4px 0; }
+  .am-item {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    border: 0; background: none; padding: 8px; border-radius: 7px;
+    font: inherit; font-size: 13px; cursor: pointer; text-align: left; color: var(--ink);
+  }
+  .am-item:hover { background: var(--surface-alt); }
+  .am-item.danger { color: var(--danger); }
+  .am-item .icon { width: 14px; height: 14px; }
 </style>
 </head>
 <body>

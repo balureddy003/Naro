@@ -102,15 +102,18 @@ function renderSidebar(state: AppState, route: Route): void {
   const isAdmin = state.me.roles.has('admin');
 
   const head = h('div', { class: 'sidebar-head' });
-  const ws = h('div', { class: 'workspace' },
+  const ws = h('div', { class: `workspace${state.me.open ? '' : ' clickable'}`, ...(state.me.open ? {} : { role: 'button', tabindex: '0' }) },
     h('span', { class: 'workspace-mark' }, 'N'),
     h('div', { style: 'min-width:0;flex:1' },
       h('div', { class: 'workspace-name' }, 'Naro'),
       h('div', { class: 'workspace-sub' }, `signed in as ${state.me.id}`)));
   if (!state.me.open) {
-    const signOut = h('button', { class: 'gear-btn', type: 'button', 'aria-label': 'Sign out', title: 'Sign out' }, icon('logout'));
-    signOut.addEventListener('click', () => void signOutAndReload(state));
-    ws.append(signOut);
+    // The whole identity row opens the account menu — sign out lives in
+    // it alongside who you are and what you can do, not as a lone icon.
+    ws.append(h('span', { class: 'tmpl-caret', style: 'transform:rotate(90deg);color:var(--ink-faint)' }, icon('caret')));
+    const open = () => openAccountMenu(state, ws);
+    ws.addEventListener('click', open);
+    ws.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
   }
   head.append(ws);
   head.append(h('span', { class: 'self-host-badge' }, state.accountsEnabled ? 'naro serve' : 'self‑hosted · naro serve'));
@@ -190,6 +193,30 @@ function renderSidebar(state: AppState, route: Route): void {
     }
   }
   el.append(body);
+}
+
+/** Account menu — click the workspace row: who you are, what you hold,
+ *  and the sign-out action, anchored to the element that opened it. */
+function openAccountMenu(state: AppState, anchor: HTMLElement): void {
+  const rect = anchor.getBoundingClientRect();
+  const menu = h('div', { class: 'account-menu', role: 'menu', style: `left:${rect.left}px;top:${rect.bottom + 6}px` },
+    h('div', { class: 'am-id' }, state.me.id),
+    h('div', { class: 'am-roles' }, [...state.me.roles].join(' · ')),
+    h('div', { class: 'am-rule' }));
+  const out = h('button', { class: 'am-item danger', type: 'button', role: 'menuitem' }, icon('logout'), 'Sign out');
+  out.addEventListener('click', () => { close(); void signOutAndReload(state); });
+  menu.append(out);
+  document.body.append(menu);
+
+  const close = () => {
+    menu.remove();
+    document.removeEventListener('mousedown', away);
+    document.removeEventListener('keydown', esc);
+  };
+  const away = (e: MouseEvent) => { if (!menu.contains(e.target as Node)) close(); };
+  const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('mousedown', away);
+  document.addEventListener('keydown', esc);
 }
 
 async function signOutAndReload(state: AppState): Promise<void> {
