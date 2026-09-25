@@ -477,6 +477,54 @@ async function render(): Promise<void> {
   await renderContent(state, route);
 }
 
+let wired = false;
+
+/**
+ * Authenticated entry — shared by cold boot (a session/token that's
+ * already valid) and a just-completed sign-in, so login doesn't reload
+ * the page: the auth screen fades, the shell's frame is already there,
+ * and the skeleton shimmer hands off to real data in place.
+ */
+async function enter(client: AppState['client'], me: AppState['me']): Promise<void> {
+  document.querySelector('.app')!.classList.remove('auth');
+  const cfg = (window as unknown as { NARO_CHAT_CONFIG?: { templates?: ChatTemplate[]; accountsEnabled?: boolean } }).NARO_CHAT_CONFIG ?? {};
+  state = { client, me, templates: cfg.templates ?? [], runs: [], approvals: [], accountsEnabled: cfg.accountsEnabled === true };
+
+  const content = document.getElementById('content')!;
+  clear(content);
+  const bootCol = h('div', { class: 'column' });
+  for (const cls of ['sk sk-msg', 'sk sk-card', 'sk sk-chip', 'sk sk-card']) bootCol.append(h('div', { class: cls }));
+  content.append(bootCol);
+
+  // Canonical landing: a bare /#/ resolves to the first template's Runs
+  // tab, so the URL, the sidebar highlight, and the topbar all name the
+  // same place.
+  if (location.hash.replace(/^#\/?/, '') === '' && state.templates.length > 0) {
+    location.hash = `#/t/${state.templates[0]!.id}/runs`;
+    // hashchange fires async and may land before the listener installs —
+    // render() reads location.hash itself, so either order resolves right.
+  }
+
+  await refresh(state);
+  if (!wired) {
+    wired = true;
+    window.addEventListener('hashchange', () => void render());
+    installPalette(paletteDeps);
+    // Light polling — runs/approvals lists refresh the sidebar counts.
+    sdk.pollRuns(client, {
+      intervalMs: 4000,
+      onData: (runs) => { state.runs = [...runs]; void render(); },
+      onError: () => {},
+    });
+    sdk.pollApprovals(client, {
+      intervalMs: 4000,
+      onData: (approvals) => { state.approvals = [...approvals]; },
+      onError: () => {},
+    });
+  }
+  await render();
+}
+
 async function boot(): Promise<void> {
   const cfg = (window as unknown as { NARO_CHAT_CONFIG?: { templates?: ChatTemplate[]; accountsEnabled?: boolean } }).NARO_CHAT_CONFIG ?? {};
   const templates = cfg.templates ?? [];
@@ -494,34 +542,26 @@ async function boot(): Promise<void> {
     const m = await client.me();
     me = { id: m.id, roles: new Set(m.roles), ...(m.tenantId !== undefined && { tenantId: m.tenantId }), ...(m.open === true && { open: true }) };
   } catch {
-    if (accountsEnabled) renderAccountAuth(templates);
-    else renderTokenSignIn(templates);
+    if (accountsEnabled) renderAccountAuth(templates, client);
+    else renderTokenSignIn(templates, client);
     return;
   }
 
-  state = { client, me, templates, runs: [], approvals: [], accountsEnabled };
-  // Skeleton before the first /runs + /approvals land — the shell's
-  // frame is instant, the data isn't; a shimmer beats a blank column.
-  const content = document.getElementById('content')!;
-  const bootCol = h('div', { class: 'column' });
-  for (const cls of ['sk sk-msg', 'sk sk-card', 'sk sk-chip', 'sk sk-card']) bootCol.append(h('div', { class: cls }));
-  content.append(bootCol);
+  await enter(client, me);
+}
 
-  await refresh(state);
-  window.addEventListener('hashchange', () => void render());
-  installPalette(paletteDeps);
-  await render();
-
-  // Light polling — runs/approvals lists refresh the sidebar counts.
-  sdk.pollRuns(client, {
-    intervalMs: 4000,
-    onData: (runs) => { state.runs = [...runs]; void render(); },
-    onError: () => {},
-  });
-  sdk.pollApprovals(client, {
-    intervalMs: 4000,
-    onData: (approvals) => { state.approvals = [...approvals]; },
-    onError: () => {},
+/**
+ * The handoff from a successful sign-in to the live app — fades the
+ * auth card out, then the shell materializes around the same scroll
+ * position instead of a hard reload. `client` already carries the
+ * credential (session cookie is set by the response, or the token was
+ * just stored), so entering is just re-booting the authenticated half.
+ */
+function enterAfterAuth(client: AppState['client'], card: HTMLElement): void {
+  card.closest('.signin')?.classList.add('leaving');
+  void client.me().then((m) => {
+    const me: AppState['me'] = { id: m.id, roles: new Set(m.roles), ...(m.tenantId !== undefined && { tenantId: m.tenantId }), ...(m.open === true && { open: true }) };
+    setTimeout(() => void enter(client, me), 160);
   });
 }
 
@@ -591,12 +631,11 @@ function passwordField(id: string, autocomplete: string, mono = false): { wrap: 
  *  design (ADR 0012/0025, admin-issued tokens, same posture as Grafana
  *  or Metabase's own admin-invites-you model). The form collects the
  *  token; the hero says what this deployment actually is. */
-function renderTokenSignIn(templates: ChatTemplate[]): void {
+function renderTokenSignIn(templates: ChatTemplate[], client: InstanceType<typeof sdk.NaroClient>): void {
   const content = document.getElementById('content')!;
+  void templates;
   const { col, panel, help } = authScaffold(content,
-    templates.length > 0
-      ? `${templates.length} outcome template${templates.length === 1 ? '' : 's'} configured on this deployment. Sign in to see them work.`
-      : 'A self-hosted control plane for agents whose actions are checked and whose records verify.',
+    'Agents that ask before they act — every action checked against policy, every run leaving a journal you can verify.',
     [
       ['lock', 'Self-hosted', 'This page is served by your own naro serve — nothing leaves the machine.'],
       ['shield', 'Policy-checked', 'Every action an agent takes passes policy before it runs.'],
@@ -615,19 +654,36 @@ function renderTokenSignIn(templates: ChatTemplate[]): void {
   const btn = h('button', { class: 'btn-fill signin-btn', type: 'button' }, icon('arrow', 'btn-icon'), 'Continue');
   panel.append(btn);
 
-  const save = () => {
+  const save = async () => {
     const v = input.value.trim();
+    clear(errSlot);
     if (v === '') {
       showErr(errSlot, 'Enter a token to continue.');
       input.classList.add('invalid');
       wrap.classList.remove('shake'); void wrap.offsetWidth; wrap.classList.add('shake');
       input.focus(); return;
     }
-    localStorage.setItem(TOKEN_KEY, v);
-    location.reload();
+    btn.setAttribute('disabled', '');
+    btn.replaceChildren(h('span', { class: 'spinner' }), 'Checking…');
+    // Validate before entering — a wrong token shouldn't cycle the page.
+    const probe = new sdk.NaroClient({ baseUrl: location.origin, token: v });
+    try {
+      const m = await probe.me();
+      localStorage.setItem(TOKEN_KEY, v);
+      const me: AppState['me'] = { id: m.id, roles: new Set(m.roles), ...(m.tenantId !== undefined && { tenantId: m.tenantId }), ...(m.open === true && { open: true }) };
+      panel.closest('.signin')?.classList.add('leaving');
+      setTimeout(() => void enter(probe, me), 160);
+    } catch {
+      localStorage.removeItem(TOKEN_KEY);
+      showErr(errSlot, "That token didn't work — check it or ask whoever issued it.");
+      input.classList.add('invalid');
+      btn.removeAttribute('disabled');
+      btn.replaceChildren(icon('arrow', 'btn-icon'), 'Continue');
+    }
   };
-  btn.addEventListener('click', save);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+  void client;
+  btn.addEventListener('click', () => void save());
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') void save(); });
   input.addEventListener('input', () => { clear(errSlot); input.classList.remove('invalid'); });
 
   help.append(
@@ -658,12 +714,11 @@ function renderTokenSignIn(templates: ChatTemplate[]): void {
  * screen, a tab toggle between the two modes (defaulting to Sign up,
  * the first thing a new visitor to a hosted product needs).
  */
-function renderAccountAuth(templates: ChatTemplate[]): void {
+function renderAccountAuth(templates: ChatTemplate[], client: InstanceType<typeof sdk.NaroClient>): void {
   const content = document.getElementById('content')!;
+  void templates;
   const { col, panel, help } = authScaffold(content,
-    templates.length > 0
-      ? `${templates.length} outcome template${templates.length === 1 ? '' : 's'} configured on this deployment. Sign up to see them work.`
-      : 'A control plane for agents whose actions are checked and whose records verify.',
+    'Agents that ask before they act — every action checked against policy, every run leaving a journal you can verify.',
     [
       ['shield', 'Policy-checked', 'Every action an agent takes passes policy before it runs.'],
       ['link', 'Provable', 'Each run leaves a hash-chained journal you can verify, not a log you have to trust.'],
@@ -762,7 +817,9 @@ function renderAccountAuth(templates: ChatTemplate[]): void {
         showErr(errSlot, body.error ?? `${mode === 'signup' ? 'Sign up' : 'Log in'} failed.`);
         return;
       }
-      location.reload();
+      // The session cookie is set by this response — enter in place.
+      // No reload, no flash: the card fades, the shell materializes.
+      enterAfterAuth(client, panel);
     } catch {
       showErr(errSlot, 'Could not reach the server — check your connection and try again.');
     } finally {

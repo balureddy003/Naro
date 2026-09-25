@@ -494,6 +494,14 @@ export const CHAT_UI_HTML = `<!doctype html>
     .signin, .hero-mark, .hero-title, .hero-lede, .hero-point, .hero-chain,
     .signin-panel > *, .signin-help, .signin-foot { animation: none; }
   }
+  /* successful auth — the card leaves the way it came, and the app
+     shell appears in its place (no reload flash) */
+  .signin.leaving {
+    opacity: 0; transform: translateY(-8px) scale(.99);
+    transition: opacity .16s ease, transform .16s ease;
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: reduce) { .signin.leaving { transition: none; } }
   /* the hash-chain motif — three linked nodes, one verified check.
      A true picture of what the product does, drawn faint enough to be
      texture, not illustration. */
