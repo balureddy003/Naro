@@ -200,6 +200,11 @@ export const CHAT_UI_HTML = `<!doctype html>
   }
   .msg-assistant { margin: 14px 0; }
   .msg-system { margin: 10px 0; font-size: 13px; color: var(--ink-faint); text-align: center; }
+  .run-meta {
+    margin: 6px 0 4px; font-size: 11.5px; color: var(--ink-faint);
+    font-family: var(--font-mono); letter-spacing: .01em;
+    display: flex; justify-content: flex-end;
+  }
   .result-fields { margin-top: 8px; border: 1px solid var(--border-soft); border-radius: 10px; overflow: hidden; }
   .result-field { display: flex; gap: 10px; padding: 7px 12px; font-size: 13.5px; }
   .result-field + .result-field { border-top: 1px solid var(--border-soft); }

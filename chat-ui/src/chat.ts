@@ -29,6 +29,8 @@ export async function renderRun(
   col.append(transcriptEl);
   const statusEl = h('div', { class: 'msg-system' });
   col.append(statusEl);
+  const metaEl = h('div', { class: 'run-meta', style: 'display:none' });
+  col.append(metaEl);
 
   // Skeleton while the first journal events arrive — the frame is
   // instant, the stream isn't. Two chips + a card match a real run's
@@ -67,6 +69,21 @@ export async function renderRun(
     const st = runStatusLabel(transcript.status);
     statusEl.textContent = st.text === 'Done' ? '' : st.text;
     statusEl.style.display = statusEl.textContent === '' ? 'none' : '';
+
+    // Run meta — what it actually cost and what proved it. Real numbers
+    // from the journal (model.usage totals), never estimates.
+    clear(metaEl);
+    const parts: string[] = [];
+    if (transcript.usage !== undefined) {
+      parts.push(`${transcript.usage.totalTokens.toLocaleString()} tokens`);
+      parts.push(transcript.usage.costUsd > 0 ? `$${transcript.usage.costUsd.toFixed(4)}` : '$0.00');
+    }
+    if (run.specName !== undefined) {
+      const tpl = deps.templates.find((x) => run.specName === `tpl:${x.id}` || run.specName === x.id);
+      parts.push(`via ${tpl?.name ?? run.specName}`);
+    }
+    if (parts.length > 0) metaEl.append(parts.join(' · '));
+    metaEl.style.display = parts.length === 0 ? 'none' : '';
   };
 
   // Stop control — visible while the run is in flight and the caller

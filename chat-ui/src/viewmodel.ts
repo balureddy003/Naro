@@ -61,6 +61,9 @@ export interface Transcript {
   status: 'running' | 'completed' | 'failed' | 'cancelled' | 'paused' | 'unknown';
   readonly result?: unknown;
   readonly error?: string;
+  /** Latest model-usage totals from the journal — the cost story
+   *  (cheap-tier vs frontier) is real data, so the footer shows it. */
+  usage?: { totalTokens: number; costUsd: number };
 }
 
 export function transcriptFromEvents(events: readonly RunEvent[]): Transcript {
@@ -70,6 +73,7 @@ export function transcriptFromEvents(events: readonly RunEvent[]): Transcript {
   let status: Transcript['status'] = 'unknown';
   let result: unknown;
   let error: string | undefined;
+  let usage: Transcript['usage'];
   let lastChip: ChipItem | undefined;
 
   const findChip = (actionId: string | undefined): ChipItem | undefined =>
@@ -159,6 +163,14 @@ export function transcriptFromEvents(events: readonly RunEvent[]): Transcript {
       case 'replan.triggered':
         items.push({ kind: 'message', role: 'system', text: 'Re-checking that and trying again…', seq: e.seq });
         break;
+      case 'agent.resumed':
+        items.push({ kind: 'message', role: 'system', text: 'Resumed from a checkpoint.', seq: e.seq });
+        break;
+      case 'model.usage': {
+        const t = d['totals'] as { totalTokens?: number; costUsd?: number } | undefined;
+        if (t !== undefined) usage = { totalTokens: t.totalTokens ?? 0, costUsd: t.costUsd ?? 0 };
+        break;
+      }
       case 'agent.paused':
         status = 'paused';
         break;
@@ -174,6 +186,10 @@ export function transcriptFromEvents(events: readonly RunEvent[]): Transcript {
       case 'agent.completed':
         status = 'completed';
         result = d['result'];
+        if (d['usage'] !== undefined) {
+          const u = d['usage'] as { totalTokens?: number; costUsd?: number };
+          usage = { totalTokens: u.totalTokens ?? 0, costUsd: u.costUsd ?? 0 };
+        }
         items.push({ kind: 'message', role: 'assistant', text: 'Done.', result: d['result'], seq: e.seq });
         break;
       default:
@@ -181,7 +197,7 @@ export function transcriptFromEvents(events: readonly RunEvent[]): Transcript {
     }
   }
   if (status === 'unknown') status = 'running';
-  return { items, status, ...(result !== undefined && { result }), ...(error !== undefined && { error }) };
+  return { items, status, ...(result !== undefined && { result }), ...(error !== undefined && { error }), ...(usage !== undefined && { usage }) };
 }
 
 /** Attach the real approval id (from GET /approvals) onto its pending
