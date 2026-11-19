@@ -62,6 +62,9 @@
       "path": "cli"
     },
     {
+      "path": "client"
+    },
+    {
       "path": "profiles/research"
     },
     {
@@ -113,7 +116,22 @@
       "path": "./adapters/opa"
     },
     {
+      "path": "./adapters/vault"
+    },
+    {
+      "path": "./adapters/docker"
+    },
+    {
+      "path": "./adapters/slack"
+    },
+    {
       "path": "./dogfood"
+    },
+    {
+      "path": "chat-ui"
+    },
+    {
+      "path": "templates"
     }
   ],
   "extends": "./tsconfig.base.json",

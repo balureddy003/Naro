@@ -30,11 +30,27 @@ export function toVerdict(r: PolicyResult): PolicyVerdict {
   return typeof r === 'string' ? { decision: r } : r;
 }
 
+/**
+ * The control-plane identity a run is executing on behalf of — the same
+ * shape `naro serve` resolves from a bearer token (ADR 0012), surfaced to
+ * the gate as a policy input (ADR 0017): `grants` answers "what can this
+ * agent do," `principal` answers "under whose authority." Additive —
+ * absent for deployments with no identity configured.
+ */
+export interface PolicyPrincipal {
+  readonly id: string;
+  readonly roles?: readonly string[];
+  readonly tenantId?: string;
+}
+
 export interface PolicyContext {
   readonly agentId: string;
   readonly goal: Goal;
   /** Permissions this agent has been granted (e.g. 'fs.read', 'net.http'). */
   readonly grants: readonly string[];
+  /** Whose authority this run exercises — set by the runner from
+   *  `AgentDeps.principal` (ADR 0017). */
+  readonly principal?: PolicyPrincipal;
   /** Trust of the evidence the reasoner saw before requesting this action —
    *  the lowest trust level among recent observations. Lets a rule deny
    *  side effects when the triggering evidence came from outside. */

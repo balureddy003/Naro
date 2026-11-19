@@ -13,6 +13,8 @@ import { SqliteApprovalBridge, SqliteRunRegistry } from '@naro/runtime';
 // flags never requires 'pg' to be installed.
 import { pgPool, PgApprovalBridge, PgEventStore, PgRunRegistry } from '@naro/adapter-pg';
 import { startAgentServer, type RunnerFactory, type ServeOptions } from './serve.ts';
+import { SqlitePrincipalStore } from './principals.ts';
+import { SqliteAccountStore, SqliteSessionStore } from './accounts.ts';
 
 export interface CliIO {
   out: (s: string) => void;
@@ -50,8 +52,17 @@ const HELP = `naro — universal agent foundation CLI
   naro serve <module.ts>   expose an agent as a service [--port N] [--host h]
                              [--token t | NARO_SERVE_TOKEN] — bearer gate on
                              all non-probe endpoints
-                             [--principals <file.json>] — token→{id,roles}
-                               map; roles: viewer, operator, approver
+                             [--principals <file.json>] — token→{id,roles,tenantId?}
+                               map; roles: viewer, operator, approver;
+                               tenantId scopes GET /runs visibility (ADR 0013)
+                             [--principals-store <file.db>] — live identity store
+                               (ADR 0025): /admin/principals issues + revokes
+                               without restart; checked before --principals,
+                               not instead of it — keep --principals as a
+                               bootstrap admin token, or a fresh store has
+                               no one able to authenticate at all
+                             [--no-console] — disable GET /console (on by default)
+                             [--no-chat] — disable GET /chat (on by default)
                              [--registry <file.db>] — durable run index (SQLite)
                              [--journal <file.db>]  — shared event store for
                                cross-replica GET /runs/:id/events (SQLite)
@@ -62,10 +73,25 @@ const HELP = `naro — universal agent foundation CLI
                                --registry-pg/--journal-pg/--approvals-pg;
                                requires the optional 'pg' package
                              [--registry-pg <url>] [--journal-pg <url>] [--approvals-pg <url>]
+                             [--accounts-store <file.db>] — hosted email/
+                               password signup (ADR 0027): POST /accounts/
+                               signup and /accounts/login, session cookies.
+                               Requires --principals-store too (a signed-up
+                               account is provisioned as a real principal);
+                               501s without both. Off entirely unless set —
+                               no /accounts/* routes on a self-hosted deploy
+                               that never passes this.
+                             [--secure-cookies] — mark the session cookie
+                               Secure; set this once behind TLS (a reverse
+                               proxy terminating HTTPS) — off by default so
+                               plain-HTTP local/dev runs still work
                              module exports createRunner(goal): AgentRunner
   naro approvals --db <db> list pending human-in-the-loop requests
   naro approve <id> --db <db> [--deny] [--note 'why']
   naro answer  <id> --db <db> --text 'response'
+  naro prune <store.db>    attest-and-prune a run's journal (ADR 0018)
+                             --run <id> --before <seq|ISO-date>
+                             [--reason <policy citation>] [--seal-key key.pem]
   naro states              print the agent lifecycle transition table
 `;
 
@@ -166,6 +192,43 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
       return record.chain.ok && sealOk ? 0 : 1;
     }
 
+    case 'prune': {
+      const file = rest[0];
+      const flag = (n: string) => { const i = rest.indexOf(n); return i >= 0 ? rest[i + 1] : undefined; };
+      const runId = flag('--run');
+      const before = flag('--before');
+      const reason = flag('--reason');
+      const sealKeyFile = flag('--seal-key');
+      if (!file || !runId || !before) {
+        io.err('usage: naro prune <store.db> --run <id> --before <seq|ISO-date> [--reason <policy>] [--seal-key key.pem]');
+        return 2;
+      }
+      const store = new SqliteEventStore(resolve(file));
+      try {
+        let throughSeq = /^\d+$/.test(before) ? Number(before) : undefined;
+        if (throughSeq === undefined) {
+          const cutoff = Date.parse(before);
+          if (Number.isNaN(cutoff)) { io.err('--before must be a seq number or ISO date'); return 2; }
+          const lastBefore = [...store.history({ runId })].reverse().find((e) => e.at <= cutoff);
+          if (!lastBefore) { io.err(`no events at or before ${before} for run ${runId}`); return 1; }
+          throughSeq = lastBefore.seq;
+        }
+        const sealKey = sealKeyFile !== undefined ? await readFile(resolve(sealKeyFile), 'utf8') : undefined;
+        const res = await store.prune(runId, throughSeq, {
+          ...(reason !== undefined && { policy: reason }),
+          ...(sealKey !== undefined && { sealKey }),
+        });
+        io.out(`pruned ${res.pruned} event(s) through seq ${throughSeq} — anchor ${res.anchorHash.slice(0, 12)}…`);
+        io.out('the journal now opens with a disclosed journal.retention.pruned marker; `naro verify` reports it.');
+        return 0;
+      } catch (e) {
+        io.err(e instanceof Error ? e.message : String(e));
+        return 1;
+      } finally {
+        store.close();
+      }
+    }
+
     case 'init': {
       const dir = rest[0];
       if (!dir) { io.err('usage: naro init <dir>'); return 2; }
@@ -205,7 +268,7 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
       const host = flag('--host');
       const token = flag('--token') ?? process.env['NARO_SERVE_TOKEN'];
       const principalsPath = flag('--principals');
-      let principals: Record<string, { id: string; roles: readonly string[] }> | undefined;
+      let principals: Record<string, { id: string; roles: readonly string[]; tenantId?: string }> | undefined;
       if (principalsPath !== undefined) {
         try {
           const parsed: unknown = JSON.parse(await readFile(resolve(principalsPath), 'utf8'));
@@ -213,8 +276,10 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
           for (const [tok, p] of Object.entries(parsed)) {
             const bad = typeof p !== 'object' || p === null
               || typeof (p as { id?: unknown }).id !== 'string'
-              || !Array.isArray((p as { roles?: unknown }).roles);
-            if (bad) throw new Error(`entry for token '${tok}' must be {id: string, roles: string[]}`);
+              || !Array.isArray((p as { roles?: unknown }).roles)
+              // tenantId (ADR 0013) is optional but must be a string when present.
+              || ('tenantId' in p && typeof (p as { tenantId?: unknown }).tenantId !== 'string');
+            if (bad) throw new Error(`entry for token '${tok}' must be {id: string, roles: string[], tenantId?: string}`);
           }
           principals = parsed as typeof principals;
         } catch (e) {
@@ -222,9 +287,24 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
           return 2;
         }
       }
+      const noConsole = args.includes('--no-console');
+      if (noConsole) args.splice(args.indexOf('--no-console'), 1);
+      const noChat = args.includes('--no-chat');
+      if (noChat) args.splice(args.indexOf('--no-chat'), 1);
       const registryPath = flag('--registry');
       const journalPath = flag('--journal');
       const approvalsPath = flag('--approvals');
+      // ADR 0025: --principals-store <file.db> adds a live
+      // SqlitePrincipalStore alongside --principals (not instead of it —
+      // see serve.ts's auth check) — writes via /admin/principals are
+      // live on the next request, no restart.
+      const principalsStorePath = flag('--principals-store');
+      // ADR 0027: --accounts-store <file.db> turns on hosted email/
+      // password signup — additive, requires --principals-store too (see
+      // ServeOptions.accountStore's own doc comment for why).
+      const accountsStorePath = flag('--accounts-store');
+      const secureCookies = args.includes('--secure-cookies');
+      if (secureCookies) args.splice(args.indexOf('--secure-cookies'), 1);
       // A shared --pg/NARO_PG_URL backs all three stores; --registry-pg/
       // --journal-pg/--approvals-pg override it per-store; see
       // resolveServeStore() for the precedence.
@@ -251,9 +331,24 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
         return 2;
       }
 
+      // A module's own createRunner() often constructs its own approvals
+      // bridge (it has no other way to reach the one RunnerFactory's
+      // signature doesn't pass through) — examples/chat-demo does exactly
+      // this, reading NARO_APPROVALS_DB. Left unset, that falls back to a
+      // hardcoded default path that silently diverges from whatever
+      // --approvals actually pointed at: the server answers GET /approvals
+      // from one SQLite file while the running agent's approval-wait reads
+      // from another, so a pending approval is real (visible in the run's
+      // own event journal) but never shows up anywhere a human can answer
+      // it. Setting the env var here from the same resolved, absolute path
+      // the server's own SqliteApprovalBridge uses makes --approvals the
+      // single source of truth instead of a footgun two independently-
+      // configured paths have to agree on by coincidence.
+      if (approvalsSource?.kind === 'sqlite') process.env['NARO_APPROVALS_DB'] = resolve(approvalsSource.path);
+
       const file = args.find((a) => !a.startsWith('-'));
       if (!file) { io.err('usage: naro serve <module.ts> [--port N] [--host h]'); return 2; }
-      const mod = await import(pathToFileURL(resolve(file)).href) as { createRunner?: RunnerFactory };
+      const mod = await import(pathToFileURL(resolve(file)).href) as { createRunner?: RunnerFactory; chatTemplates?: ServeOptions['chatTemplates'] };
       if (typeof mod.createRunner !== 'function') {
         io.err(`${file} must export createRunner(goal): AgentRunner`);
         return 2;
@@ -263,6 +358,15 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
         ...(host !== undefined && { host }),
         ...(token !== undefined && { token }),
         ...(principals !== undefined && { principals }),
+        ...(noConsole && { console: false }),
+        ...(noChat && { chat: false }),
+        ...(principalsStorePath !== undefined && { principalStore: new SqlitePrincipalStore(resolve(principalsStorePath)) }),
+        ...(accountsStorePath !== undefined && {
+          accountStore: new SqliteAccountStore(resolve(accountsStorePath)),
+          sessionStore: new SqliteSessionStore(resolve(accountsStorePath)),
+        }),
+        ...(secureCookies && { secureCookies: true }),
+        ...(mod.chatTemplates !== undefined && { chatTemplates: mod.chatTemplates }),
         ...(registry !== undefined && { registry }),
         ...(journal !== undefined && { journal }),
         ...(approvals !== undefined && { approvals }),

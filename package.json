@@ -18,10 +18,13 @@
     "observability",
     "evaluation",
     "verification",
+    "templates",
     "multiagent",
     "adapters/*",
     "contract-tests",
     "cli",
+    "client",
+    "chat-ui",
     "profiles/*",
     "examples/*",
     "dogfood"

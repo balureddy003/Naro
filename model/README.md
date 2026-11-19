@@ -10,7 +10,7 @@ Provider-neutral model interface — capabilities declared, never assumed.
 | `ModelCapability` | 'chat' 'tool-calling' 'streaming' 'vision' 'embeddings' … |
 | `ChatRequest`/`ChatResponse`/`ToolCall`/`Usage` | canonical message vocabulary |
 | `ModelProvider` | `listModels()` + `getModel()` — one per vendor/runtime |
-| `MockModel`, `textResponse` | deterministic model for tests/offline dev |
+| `MockModel`, `textResponse` | deterministic model for tests/offline dev — `embeddings`-capable via a deterministic hashed bag-of-words, or an injected `embed` function |
 | `chat()`, `stream()`, `requireCapability()` | checked call helpers |
 
 ## The rule that matters

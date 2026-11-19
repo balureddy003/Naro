@@ -138,6 +138,20 @@ direction.
 - Transcript summarization lands via kernel compaction (`session.compacted`
   events) rather than a prompt-side window.
 
+### Also shipped — a reference UI, not a new phase
+
+`@naro/client` (typed, headless, TanStack Query/Zag.js-split control-plane
+SDK) and `naro serve`'s built-in `GET /console` ship alongside the three
+phases above, not as a fourth one — they don't extend what the kernel
+proves, only how a self-hosted deployment can look at it. The one
+property worth naming: the console renders `buildEvidence()` directly, the
+same correlation `naro verify` uses, with no separate telemetry pipeline
+that could show something the journal disagrees with. See
+[ADR 0023](adr/0023-console-renders-the-evidence-record-not-a-log.md).
+This is not a hosted product — no managed control plane, no SLA; see
+[docs/product/prd-003-managed-control-plane.md](product/prd-003-managed-control-plane.md)
+(proposed) for what one would need.
+
 ## Related
 
 - [Architecture](architecture.md) — the runtime view that enforces the claims
@@ -147,3 +161,6 @@ direction.
   still provide.
 - [Market quadrant](market-quadrant.md) — scored vision × execution field
   and the direction vector.
+- [EU AI Act Article 12 mapping](compliance/eu-ai-act-article-12.md) — what
+  the evidence architecture already gives the regulated-workload buyer
+  named above, and what's still missing.

@@ -3,6 +3,7 @@ import type { ApprovalRequest, Checkpoint, CheckpointStore, HumanBridge, RunRegi
 import type { LeaseStore } from '@naro/runtime';
 import type { LimitStore } from '@naro/policy';
 import type { EventExporter } from '@naro/observability';
+import { buildPruneMarker, planPrune, type PrunableEventStore, type PruneOptions, type PruneResult } from '@naro/observability';
 import type { MemoryEntry, MemoryInput, MemoryStore, MemoryTier } from '@naro/memory';
 import type { MemoryHit } from '@naro/core';
 import type { AgentBus, AgentMessage } from '@naro/multiagent';
@@ -104,7 +105,17 @@ async function migrate(q: PgQueryable): Promise<void> {
       error TEXT,
       host TEXT
     );
+    -- Tables created before ADR 0019 lack trust — add it.
+    ALTER TABLE naro_memory ADD COLUMN IF NOT EXISTS trust TEXT;
+
+    -- Tables created before ADR 0013 lack tenant_id — add it.
+    ALTER TABLE naro_runs ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+    ALTER TABLE naro_runs ADD COLUMN IF NOT EXISTS trace_id TEXT;
+    -- Tables created before spec_name (PRD-006 run→template grouping) lack it.
+    ALTER TABLE naro_runs ADD COLUMN IF NOT EXISTS spec_name TEXT;
     CREATE INDEX IF NOT EXISTS naro_runs_started ON naro_runs(started_at DESC);
+    CREATE INDEX IF NOT EXISTS naro_runs_tenant ON naro_runs(tenant_id, started_at DESC);
+    CREATE INDEX IF NOT EXISTS naro_runs_trace ON naro_runs(trace_id);
 
     CREATE TABLE IF NOT EXISTS naro_approvals (
       id TEXT PRIMARY KEY,
@@ -169,7 +180,7 @@ export class PgCheckpointStore implements CheckpointStore {
 
 // --- events ----------------------------------------------------------------
 
-export class PgEventStore implements EventExporter {
+export class PgEventStore implements EventExporter, PrunableEventStore {
   private readonly q: PgQueryable;
   private constructor(q: PgQueryable) { this.q = q; }
   static async create(q: PgQueryable): Promise<PgEventStore> {
@@ -212,6 +223,29 @@ export class PgEventStore implements EventExporter {
       ...(r['hash'] != null && { hash: r['hash'] as string }),
     }) as NaroEvent);
   }
+
+  /**
+   * Attested retention prune (ADR 0018) — same semantics as the SQLite
+   * store: marker row first, then DELETE of covered rows. Without a
+   * transaction primitive on PgQueryable the two statements are sequential;
+   * the marker is written *before* the delete so a crash between them
+   * leaves extra rows, never a marker claiming a prune that didn't happen.
+   */
+  async prune(runId: string, throughSeq: number, opts: PruneOptions = {}): Promise<PruneResult> {
+    const { anchorHash, run } = planPrune(await this.history({ runId }), throughSeq);
+    const marker = buildPruneMarker(run, throughSeq, anchorHash, opts);
+    await this.q.query(
+      `INSERT INTO naro_events (id, event_seq, run_id, agent_id, goal_id, type, at, data, prev, hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO NOTHING`,
+      [marker.id, marker.seq, marker.runId, marker.agentId, marker.goalId, marker.type, marker.at,
+       JSON.stringify(marker.data), marker.prev ?? null, marker.hash ?? null],
+    );
+    const { rows } = await this.q.query(
+      'DELETE FROM naro_events WHERE run_id=$1 AND event_seq<=$2 AND id<>$3 RETURNING id',
+      [runId, throughSeq, marker.id],
+    );
+    return { pruned: rows.length, anchorHash };
+  }
 }
 
 // --- memory -----------------------------------------------------------------
@@ -231,13 +265,14 @@ export class PgMemoryStore implements MemoryStore {
       at: Date.now(),
       ...(input.agentId !== undefined && { agentId: input.agentId }),
       ...(input.source !== undefined && { source: input.source }),
+      ...(input.trust !== undefined && { trust: input.trust }),
     };
     await this.q.query(
-      `INSERT INTO naro_memory (key, id, tier, tags, content, agent_id, source, at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (key) DO UPDATE SET id=$2, tier=$3, tags=$4, content=$5, agent_id=$6, source=$7, at=$8`,
+      `INSERT INTO naro_memory (key, id, tier, tags, content, agent_id, source, trust, at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (key) DO UPDATE SET id=$2, tier=$3, tags=$4, content=$5, agent_id=$6, source=$7, trust=$8, at=$9`,
       [entry.key, entry.id, entry.tier, JSON.stringify(entry.tags), JSON.stringify(entry.content),
-       entry.agentId ?? null, entry.source ?? null, entry.at],
+       entry.agentId ?? null, entry.source ?? null, entry.trust ?? null, entry.at],
     );
     return entry;
   }
@@ -264,7 +299,7 @@ export class PgMemoryStore implements MemoryStore {
     );
     return rows.map((r): MemoryHit => {
       const e = toEntry(r);
-      return { id: e.id, key: e.key, content: e.content, score: 1 };
+      return { id: e.id, key: e.key, content: e.content, score: 1, ...(e.trust !== undefined && { trust: e.trust }) };
     });
   }
 
@@ -280,6 +315,7 @@ function toEntry(r: Record<string, unknown>): MemoryEntry {
     tags: r['tags'] as string[], content: r['content'], at: Number(r['at']),
     ...(r['agent_id'] != null && { agentId: r['agent_id'] as string }),
     ...(r['source'] != null && { source: r['source'] as string }),
+    ...(r['trust'] != null && { trust: r['trust'] as MemoryEntry['trust'] }),
   };
 }
 
@@ -451,6 +487,8 @@ interface RunRow {
   run_id: string; agent_id: string; status: string; goal: string;
   started_at: number | string; updated_at: number | string;
   result: unknown; error: string | null; host: string | null;
+  tenant_id: string | null; trace_id: string | null;
+  spec_name: string | null;
 }
 
 /** The shared run index: every replica's `naro serve` writes here, so
@@ -465,13 +503,14 @@ export class PgRunRegistry implements RunRegistry {
 
   async upsert(run: RunSummary): Promise<void> {
     await this.q.query(
-      `INSERT INTO naro_runs (run_id, agent_id, status, goal, started_at, updated_at, result, error, host)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      `INSERT INTO naro_runs (run_id, agent_id, status, goal, started_at, updated_at, result, error, host, tenant_id, trace_id, spec_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT (run_id) DO UPDATE SET
-         status=$3, updated_at=$6, result=$7, error=$8, host=$9`,
+         status=$3, updated_at=$6, result=$7, error=$8, host=$9, tenant_id=$10, trace_id=$11, spec_name=$12`,
       [run.runId, run.agentId, run.status, run.goal, run.startedAt, run.updatedAt,
         run.result === undefined ? null : JSON.stringify(run.result),
-        run.error ?? null, run.host ?? null],
+        run.error ?? null, run.host ?? null, run.tenantId ?? null, run.traceId ?? null,
+        run.specName ?? null],
     );
   }
 
@@ -480,9 +519,16 @@ export class PgRunRegistry implements RunRegistry {
     return rows[0] ? toSummary(rows[0] as unknown as RunRow) : undefined;
   }
 
-  async list(opts: { limit?: number } = {}): Promise<readonly RunSummary[]> {
+  async list(opts: { limit?: number; tenantId?: string; traceId?: string } = {}): Promise<readonly RunSummary[]> {
+    const clauses: string[] = [];
+    const params: (string | number)[] = [];
+    if (opts.tenantId !== undefined) { params.push(opts.tenantId); clauses.push(`tenant_id=$${params.length}`); }
+    if (opts.traceId !== undefined) { params.push(opts.traceId); clauses.push(`trace_id=$${params.length}`); }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')} ` : '';
+    params.push(opts.limit ?? 10_000);
     const { rows } = await this.q.query(
-      'SELECT * FROM naro_runs ORDER BY started_at DESC LIMIT $1', [opts.limit ?? 10_000]);
+      `SELECT * FROM naro_runs ${where}ORDER BY started_at DESC LIMIT $${params.length}`, params,
+    );
     return rows.map((r) => toSummary(r as unknown as RunRow));
   }
 }
@@ -495,6 +541,9 @@ function toSummary(r: RunRow): RunSummary {
     ...(r.result != null && { result: r.result }),
     ...(r.error != null && { error: r.error }),
     ...(r.host != null && { host: r.host }),
+    ...(r.tenant_id != null && { tenantId: r.tenant_id }),
+    ...(r.trace_id != null && { traceId: r.trace_id }),
+    ...(r.spec_name != null && { specName: r.spec_name }),
   };
 }
 

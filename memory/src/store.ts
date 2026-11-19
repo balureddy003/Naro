@@ -1,4 +1,4 @@
-import { newId, type MemoryHit, type MemoryReader } from '@naro/core';
+import { newId, type MemoryHit, type MemoryReader, type TrustLevel } from '@naro/core';
 
 /**
  * The six memory tiers — modeled on human memory, separated because they
@@ -25,6 +25,14 @@ export interface MemoryEntry {
   readonly agentId?: string;
   /** Free-form source marker — memory should always know where it came from. */
   readonly source?: string;
+  /**
+   * Provenance of the content (ADR 0019) — same vocabulary as
+   * `Observation.trust`. `undefined` means unknown-trust, NOT system —
+   * an app that doesn't set it gets no false assurance either way.
+   * Applications writing memories derived from external observations
+   * should pass the observation's trust through explicitly.
+   */
+  readonly trust?: TrustLevel;
 }
 
 export interface MemoryInput {
@@ -35,6 +43,8 @@ export interface MemoryInput {
   embedding?: readonly number[];
   agentId?: string;
   source?: string;
+  /** Provenance of the content — see `MemoryEntry.trust` (ADR 0019). */
+  trust?: TrustLevel;
 }
 
 export function createMemoryEntry(input: MemoryInput): MemoryEntry {
@@ -48,6 +58,7 @@ export function createMemoryEntry(input: MemoryInput): MemoryEntry {
     ...(input.embedding !== undefined && { embedding: input.embedding }),
     ...(input.agentId !== undefined && { agentId: input.agentId }),
     ...(input.source !== undefined && { source: input.source }),
+    ...(input.trust !== undefined && { trust: input.trust }),
   };
 }
 

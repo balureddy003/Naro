@@ -53,6 +53,23 @@ files). `ToolExecutor` stamps it on the observation; wrappers over
 environments must declare it themselves — the environment's own tag does
 not flow through.
 
+### Source provenance — collisions and rug pulls (ADRs 0016, 0020)
+
+`ToolRegistry` tracks *which* `ToolSource` served each tool:
+
+- **Definition pinning (0016):** remote sources stamp `definitionHash` over
+  `{name, description, inputSchema}` (`McpToolSource` does this). On refresh,
+  a changed hash emits `tool.definition.changed` and the tool's side effects
+  are forced to `destructive` — it stays re-approval-gated until
+  `registry.acknowledgeDefinition(name)`.
+- **Collisions (0020):** two sources claiming the same name emit
+  `tool.collision.detected`; the first-registered source keeps serving and
+  the claim is held shadowed (see `registry.collisions()`). An operator
+  promotes it explicitly with `registry.resolve(name, sourceId)`. Local
+  hand-registered tools can't be silently shadowed by a source either.
+- Registry events surface via `registry.events` and the `onEvent` callback —
+  journal them if you want the audit record.
+
 ## Writing a tool
 
 ```ts
@@ -84,8 +101,10 @@ Actions and prompts should contain references such as `env:API_KEY` or
 credential files); reads are cached per path with a 60-second TTL
 (configurable) so rotations are picked up without a filesystem hit per
 action. `MapSecretProvider` is useful for tests and small controlled
-deployments. `chainSecrets()` returns the first resolved value. A Vault or
-cloud-secret adapter can implement the same port.
+deployments. `chainSecrets()` returns the first resolved value.
+`@naro/adapter-vault`'s `VaultSecretProvider` implements `vault:path#key`
+against HashiCorp Vault KV v2 with the same TTL-cached posture; a
+cloud-KMS adapter can implement the same port the same way.
 
 ## Worker-thread sandbox
 
@@ -103,4 +122,7 @@ boundary through structured clone.
 
 This protects the host from crashes, runaway heaps, and stuck workers. It is
 not an OS security sandbox: workers share the process filesystem and network
-authority. Use a container or stronger isolation for hostile code.
+authority. `@naro/adapter-docker`'s `DockerSandboxExecutor` implements the
+same `ActionExecutor` contract with real namespace/cgroup isolation via
+`docker run` for hostile code; stronger isolation still (gVisor, Kata,
+Firecracker) is a deployment choice behind that same seam.

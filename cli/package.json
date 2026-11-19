@@ -15,10 +15,15 @@
   },
   "dependencies": {
     "@naro/adapter-pg": "0.1.0",
+    "@naro/chat-ui": "0.1.0",
+    "@naro/client": "0.1.0",
     "@naro/core": "0.1.0",
+    "@naro/environment": "0.1.0",
     "@naro/evaluation": "0.1.0",
+    "@naro/model": "0.1.0",
     "@naro/observability": "0.1.0",
     "@naro/runtime": "0.1.0",
-    "@naro/environment": "0.1.0"
+    "@naro/templates": "0.1.0",
+    "@naro/tools": "0.1.0"
   }
 }

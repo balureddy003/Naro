@@ -54,6 +54,15 @@ test('forget is durable — a fresh store does not resurrect deleted entries', a
   assert.equal(await s2.read('k1'), undefined);
 });
 
+test('FileMemoryStore searchByEmbedding ranks by cosine similarity', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'naro-mem-'));
+  const s = new FileMemoryStore(dir);
+  await s.write({ tier: 'semantic', key: 'close', content: 'near', embedding: [1, 0, 0] });
+  await s.write({ tier: 'semantic', key: 'far', content: 'distant', embedding: [0, 1, 0] });
+  const hits = await s.searchByEmbedding([1, 0, 0]);
+  assert.deepEqual(hits.map((h) => h.key), ['close', 'far']);
+});
+
 // The contract suite — same bar every store must clear.
 memoryStoreContract('InMemoryMemoryStore', () => new InMemoryMemoryStore());
 memoryStoreContract('FileMemoryStore', async () => {

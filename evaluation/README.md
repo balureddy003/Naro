@@ -33,6 +33,26 @@ audit and debugging.
 
 There is no separate evaluation-only execution path to drift away from reality.
 
+## Training data export
+
+`exportTrainingExamples(events, options?)` turns a run's event stream into an
+SFT-ready `TrainingExample` — the exact `ChatMessage[]` transcript a model
+would have seen, built by `@naro/reasoning`'s `buildMessages()` (the same
+renderer a live run uses, not a second one to keep in sync). Only runs whose
+completion was verified (`buildEvidence(...).goalVerification.ok === true`)
+are included by default:
+
+```ts
+const result = await runner.run();
+const examples = exportTrainingExamples(result.events);
+await writeFile('dataset.jsonl', toJsonl(examples));
+```
+
+Naro's thesis is that a claim without verification isn't evidence — that
+applies doubly to data used to train a model. Pass `{ verifiedOnly: false }`
+to export unverified runs too (auditing failures, not building a training
+set).
+
 ## Current scope
 
 Cases run sequentially and once each. The caller owns repeated sampling,

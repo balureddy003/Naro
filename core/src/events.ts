@@ -49,6 +49,15 @@ export interface EventDataMap {
    *  equals this event's `prev`, making the seal self-verifying — rewrite
    *  or extend the chain and the signature fails. */
   'journal.sealed':             { head: string; signature: string; publicKey: string; algorithm: 'ed25519' };
+  /**
+   * Retention disclosure (ADR 0018): written as a pruned journal's new
+   * first event. `anchorHash` is the hash of the last removed event —
+   * surviving events verify against it as their effective expectPrev.
+   * `signature`/`publicKey` are present when the prune was attested with
+   * an Ed25519 key (signs the canonical {anchorHash, prunedThroughSeq,
+   * prunedAt, policy} tuple).
+   */
+  'journal.retention.pruned':   { prunedThroughSeq: number; anchorHash: string; prunedAt: number; policy?: string; by?: string; signature?: string; publicKey?: string };
   'human.approval.requested':   { action?: Action; question?: string; policy?: string };
   /** `by` is the approver's control-plane identity, when the bridge knows it. */
   'human.approval.received':    { approved: boolean; note?: string; by?: string };
@@ -57,7 +66,9 @@ export interface EventDataMap {
   'agent.resumed':              { checkpointId?: string };
   'agent.completed':            { result: unknown; usage?: ModelUsage };
   'agent.failed':               { error: string; usage?: ModelUsage };
-  'agent.cancelled':            { reason?: string; usage?: ModelUsage };
+  /** `by` attributes an operator-initiated cancel (ADR 0022) — the journal
+   *  answers "who stopped this run," not just "it stopped." */
+  'agent.cancelled':            { reason?: string; by?: string; usage?: ModelUsage };
 }
 
 export type EventType = keyof EventDataMap;

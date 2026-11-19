@@ -1,0 +1,17 @@
+{
+  "name": "@naro/example-chat-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@naro/adapter-openai": "0.1.0",
+    "@naro/core": "0.1.0",
+    "@naro/model": "0.1.0",
+    "@naro/runtime": "0.1.0",
+    "@naro/templates": "0.1.0"
+  }
+}

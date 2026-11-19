@@ -23,6 +23,21 @@
     },
     {
       "path": "../adapters/postgres"
+    },
+    {
+      "path": "../client"
+    },
+    {
+      "path": "../tools"
+    },
+    {
+      "path": "../chat-ui"
+    },
+    {
+      "path": "../templates"
+    },
+    {
+      "path": "../model"
     }
   ],
   "exclude": [

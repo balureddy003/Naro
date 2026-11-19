@@ -74,3 +74,22 @@ test('structured output maps to responseMimeType + responseSchema', async () => 
   assert.equal(gen['responseMimeType'], 'application/json');
   assert.deepEqual(gen['responseSchema'], { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' } } });
 });
+
+test('embed batches texts through batchEmbedContents and returns ordered vectors', async () => {
+  const { f, calls } = fakeFetch((body) => {
+    const reqs = (body as { requests: { model: string; content: { parts: { text: string }[] } }[] }).requests;
+    return { embeddings: reqs.map((r) => ({ values: [r.content.parts[0]!.text.length, 0] })) };
+  });
+  const m = new GeminiModel('gemini-embedding-001', { fetchImpl: f, apiKey: 'k' });
+  const vectors = await m.embed(['a', 'bb']);
+  assert.deepEqual(vectors, [[1, 0], [2, 0]]);
+  const body = calls[0]!.body as { requests: { model: string }[] };
+  assert.equal(body.requests[0]!.model, 'models/gemini-embedding-001');
+  assert.match(calls[0]!.url, /batchEmbedContents\?key=k/);
+});
+
+test('embed surfaces provider errors as NaroError', async () => {
+  const f = (async () => new Response('bad request', { status: 400 })) as typeof fetch;
+  const m = new GeminiModel('gemini-embedding-001', { fetchImpl: f });
+  await assert.rejects(m.embed(['x']), /400/);
+});

@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { MemoryHit } from '@naro/core';
+import { cosineSimilarity, type EmbeddingIndex } from './embedding.ts';
 import {
   createMemoryEntry, textScore,
   type MemoryEntry, type MemoryInput, type MemoryStore, type MemoryTier,
@@ -9,7 +10,7 @@ import {
 
 interface Row {
   id: string; key: string; tier: string; content: string; tags: string;
-  agent_id: string | null; source: string | null; at: number; embedding: string | null;
+  agent_id: string | null; source: string | null; trust: string | null; at: number; embedding: string | null;
 }
 
 /**
@@ -18,9 +19,12 @@ interface Row {
  *
  * The same MemoryStore port: swap FileMemoryStore → SqliteMemoryStore
  * and search gets faster, forget stays durable, nothing else changes.
- * Vector recall plugs in later via the entry's `embedding` column.
+ * Vector recall (`searchByEmbedding`) reads the entry's `embedding` column —
+ * scored in application code (cosine similarity), not in SQL: node:sqlite
+ * has no vector extension, and a JS scan over persisted rows is the honest
+ * baseline before reaching for a real vector index at scale.
  */
-export class SqliteMemoryStore implements MemoryStore {
+export class SqliteMemoryStore implements MemoryStore, EmbeddingIndex {
   private readonly db: DatabaseSync;
 
   constructor(path: string) {
@@ -49,17 +53,22 @@ export class SqliteMemoryStore implements MemoryStore {
           VALUES ('delete', old.rowid, old.key, json_extract(old.content,'$'), old.tags);
       END;
     `);
+    // Old databases predate `trust` (ADR 0019) — add what's missing.
+    const cols = new Set(
+      (this.db.prepare('PRAGMA table_info(entries)').all() as { name: string }[]).map((c) => c.name),
+    );
+    if (!cols.has('trust')) this.db.exec('ALTER TABLE entries ADD COLUMN trust TEXT');
   }
 
   write(input: MemoryInput): Promise<MemoryEntry> {
     const e = createMemoryEntry(input);
     this.db.prepare(
-      'INSERT OR REPLACE INTO entries (id, key, tier, content, tags, agent_id, source, at, embedding) VALUES (?,?,?,?,?,?,?,?,?)',
+      'INSERT OR REPLACE INTO entries (id, key, tier, content, tags, agent_id, source, trust, at, embedding) VALUES (?,?,?,?,?,?,?,?,?,?)',
     ).run(
       // Always JSON-encoded: '42' must read back as the string, not the
       // number — and the FTS trigger's json_extract needs valid JSON.
       e.id, e.key, e.tier, JSON.stringify(e.content), JSON.stringify(e.tags),
-      e.agentId ?? null, e.source ?? null, e.at,
+      e.agentId ?? null, e.source ?? null, e.trust ?? null, e.at,
       e.embedding ? JSON.stringify(e.embedding) : null,
     );
     return Promise.resolve(e);
@@ -93,15 +102,29 @@ export class SqliteMemoryStore implements MemoryStore {
       return Promise.resolve(rows.map((r) => ({
         id: r.id, key: r.key, content: safeParse(r.content),
         score: 1 / (1 + Math.abs(r.rank)),
+        ...(r.trust !== null && { trust: r.trust as MemoryHit['trust'] }),
       })));
     } catch {
       // Query wasn't FTS-safe — degrade to substring scoring, not silence.
       const all = this.allRows(tier);
       const scored = all
-        .map((e) => ({ id: e.id, key: e.key, content: e.content, score: textScore(query, e) }))
+        .map((e) => ({ id: e.id, key: e.key, content: e.content, score: textScore(query, e), ...(e.trust !== undefined && { trust: e.trust }) }))
         .filter((h) => h.score > 0).sort((a, b) => b.score - a.score).slice(0, limit);
       return Promise.resolve(scored);
     }
+  }
+
+  /** Semantic recall: score every embedded row by cosine similarity to `embedding`. */
+  searchByEmbedding(embedding: readonly number[], limit = 5, tier?: MemoryTier): Promise<readonly MemoryHit[]> {
+    const rows = (tier
+      ? this.db.prepare('SELECT * FROM entries WHERE tier = ? AND embedding IS NOT NULL').all(tier)
+      : this.db.prepare('SELECT * FROM entries WHERE embedding IS NOT NULL').all()) as unknown as Row[];
+    const scored = rows
+      .map((r) => this.toEntry(r))
+      .map((e) => ({ id: e.id, key: e.key, content: e.content, score: cosineSimilarity(embedding, e.embedding!), ...(e.trust !== undefined && { trust: e.trust }) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+    return Promise.resolve(scored);
   }
 
   private allRows(tier?: MemoryTier): MemoryEntry[] {
@@ -118,6 +141,7 @@ export class SqliteMemoryStore implements MemoryStore {
       at: r.at,
       ...(r.agent_id !== null && { agentId: r.agent_id }),
       ...(r.source !== null && { source: r.source }),
+      ...(r.trust !== null && { trust: r.trust as MemoryEntry['trust'] }),
       ...(r.embedding !== null && { embedding: JSON.parse(r.embedding) as number[] }),
     };
   }
