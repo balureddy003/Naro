@@ -28,6 +28,28 @@ Before choosing a profile, define these eight parts:
 Do not start by giving an agent every profile. Start with the smallest world and
 narrowest grants that can achieve the goal.
 
+The same eight parts, as the loop they actually run in:
+
+```mermaid
+flowchart TB
+    G["Goal + success criteria"] --> R["Reasoner + Model<br/>(how decisions are made)"]
+    R --> D{"Decision"}
+    D --> P{"PolicyEngine<br/>(what it may do)"}
+    P -->|denied| R
+    P -->|allowed| E["Environment / Tool<br/>(what world can change)"]
+    E --> O["Observation"]
+    O --> V{"Verifier<br/>(what proves success)"}
+    V -->|fail| R
+    V -->|pass| DONE["Completed"]
+    C["Context / Memory<br/>(what it may see)"] -.-> R
+    O -.-> CK[("Checkpoint / idempotency<br/>(how work recovers)")]
+    D -.-> EV[("Events / BenchmarkRunner<br/>(how behavior is measured)")]
+```
+
+Solid arrows are the control path every example below runs; dotted arrows
+are the two boundaries (context in, measurement out) that sit beside the
+loop rather than inside it.
+
 ---
 
 ## 1. Learn the loop: offline arithmetic
