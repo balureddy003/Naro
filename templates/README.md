@@ -9,6 +9,24 @@ business can't assemble a kernel." Each template packages the composition
 The template supplies all of that *except the models* — the caller owns
 the reasoner tiers, so the same template runs on a laptop or a fleet.
 
+```mermaid
+flowchart LR
+    DATA["Raw input<br/>(transaction / invoice)"] --> T["Template.build(input, tiers)"]
+    T --> RUN["AgentRunner<br/>(your model tiers, template's gate + verifier)"]
+    RUN --> V{"Verifier"}
+    V -->|pass| RESULT["Completed result"]
+    V -->|fail / low confidence| ESC["Escalate tier, or<br/>human approval"]
+    ESC --> RUN
+    RESULT --> EV["buildEvidence()<br/>— the trust artifact, every run"]
+```
+
+Nothing above is template-specific plumbing you have to write — `build()`
+returns a ready `AgentRunner` config; the verifier, policy, and evidence
+path are the same kernel machinery every Naro agent uses, just pre-wired to
+a real business outcome instead of assembled by hand. See the root
+[README's worked example](../README.md#from-ai-call-to-provable-outcome)
+for `invoice-extractor` run end to end.
+
 ## Usage
 
 ```ts

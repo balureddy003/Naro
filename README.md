@@ -65,6 +65,53 @@ Observation` is the hands, and the event journal is the session. See
 [docs/positioning.md](docs/positioning.md) for the full analysis and what is
 and is not implemented today.
 
+## From AI call to provable outcome
+
+The state machine above is the mechanism. Here is what it actually produces,
+end to end, for a real task — not a hypothetical one: `@naro/templates`'
+`invoice-extractor` (schema-plus-arithmetic verified, benchmarked against
+real historical data) turning a scanned invoice into a booked result with
+proof attached, not just a model's best guess.
+
+```mermaid
+flowchart LR
+    IN["📄 Invoice PDF"] --> TPL["invoice-extractor template<br/>(@naro/templates)"]
+    TPL --> POL{"Policy gate<br/>read-only extract, nothing else"}
+    POL -->|allowed| MODEL["Model extracts:<br/>vendor · date · line items · total"]
+    MODEL --> OBS["Observation<br/>(evidence, not a claim)"]
+    OBS --> VER{"Verifier<br/>schema-valid AND<br/>line items sum to total"}
+    VER -->|pass| DONE["VERIFYING → COMPLETED"]
+    VER -->|fail / low confidence| APPR["Human approval<br/>SqliteApprovalBridge / PgApprovalBridge"]
+    APPR --> DONE
+    DONE --> EVID["Evidence record<br/>buildEvidence() · naro verify"]
+    EVID --> OUT["✅ Outcome: booked invoice<br/>+ a hash-chained proof of what happened"]
+```
+
+Three things make this different from "the model said it extracted the
+invoice correctly":
+
+- **The verifier, not the model, decides completion.** If the line items
+  don't sum to the total, this run cannot reach `COMPLETED` — it replans or
+  routes to a human, same as any other action in the kernel.
+- **Low confidence has a real escape hatch**, not a silent wrong answer: the
+  existing approval bridge holds the action for a human, and that approver's
+  identity lands in the journal (`human.approval.received`, `by: ...`).
+- **The output is a receipt, not a log line.** `buildEvidence()` joins
+  policy verdict → action → observation → verifier verdict for this exact
+  run; `naro verify` recomputes the hash chain independently of whoever
+  wrote it. That's the artifact a skeptical business owner — or a CTO
+  deciding whether to trust an agent with real data — can actually check.
+
+Four independent 2026 industry reports (Gartner, McKinsey, MIT, Deloitte) 
+converge on the same number: roughly 75–95% of agentic AI efforts never
+reach production, and the obstacle named most often isn't model accuracy —
+it's exactly this gap, proving what an agent did and that someone checked
+it. See [docs/vision-roadmap-2027.md](docs/vision-roadmap-2027.md) for the
+full research and the plan to close it with a real counterparty, not just
+a benchmark. The second shipped template, `transaction-categorizer`, and
+the composition contract every template follows are in
+[templates/README.md](templates/README.md).
+
 ## Quickstart
 
 ```bash
@@ -105,6 +152,7 @@ const result = await runner.run();
 | `@naro/observability` | metrics, redaction, JSONL/console export, and SQLite event journal | core |
 | `@naro/evaluation` | `BenchmarkRunner`: cases → real runs → outcome checks and event metrics | core, runtime, observability |
 | `@naro/verification` | Schema, predicate, command, human, composite, and calibrated LLM-judge verifiers | core, model, tools |
+| `@naro/templates` | Pre-built, pre-verified outcome bundles (`invoice-extractor`, `transaction-categorizer`) — goal + tools + policy + verifier + budget + tier config, packaged once | core, runtime, policy, verification, reasoning |
 | `@naro/multiagent` | directory, local/HTTP/durable buses, JWT hooks, policy-gated delegation | core, tools |
 | `@naro/adapter-openai` | OpenAI-compatible `Model`/`Provider` (OpenAI, Ollama, vLLM, …) — raw fetch, injectable | core, model |
 | `@naro/adapter-mcp` | MCP `ToolSource`: discovered server tools flow through the standard pipeline | core, tools |
@@ -115,6 +163,11 @@ const result = await runner.run();
 | `@naro/adapter-a2a` | A2A transport for `AgentBus`: agent cards + JSON-RPC `tasks/send` | core, multiagent |
 | `@naro/adapter-pg` | Postgres `CheckpointStore`, `EventStore`, `MemoryStore`, `LeaseStore`, `LimitStore`, `AgentBus` — the multi-host durability tier | core, runtime, memory, observability, policy, multiagent |
 | `@naro/adapter-harness` | `HarnessKernel` + Claude Agent SDK / OpenCode hook mappers — Naro's gate and journal beneath foreign harnesses | core, runtime |
+| `@naro/adapter-docker` | `DockerSandboxExecutor` — `docker run --network=none --read-only --cap-drop=ALL` isolation, a step up from a worker thread | core, tools |
+| `@naro/adapter-slack` | Slack notification/approval delivery for human-in-the-loop steps | core, policy |
+| `@naro/adapter-vault` | `VaultSecretProvider` — HashiCorp Vault KV v2, same TTL-cached posture as the other secret providers | core, tools |
+| `@naro/client` | Typed, headless, TanStack Query/Zag.js-split control-plane SDK — what `GET /console` and `chat-ui` both consume | core |
+| `@naro/chat-ui` | Reference chat surface for approval-gated templates (PRD-006) — built on `@naro/client`, not a second telemetry path | client |
 | `@naro/contract-tests` | Shared suites every port implementation must pass (dev-only) | core |
 | `@naro/profile-coding` | `WorkspaceEnvironment` (jailed fs + shell) + `codingTools()` | core, environment, tools |
 | `@naro/profile-research` | `ResearchEnvironment` (allowlisted fetch + citations that require fetched evidence) + `researchTools()` | core, environment, tools |
@@ -124,7 +177,7 @@ const result = await runner.run();
 | `@naro/profile-workflow` | `WorkflowEnvironment` — DAG execution through a nested executor, `$step` refs, retries | core, environment, tools |
 | `@naro/profile-robotics` | `RoboticsEnvironment` over a `RobotDriver` port; `GridSimDriver` world-model sim; latched estop | core, environment, tools |
 | `@naro/cli` | `naro run` / `bench` / `replay` / `states` | core, runtime, observability, evaluation |
-| `examples/` | `minimal-agent` (scripted) · `react-agent` (model loop) · `coding-agent` (domain profile) · `governed-agent` (gates + sealed journal) · `research-agent` (provenance gate) | all |
+| `examples/` | `minimal-agent` (scripted) · `react-agent` (model loop) · `coding-agent` (domain profile) · `governed-agent` (gates + sealed journal) · `research-agent` (provenance gate) · `production-agent` (full reference deployment) · `chat-demo` (`@naro/templates` wired to `/chat`) | all |
 
 ## Learn the stack
 

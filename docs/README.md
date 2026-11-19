@@ -4,6 +4,11 @@ Three tracks, one codebase. Pick the one that matches what you're actually
 trying to do today — you can switch tracks any time, and every page links
 back to this one.
 
+Want to see what this actually produces before picking a track? The
+[root README's worked example](../README.md#from-ai-call-to-provable-outcome)
+walks one real template (`invoice-extractor`) from a scanned invoice to a
+verified, evidence-backed outcome in one diagram.
+
 | Track | You're here if… | Start here |
 |---|---|---|
 | 🟢 **Beginner** | You want to understand agent loops, or you're new to Naro specifically, and you learn best building something small first | [Build your first safe agent](getting-started.md), then the learning course ([00](learn/00-how-llms-work.md) → [12](learn/12-scale-and-reliability.md)) in order |
