@@ -11,6 +11,25 @@ ANTHROPIC_API_KEY=sk-... npm run example:production
 That starts `naro serve` on port 8080. Everything else in this README is
 about what's different from `examples/coding-agent` and why.
 
+```mermaid
+flowchart LR
+    CLIENT["POST /goals"] --> SERVE["naro serve<br/>(this agent.ts)"]
+    SERVE --> RUNNER["AgentRunner + AnthropicModel"]
+    RUNNER --> POL{"Policy<br/>unknown tool -> deny<br/>destructive -> approve<br/>external-triggered -> deny"}
+    POL -->|destructive| APPR["Approval queue<br/>Sqlite / PgApprovalBridge"]
+    POL -->|allowed| EXEC["Tool execution<br/>(the workspace)"]
+    APPR -->|approved| EXEC
+    EXEC --> VER{"CommandVerifier<br/>npm test exits 0?"}
+    VER -->|pass| DONE["COMPLETED"]
+    VER -->|fail| RUNNER
+    RUNNER --> STORE[("Checkpoint + lease<br/>Sqlite / Postgres")]
+    RUNNER --> JOURNAL[(".naro/journal.jsonl<br/>hash-chained — naro verify")]
+```
+
+Every box above is a row in the claims table below — this isn't a
+simplified picture drawn separately from the code, it's the same nine
+claims laid out as a path instead of a list.
+
 ## What this example claims, and where the code proves it
 
 | Claim | Where | Verified by |
