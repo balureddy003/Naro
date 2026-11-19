@@ -93,6 +93,9 @@ assumes 00–07, and 11–12 assume 08–10:
 - [Positioning](positioning.md) — where Naro sits and what distinguishes it.
 - [Market quadrant](market-quadrant.md) — analyst-style vision × execution
   scoring of the field, Naro's position, and the 12-month direction vector.
+- [Vision and roadmap](vision-roadmap-2027.md) — four 2026 industry surveys
+  on why most agentic AI never reaches production, mapped against what Naro
+  already ships, and the one real-world gap and phased plan to close it.
 - [Evidence-gated completion](concepts/evidence-gated-completion.md) — why a
   run isn't done until the kernel has proof, and how the hash chain and
   evidence record work.
