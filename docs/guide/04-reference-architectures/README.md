@@ -6,5 +6,6 @@ Complete, opinionated compositions that close the production gaps for common use
 
 - [Minimal safe agent](minimal-safe-agent.md)
 - [Governed coding agent](governed-coding-agent.md)
+- [Research agent with provenance](research-agent.md)
 
-More architectures (research with provenance, harness-governed, high-stakes regulated) will follow.
+More architectures (harness-governed, high-stakes regulated) will follow.

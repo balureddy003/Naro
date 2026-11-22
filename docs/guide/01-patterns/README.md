@@ -7,5 +7,6 @@ Best patterns for production AI systems, with explicit trade-offs and failure mo
 - [Verification strategies](verification-strategies.md)
 - [Tool design and MCP governance](tool-design-and-mcp.md)
 - [Context, memory, and RAG](context-memory-rag.md)
+- [Observability and evidence](observability-and-evidence.md)
 
-More patterns (observability, cost control, multi-agent coordination) will follow.
+More patterns (cost control, multi-agent coordination) will follow.

@@ -28,13 +28,13 @@ The existing [learning course](../learn/) remains available and is linked from r
 
 These are enforced in Naro. The guide explains why they matter and how to apply the same thinking even outside this codebase.
 
-## Current status
+## Current status (world-class track)
 
-- Foundations: complete (starter)
-- Patterns: verification, tool design/MCP, context/memory/RAG
+- Foundations: complete
+- Patterns: verification, tools/MCP, context/memory/RAG, observability/evidence
 - Architecture Decisions: single vs multi, verification placement, approval style
-- Production Gaps: full set complete
-- Reference Architectures: minimal safe + governed coding
-- Exercises: three progressive levels started
+- Production Gaps: complete set with checklists
+- Reference Architectures: minimal safe, governed coding, research with provenance
+- Exercises: three progressive levels
 
-Next iterations will deepen decision frameworks, add more reference architectures, and expand exercises.
+The guide is now a solid, usable engineering reference. Further iterations can deepen individual pages, add diagrams, and expand exercises.
