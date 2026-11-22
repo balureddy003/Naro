@@ -29,14 +29,14 @@ The existing [learning course](../learn/) remains available and is linked from r
 
 These are enforced in Naro. The guide explains why they matter and how to apply the same thinking even outside this codebase.
 
-## Current status
+## Current status — world-class foundation complete
 
-- Foundations + diagrams
-- Patterns (verification, tools/MCP, context, observability)
-- Architecture Decisions (6 frameworks)
-- Production Gaps (complete)
-- Reference Architectures (4, including high-stakes)
+- Foundations + diagrams (loop, evidence, autonomy)
+- Patterns: verification, tools/MCP, context/memory/RAG, observability, cost control, multi-agent coordination
+- Architecture Decisions: 6 frameworks
+- Production Gaps: complete with checklists
+- Reference Architectures: 4 (including high-stakes)
 - EU AI Act Article 12 mapping
-- Exercises (starter)
+- Exercises: 3 levels with solution sketches
 
-Next: deeper exercises and remaining patterns (cost control, multi-agent coordination).
+The guide is now a comprehensive, production-oriented AI system engineering reference. Further work is refinement, additional examples, and community feedback.
