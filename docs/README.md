@@ -6,8 +6,8 @@ back to this one.
 
 | Track | You're here if… | Start here |
 |---|---|---|
-| 🟢 **Beginner** | You want to understand agent loops, or you're new to Naro specifically, and you learn best building something small first | [Build your first safe agent](getting-started.md), then the learning course ([00](learn/00-how-llms-work.md) → [12](learn/12-scale-and-reliability.md)) in order |
-| 🟡 **Practitioner** | You already know what an agent loop is; you're integrating Naro into a real coding/research/data/devops system | [End-to-end use cases](use-cases.md) → the profile README for your domain → [production readiness](production-readiness.md) before you ship — and read [agent loops](learn/08-agent-loops.md) and [security and policy](learn/11-security-and-policy.md) for two defaults that bite in production: verification is skipped entirely with no verifier configured, and the baseline policy allows non-tool schemes by default |
+| 🟢 **Beginner** | You want to understand agent loops, or you're new to Naro specifically, and you learn best building something small first | [AI System Engineering Guide](guide/README.md), then [Build your first safe agent](getting-started.md), then the learning course ([00](learn/00-how-llms-work.md) → [12](learn/12-scale-and-reliability.md)) in order |
+| 🟡 **Practitioner** | You already know what an agent loop is; you're integrating Naro into a real coding/research/data/devops system or closing production gaps | [Production Gaps](guide/03-production-gaps/) → [End-to-end use cases](use-cases.md) → the profile README for your domain → [production readiness](production-readiness.md) before you ship |
 | 🔴 **Expert** | You're extending the kernel, writing a new adapter or port, or deciding whether to bet a system on Naro at all | [Architecture](architecture.md) → [ADRs](adr/README.md) → [positioning](positioning.md) + [market quadrant](market-quadrant.md) |
 
 The tracks are entry points, not tiers of importance — a practitioner
@@ -21,15 +21,22 @@ context, that's the signal to detour into the course rather than push
 through — the two callouts above exist because skipping straight to
 production readiness would otherwise miss them.
 
+## AI System Engineering Guide (primary path)
+
+[**Guide**](guide/README.md) — ground-up patterns, architecture decisions, and explicit mapping to industry production gaps. Naro is the reference implementation.
+
+- [Production Gaps](guide/03-production-gaps/) — verification gap, governance & autonomy levels, and related operational failures.
+
 ## Get started (🟢 beginner entry point)
 
 New to Naro:
 
-1. [Build your first safe agent](getting-started.md) — offline, policy-gated,
+1. [AI System Engineering Guide](guide/README.md) — start here for patterns and gap mapping.
+2. [Build your first safe agent](getting-started.md) — offline, policy-gated,
    verified, and observable. ~15 minutes, nothing to install beyond Node.
-2. [Glossary](glossary.md) — the vocabulary used throughout the project.
+3. [Glossary](glossary.md) — the vocabulary used throughout the project.
    Keep it open in a tab; every other page assumes these terms.
-3. [How LLMs work](learn/00-how-llms-work.md) — begin the concept course.
+4. [How LLMs work](learn/00-how-llms-work.md) — begin the concept course.
 
 Runnable examples — the learning course's "Try it" sections below all
 point back at these same five, one or two at a time as each chapter
