@@ -11,7 +11,7 @@ Every action is gated. Every outcome is proven. Every run is immutable.
 [![Node](https://img.shields.io/badge/node-%3E%3D24-brightgreen)](package.json)
 [![Stars](https://img.shields.io/github/stars/balureddy003/Naro?style=social)](https://github.com/balureddy003/Naro/stargazers)
 
-[Get started in 2 minutes](#quickstart) · [Why this exists](#why-naro) · [AI System Engineering Guide](docs/guide/README.md)
+[Get started in 2 minutes](#quickstart) · [Why this exists](#why-naro) · [AI System Engineering Guide](docs/guide/README.md) · [Roadmap](ROADMAP.md)
 
 </div>
 
@@ -113,6 +113,8 @@ await runner.run();
 - [AI System Engineering Guide](docs/guide/README.md) — patterns + production gaps + SDLC
 - [Build your first safe agent](docs/getting-started.md) — 15 minutes
 - [Architecture](docs/architecture.md) · [Use cases](docs/use-cases.md)
+- [Roadmap](ROADMAP.md) — closing the execution gaps
+- [Analyst briefings](docs/analyst/) — Forrester & Gartner-style mappings
 
 ## Star it. Clone it. Ship safer agents.
 
