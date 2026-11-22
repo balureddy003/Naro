@@ -11,6 +11,7 @@ It serves two purposes:
 
 | Goal | Start here |
 |------|------------|
+| Follow a full lifecycle | [AI SDLC](sdlc/) (Research → PRD → Architect → Design → Develop → Test → Deploy) |
 | Learn patterns and trade-offs | [Foundations](00-foundations/) → [Patterns](01-patterns/) → [Architecture Decisions](02-architecture-decisions/) |
 | Close a specific production gap | [Production Gaps](03-production-gaps/) |
 | See complete reference architectures | [Reference Architectures](04-reference-architectures/) |
@@ -29,14 +30,13 @@ The existing [learning course](../learn/) remains available and is linked from r
 
 These are enforced in Naro. The guide explains why they matter and how to apply the same thinking even outside this codebase.
 
-## Current status — world-class foundation complete
+## Current status
 
-- Foundations + diagrams (loop, evidence, autonomy)
-- Patterns: verification, tools/MCP, context/memory/RAG, observability, cost control, multi-agent coordination
-- Architecture Decisions: 6 frameworks
-- Production Gaps: complete with checklists
-- Reference Architectures: 4 (including high-stakes)
+- AI SDLC (7 phases with artifacts and gates)
+- Foundations + diagrams
+- Patterns (verification, tools/MCP, context, observability, cost, multi-agent)
+- Architecture Decisions (6 frameworks)
+- Production Gaps (complete)
+- Reference Architectures (4)
 - EU AI Act Article 12 mapping
-- Exercises: 3 levels with solution sketches
-
-The guide is now a comprehensive, production-oriented AI system engineering reference. Further work is refinement, additional examples, and community feedback.
+- Exercises (3 levels)
