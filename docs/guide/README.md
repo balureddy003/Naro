@@ -30,7 +30,11 @@ These are enforced in Naro. The guide explains why they matter and how to apply 
 
 ## Current status
 
-- Foundations: started
-- Patterns: verification strategies added
-- Production Gaps: full index complete
-- Architecture Decisions, Reference Architectures, and Exercises: next
+- Foundations: complete (starter)
+- Patterns: verification, tool design/MCP, context/memory/RAG
+- Architecture Decisions: single vs multi, verification placement, approval style
+- Production Gaps: full set complete
+- Reference Architectures: minimal safe + governed coding
+- Exercises: three progressive levels started
+
+Next iterations will deepen decision frameworks, add more reference architectures, and expand exercises.
