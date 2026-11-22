@@ -15,6 +15,7 @@ It serves two purposes:
 | Close a specific production gap | [Production Gaps](03-production-gaps/) |
 | See complete reference architectures | [Reference Architectures](04-reference-architectures/) |
 | Practice | [Exercises](exercises/) |
+| Compliance mapping | [EU AI Act Article 12](compliance/eu-ai-act-article-12.md) |
 
 The existing [learning course](../learn/) remains available and is linked from relevant guide pages. Expert-level detail lives in [Architecture](../architecture.md) and the [ADRs](../adr/).
 
@@ -28,13 +29,14 @@ The existing [learning course](../learn/) remains available and is linked from r
 
 These are enforced in Naro. The guide explains why they matter and how to apply the same thinking even outside this codebase.
 
-## Current status (world-class track)
+## Current status
 
-- Foundations: complete
-- Patterns: verification, tools/MCP, context/memory/RAG, observability/evidence
-- Architecture Decisions: single vs multi, verification placement, approval style
-- Production Gaps: complete set with checklists
-- Reference Architectures: minimal safe, governed coding, research with provenance
-- Exercises: three progressive levels
+- Foundations + diagrams
+- Patterns (verification, tools/MCP, context, observability)
+- Architecture Decisions (6 frameworks)
+- Production Gaps (complete)
+- Reference Architectures (4, including high-stakes)
+- EU AI Act Article 12 mapping
+- Exercises (starter)
 
-The guide is now a solid, usable engineering reference. Further iterations can deepen individual pages, add diagrams, and expand exercises.
+Next: deeper exercises and remaining patterns (cost control, multi-agent coordination).
