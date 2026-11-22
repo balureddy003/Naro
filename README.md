@@ -22,13 +22,31 @@ Not because the model is bad — because nothing forces authorization, verificat
 
 **Naro makes those things structural.**
 
+### The loop
+
+```mermaid
+stateDiagram-v2
+    [*] --> Reason
+    Reason --> Authorize: propose
+    Authorize --> Act: allow
+    Authorize --> Reason: deny / need approval
+    Act --> Observe
+    Observe --> Verify
+    Verify --> Done: accept
+    Verify --> Reason: reject → replan
+    Done --> [*]
 ```
- Goal ──► Reasoner ──► Decision ──► WAITING_FOR_PERMISSION ──► ACTING
-   ▲                     (claim)         policy gate               │
-   │                                                               ▼
- REPLANNING ◄── VERIFYING ◄── OBSERVING ◄── Environment / Tool ◄───┘
-                   │
-                   └──► immutable hash-chained journal
+
+### Evidence flow
+
+```mermaid
+flowchart LR
+    Policy[Policy verdict] --> Evidence[Evidence record]
+    Action[Action<br/>intent] --> Evidence
+    Observation[Observation<br/>what happened] --> Evidence
+    Verifier[Verifier verdict] --> Evidence
+    Evidence --> Journal[(Hash-chained<br/>journal)]
+    Journal --> Verify["naro verify"]
 ```
 
 The model proposes.  
@@ -46,6 +64,19 @@ The runtime authorizes, executes, observes, and only then accepts the result.
 
 > **New:** [AI System Engineering Guide](docs/guide/README.md)  
 > Patterns, architecture decisions, production-gap mapping, and a full AI SDLC. Naro is the reference implementation.
+
+## Autonomy in one diagram
+
+```mermaid
+flowchart TD
+    A[New action] --> B{Irreversible<br/>or regulated?}
+    B -->|Yes| C[Require approval]
+    B -->|No| D{Strict limits<br/>possible?}
+    D -->|Yes| E[Allow under limits]
+    D -->|No| C
+    C --> F[Journal it]
+    E --> F
+```
 
 ## Quickstart
 
