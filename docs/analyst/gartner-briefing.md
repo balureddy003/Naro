@@ -4,6 +4,8 @@
 Prepared for technical and market review · November 2026  
 *This is an independent project briefing, not a Gartner publication.*
 
+**Addressing the execution gap:** see [Closing the Gaps roadmap](closing-the-gaps.md).
+
 ---
 
 ## 1. One-sentence positioning
@@ -39,7 +41,7 @@ Naro’s thesis: these must be runtime invariants, not optional middleware or pr
 | Ability to Execute | 1.4 | Unpublished packages, single maintainer, TypeScript-only, no reference production users |
 
 **Quadrant position:** Visionary (high vision, low execution).  
-Direction required: move up on execution (publish, reference users, broader language reach).
+**Direction:** Move up on execution. Concrete plan in [Closing the Gaps](closing-the-gaps.md) (publish, Python reach, identity/inventory, reference evidence).
 
 ## 5. Buyer fit
 
@@ -51,7 +53,7 @@ Direction required: move up on execution (publish, reference users, broader lang
 **Weak fit**
 - Teams wanting a hosted platform or low-code agent builder
 - Pure research / rapid prototyping with no audit requirement
-- Python-primary shops (no Python runtime today)
+- Python-primary shops (no Python runtime today; Python client planned in roadmap)
 
 ## 6. Architecture summary
 
@@ -64,10 +66,10 @@ Direction required: move up on execution (publish, reference users, broader lang
 ## 7. Risks and limitations (explicit)
 
 - Single maintainer, v0.1.0, packages not yet on npm
-- TypeScript / Node 24+ only
+- TypeScript / Node 24+ only (Python client on roadmap)
 - No managed control plane or SLA
 - Journal sealing moves trust to key custody (KMS/HSM still deployment-owned)
-- Execution score will remain low until publication and reference users exist
+- Execution score will remain low until publication and reference users exist — see [roadmap](closing-the-gaps.md)
 
 ## 8. Suggested analyst questions
 
@@ -75,10 +77,12 @@ Direction required: move up on execution (publish, reference users, broader lang
 2. What is the exact evidence bundle an auditor receives today?
 3. How does harness governance behave with Claude Agent SDK in practice?
 4. What is the path from current state to a referenceable production deployment?
-5. How does the project plan to address the execution gap (distribution, language, organization)?
+5. How does the project plan to address the execution gap (distribution, language, organization)? → [Closing the Gaps](closing-the-gaps.md)
 
 ## 9. Supporting materials in this repo
 
+- [Closing the Gaps roadmap](closing-the-gaps.md)
+- [Forrester mapping](forrester-mapping.md)
 - [AI System Engineering Guide](../guide/README.md)
 - [Market quadrant (full scoring)](../market-quadrant.md)
 - [Positioning](../positioning.md)

@@ -4,6 +4,8 @@
 November 2026  
 *Independent mapping of publicly described Forrester findings to Naro. Not a Forrester publication.*
 
+**Addressing the gaps:** see [Closing the Gaps roadmap](closing-the-gaps.md).
+
 ---
 
 ## 1. Sources reviewed
@@ -26,9 +28,9 @@ November 2026
 | Nonhuman identity / principal control | Approver identity journaled; grants; capability allowlists | Partial (principal field proposed in ADR 0017) |
 | Provenance of triggering content | `Observation.trust` + policy rules that deny external-triggered actions | Shipped |
 | Governance under existing harnesses | `@naro/adapter-harness` (Claude Agent SDK, OpenCode) | Shipped |
-| Agent inventory across vendors | Not present | Gap |
-| Enterprise-wide multi-agent orchestration plane | Multi-agent bus exists; no full control-plane inventory/orchestration | Partial |
-| Customer evidence / reference deployments | None public | Gap |
+| Agent inventory across vendors | Not present | Gap → [roadmap](closing-the-gaps.md) |
+| Enterprise-wide multi-agent orchestration plane | Multi-agent bus exists; no full control-plane inventory/orchestration | Partial → [roadmap](closing-the-gaps.md) |
+| Customer evidence / reference deployments | None public | Gap → [roadmap](closing-the-gaps.md) |
 
 ## 3. Positioning relative to Forrester categories
 
@@ -75,22 +77,21 @@ Orchestration maturity is only partially addressed (durable journal + multi-agen
 
 ## 5. Gaps relative to Forrester expectations
 
-| Expectation | Current Naro status |
-|-------------|---------------------|
-| Reference customers / production evidence | None public |
-| Breadth of integrations (Python, major platforms) | TypeScript only; harness adapter for two coding tools |
-| Enterprise identity & inventory | Not present |
-| Published packages & adoption metrics | Packages unpublished by choice |
-| Strategy / roadmap communication to market | Strong internal docs; limited external narrative |
-
-These are the same execution gaps already noted in the internal market-quadrant assessment.
+| Expectation | Current Naro status | Addressed in |
+|-------------|---------------------|--------------|
+| Reference customers / production evidence | None public | [Phase 3](closing-the-gaps.md) |
+| Breadth of integrations (Python, major platforms) | TypeScript only; harness adapter for two coding tools | [Phase 2](closing-the-gaps.md) |
+| Enterprise identity & inventory | Not present | [Phase 2](closing-the-gaps.md) |
+| Published packages & adoption metrics | Packages unpublished by choice | [Phase 1](closing-the-gaps.md) |
+| Strategy / roadmap communication to market | Strong internal docs; limited external narrative | [Phase 1](closing-the-gaps.md) + root `ROADMAP.md` |
 
 ## 6. Suggested analyst narrative
 
-> Naro is an open-source evidence-gated agent kernel that makes authorization and verification non-bypassable runtime states and produces a machine-verifiable evidence record for every run. It aligns with Forrester’s identified blockers to agentic AI scale (executable governance and assurance) and can serve as the runtime control layer beneath coding harnesses or custom agents. It is not an enterprise Agent Control Plane or an AI platform. Adoption and reference evidence remain early.
+> Naro is an open-source evidence-gated agent kernel that makes authorization and verification non-bypassable runtime states and produces a machine-verifiable evidence record for every run. It aligns with Forrester’s identified blockers to agentic AI scale (executable governance and assurance) and can serve as the runtime control layer beneath coding harnesses or custom agents. It is not an enterprise Agent Control Plane or an AI platform. A public 12-month roadmap targets the remaining execution gaps (publishing, language reach, identity/inventory, reference evidence).
 
 ## 7. Related documents
 
+- [Closing the Gaps roadmap](closing-the-gaps.md)
 - [Gartner-style briefing](gartner-briefing.md)
 - [Market quadrant (self-assessed)](../market-quadrant.md)
 - [Positioning](../positioning.md)
