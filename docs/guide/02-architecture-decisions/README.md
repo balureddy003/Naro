@@ -7,5 +7,8 @@ Decision frameworks for the choices that most affect production safety, cost, an
 - [Single-agent vs multi-agent](single-vs-multi-agent.md)
 - [Where to place verification](verification-placement.md)
 - [Sync vs async approval](approval-style.md)
+- [Model neutrality](model-neutrality.md)
+- [Data-contract strictness](data-contract-strictness.md)
+- [In-process vs remote hands](in-process-vs-remote-hands.md)
 
-More decision pages (model neutrality, data-contract strictness, in-process vs remote hands) will follow.
+See also the [diagrams](../diagrams/).

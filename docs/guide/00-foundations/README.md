@@ -42,4 +42,6 @@ Naro is designed so the first two are structural. The guide shows how to close t
 
 Autonomy is a policy configuration, not an architecture change.
 
+Visual summaries: [Diagrams](../diagrams/).
+
 Next: [Patterns](../01-patterns/) or jump to [Production Gaps](../03-production-gaps/).
