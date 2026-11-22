@@ -10,11 +10,11 @@ This section maps those gaps to concrete mechanisms in Naro and lists what remai
 |-----|------|-----------------|
 | Capability–Deployment Verification Gap | [verification-gap.md](verification-gap.md) | Verification state, evidence record, hash-chained journal, `naro verify` |
 | Governance, risk controls, and autonomy levels | [governance-and-autonomy.md](governance-and-autonomy.md) | Required policy gate, human approval, provenance, autonomy as policy |
-| No test / regression gate | (planned) | `naro bench --baseline`, contract tests |
-| Loose / unstructured output | (planned) | Schema, predicate, and composite verifiers |
-| Dirty data and legacy integration | (planned) | Environment contracts, provenance, domain profiles |
-| Unclear ownership and operating discipline | (planned) | Journal as accountability artifact |
-| Unclear business value and cost | (planned) | Budgets, evaluation metrics |
+| No test / regression gate | [test-and-regression-gates.md](test-and-regression-gates.md) | `naro bench --baseline`, contract tests |
+| Loose / unstructured output | [output-contracts.md](output-contracts.md) | Schema, predicate, and composite verifiers |
+| Dirty data and legacy integration | [data-and-integration.md](data-and-integration.md) | Environment contracts, provenance, domain profiles |
+| Unclear ownership and operating discipline | [ownership-and-ops.md](ownership-and-ops.md) | Journal as accountability artifact |
+| Unclear business value and cost | [cost-and-value.md](cost-and-value.md) | Budgets, evaluation metrics |
 
 ## How to read these pages
 

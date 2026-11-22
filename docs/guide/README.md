@@ -27,3 +27,10 @@ The existing [learning course](../learn/) remains available and is linked from r
 - Domain safety lives below the model (jails, allowlists, contracts), not only in prompts.
 
 These are enforced in Naro. The guide explains why they matter and how to apply the same thinking even outside this codebase.
+
+## Current status
+
+- Foundations: started
+- Patterns: verification strategies added
+- Production Gaps: full index complete
+- Architecture Decisions, Reference Architectures, and Exercises: next
