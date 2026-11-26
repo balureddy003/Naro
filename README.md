@@ -152,7 +152,7 @@ const result = await runner.run();
 | `@naro/observability` | metrics, redaction, JSONL/console export, and SQLite event journal | core |
 | `@naro/evaluation` | `BenchmarkRunner`: cases → real runs → outcome checks and event metrics | core, runtime, observability |
 | `@naro/verification` | Schema, predicate, command, human, composite, and calibrated LLM-judge verifiers | core, model, tools |
-| `@naro/templates` | Pre-built, pre-verified outcome bundles (`invoice-extractor`, `transaction-categorizer`) — goal + tools + policy + verifier + budget + tier config, packaged once | core, runtime, policy, verification, reasoning |
+| `@naro/templates` | Pre-built, pre-verified outcome bundles (`invoice-extractor`, `transaction-categorizer`, `code-change`) — goal + tools + policy + verifier + budget + tier config, packaged once | core, runtime, policy, verification, reasoning, profile-coding |
 | `@naro/multiagent` | directory, local/HTTP/durable buses, JWT hooks, policy-gated delegation | core, tools |
 | `@naro/adapter-openai` | OpenAI-compatible `Model`/`Provider` (OpenAI, Ollama, vLLM, …) — raw fetch, injectable | core, model |
 | `@naro/adapter-mcp` | MCP `ToolSource`: discovered server tools flow through the standard pipeline | core, tools |

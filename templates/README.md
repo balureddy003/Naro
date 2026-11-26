@@ -11,7 +11,7 @@ the reasoner tiers, so the same template runs on a laptop or a fleet.
 
 ```mermaid
 flowchart LR
-    DATA["Raw input<br/>(transaction / invoice)"] --> T["Template.build(input, tiers)"]
+    DATA["Raw input<br/>(transaction / invoice / code task)"] --> T["Template.build(input, tiers)"]
     T --> RUN["AgentRunner<br/>(your model tiers, template's gate + verifier)"]
     RUN --> V{"Verifier"}
     V -->|pass| RESULT["Completed result"]
@@ -55,10 +55,14 @@ trust mechanism, not a nice-to-have.
 - **The verifier is the template.** A completion claim only completes if
   the verifier passes — a category outside the allowed set fails and
   triggers replanning/escalation, not a wrong-but-confident finish.
-- **Least privilege by construction.** Template tools are read-only and
-  gated on a template-scoped grant (`finance.categorize`); the composed
-  policy denies every other target — a hallucinated `tool://` call can
-  never execute.
+- **Least privilege by construction.** `transaction-categorizer` and
+  `invoice-extractor`'s tools are read-only and gated on a template-scoped
+  grant (`finance.categorize`); the composed policy denies every other
+  target, so a hallucinated `tool://` call can never execute. `code-change`
+  has real write/delete/shell capability — for that template, least
+  privilege instead means a jailed `WorkspaceEnvironment` plus
+  `approvalFor: ['destructive']` and `denyExternalTriggered`, the same
+  defense `examples/production-agent` uses, not read-only tools.
 - **Cost is declared before running.** `template.outcome` states the
   expected spend and success threshold; `build()` enforces the budget via
   `AgentDeps.budgets` (the run fails fast past the cap).
@@ -72,6 +76,20 @@ trust mechanism, not a nice-to-have.
 |---|---|---|---|
 | `transaction-categorizer` | 0.1.0 | bank/card transaction → chart of accounts | category ∈ allowed set + confidence floor |
 | `invoice-extractor` | 0.1.0 | document text → {vendor, date, lineItems, total} | schema-valid **and** arithmetically reconciled |
+| `code-change` | 0.1.0 | a coding task against a real, jailed workspace → a change on disk | the project's own check command exits 0 — a real `CommandVerifier`, not a model claim |
+
+`code-change` is the odd one out, deliberately: it's the only template whose
+tools have real write/delete/shell side effects, and its verifier runs an
+actual shell command against the actual workspace rather than checking the
+model's text output. It packages the exact composition
+`examples/production-agent` wires by hand
+(`@naro/profile-coding` + policy's `approvalFor`/`denyExternalTriggered` +
+`CommandVerifier`) so a caller states a task and a disposable workspace
+instead of assembling that composition from scratch. See
+`templates/src/code-change.test.ts` for the three behaviors that make it
+trustworthy: a real file change the verify command actually depends on, a
+destructive action (`run_command`) blocked on approval, and a verification
+failure that blocks completion even when the model claims success.
 
 Templates version independently — improving one never forces re-testing
 the others (PRD-002 req 4).

@@ -22,6 +22,9 @@
       "path": "../model"
     },
     {
+      "path": "../profiles/coding"
+    },
+    {
       "path": "../reasoning"
     },
     {
