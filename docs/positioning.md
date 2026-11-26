@@ -126,9 +126,11 @@ direction.
   Naro `Action`, runs the policy gate, and journals the verdict plus the
   post-execution observation — all hash-chained, so `naro verify` works on
   runs Naro did not drive. Shape mappers for Claude Agent SDK hooks
-  (`PreToolUse`/`PostToolUse` → `permissionDecision`) and OpenCode plugins
-  (`tool.execute.before/after`) ship without vendor dependencies. Codex CLI
-  has no documented tool-call hook today and is not claimed. See
+  (`PreToolUse`/`PostToolUse` → `permissionDecision`), OpenCode plugins
+  (`tool.execute.before/after`), and Devin CLI's `hooks.v1.json` command-hook
+  contract (no per-call id, so the kernel's FIFO fallback carries it) ship
+  without vendor dependencies. Codex CLI has no documented tool-call hook
+  today and is not claimed. See
   [ADR 0009](adr/0009-governance-beneath-foreign-harnesses.md).
 - Coding-profile parity: `RepoContextSource` (git branch/status/commits +
   `AGENTS.md`/`README` as query-independent context), `cacheBreakpoint` /

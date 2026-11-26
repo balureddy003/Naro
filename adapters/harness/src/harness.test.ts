@@ -7,6 +7,7 @@ import {
 import { harnessKernel } from './kernel.ts';
 import { claudeHooks } from './claude.ts';
 import { openCodePlugin } from './opencode.ts';
+import { devinHooks } from './devin.ts';
 
 const kernel = (policy: PolicyEngine = allowAllPolicy, verifier?: Verifier) =>
   harnessKernel({
@@ -90,6 +91,67 @@ test('openCodePlugin: before throws on deny, after records the result', async ()
 
   assert.equal(verifyChain(k.journal()).ok, true);
   assert.ok(k.journal().some((e) => e.type === 'action.completed'));
+});
+
+test('devinHooks: deny maps to a block decision, allow returns {}', async () => {
+  const denyEnv: PolicyEngine = {
+    evaluate: (a) => String((a.input as { command?: string }).command ?? '').includes('rm -rf') ? 'deny' : 'allow',
+  };
+  const hooks = devinHooks(kernel(denyEnv));
+
+  const blocked = await hooks.preToolUse({ tool_name: 'exec', tool_input: { command: 'rm -rf /' }, session_id: 's1', prompt_id: 'p1' });
+  assert.equal(blocked.decision, 'block');
+  assert.match(blocked.reason ?? '', /denied by policy/);
+
+  const ok = await hooks.preToolUse({ tool_name: 'exec', tool_input: { command: 'ls' }, session_id: 's1', prompt_id: 'p1' });
+  assert.deepEqual(ok, {});
+
+  await hooks.postToolUse({
+    tool_name: 'exec', tool_input: { command: 'ls' }, session_id: 's1', prompt_id: 'p1',
+    tool_response: { success: true, output: 'file1\nfile2' },
+  });
+  assert.ok(true);
+});
+
+test('devinHooks: require_approval has no ask path, so it surfaces as a block', async () => {
+  const hooks = devinHooks(kernel({ evaluate: () => 'require_approval' }));
+  const res = await hooks.preToolUse({ tool_name: 'write', tool_input: { path: 'x' } });
+  assert.equal(res.decision, 'block');
+  // kernel.gateTool's own default reason for require_approval, carried through —
+  // devinHooks' 'requires human approval' fallback only fires if a policy
+  // somehow returns 'ask' with no reason at all.
+  assert.match(res.reason ?? '', /requires approval/);
+});
+
+test('devinHooks: a failed tool_response journals as a failed observation', async () => {
+  const k = kernel();
+  k.startSession();
+  const hooks = devinHooks(k);
+  await hooks.preToolUse({ tool_name: 'exec', tool_input: { command: 'false' } });
+  await hooks.postToolUse({
+    tool_name: 'exec', tool_input: { command: 'false' },
+    tool_response: { success: false, error: 'exit code 1' },
+  });
+  const completed = k.journal().find((e) => e.type === 'action.completed');
+  const obs = (completed!.data as { observation: { success: boolean; error?: string } }).observation;
+  assert.equal(obs.success, false);
+  assert.equal(obs.error, 'exit code 1');
+});
+
+test('devinHooks: no per-call id — results pair by FIFO issue order, same as any harness without one', async () => {
+  const k = kernel();
+  k.startSession();
+  const hooks = devinHooks(k);
+  await hooks.preToolUse({ tool_name: 'A', tool_input: 1 });
+  await hooks.preToolUse({ tool_name: 'B', tool_input: 2 });
+  // Devin never supplies a call id, so results resolve in the order the
+  // calls were gated — first gated, first observed.
+  await hooks.postToolUse({ tool_name: 'A', tool_input: 1, tool_response: { success: true, output: 'a-result' } });
+  await hooks.postToolUse({ tool_name: 'B', tool_input: 2, tool_response: { success: true, output: 'b-result' } });
+
+  const completed = k.journal().filter((e) => e.type === 'action.completed');
+  assert.equal((completed[0]!.data as { action: { target: string } }).action.target, 'tool://A');
+  assert.equal((completed[1]!.data as { action: { target: string } }).action.target, 'tool://B');
 });
 
 test('results pair with their gated action by callId', async () => {

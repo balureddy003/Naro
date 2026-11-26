@@ -269,8 +269,9 @@ Implemented in this repository:
   buses; policy-gated `delegate` tool with bounded subagents (depth cap,
   capability allowlist, grant subset, scoped context).
 - Harness governance: `@naro/adapter-harness` runs the policy gate, verifier,
-  and hash-chained journal beneath Claude Agent SDK hooks and OpenCode
-  plugins — `naro verify` works on runs Naro did not drive.
+  and hash-chained journal beneath Claude Agent SDK hooks, OpenCode plugins,
+  and Devin CLI's `hooks.v1.json` command hooks — `naro verify` works on runs
+  Naro did not drive.
 - Profiles: coding, research, browser, data, devops, workflow, robotics.
   Coding includes `RepoContextSource` (git state + `AGENTS.md`/`README`).
 - Prompt caching: `cacheBreakpoint`/`cacheTools` markers map to Anthropic

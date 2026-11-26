@@ -1,8 +1,11 @@
 # @naro/adapter-harness
 
-Governance beneath foreign agent harnesses — keep Claude Agent SDK or
-OpenCode's model, tools, and UI; gain Naro's policy gate, verifier, and
-hash-chained journal.
+Governance beneath foreign agent harnesses — keep Claude Agent SDK, OpenCode,
+or Devin CLI's model, tools, and UI; gain Naro's policy gate, verifier, and
+hash-chained journal. The same kernel underneath all three means one project
+with contributors on different harnesses gets one governance layer and one
+evidence record, not a separate hook config per harness that can drift out
+of sync — see [ADR 0009](../../docs/adr/0009-governance-beneath-foreign-harnesses.md).
 
 ## The shape
 
@@ -18,6 +21,11 @@ const hooks = claudeHooks(kernel);
 export const Governed = openCodePlugin(kernel);
 //   tool.execute.before → throws on deny (OpenCode's block mechanism)
 //   tool.execute.after  → kernel.observeTool()
+
+// Devin CLI — a .devin/hooks.v1.json command hook
+const devin = devinHooks(kernel);
+//   PreToolUse  → kernel.gateTool()  → {decision: 'approve'|'block', reason}
+//   PostToolUse → kernel.observeTool() → journaled observation
 ```
 
 The kernel maps every foreign tool call to a Naro `Action`, evaluates it
@@ -33,7 +41,11 @@ evidence too. Results land as `Observation`s, `endSession` optionally runs a
 - A harness that ignores a deny verdict defeats the gate — the journal still
   records the verdict, which is the audit trail's job.
 - 'ask' maps to the harness's own approval UI where one exists (Claude SDK's
-  `permissionDecision: 'ask'`); OpenCode has no ask path, so
-  `require_approval` surfaces as a deny carrying the reason.
+  `permissionDecision: 'ask'`); OpenCode and Devin CLI have no documented ask
+  path for a command/plugin hook, so `require_approval` surfaces as a deny
+  (OpenCode) or a `block` decision (Devin) carrying the reason either way.
+- Devin CLI has no per-call correlation id in its hook payloads (only a
+  per-session id and a per-prompt id shared by every hook in one turn) — the
+  FIFO fallback below is load-bearing for it, not an edge case.
 - `signals` and secrets never cross a boundary; see ADR 0008 for the same
   rule on remote environments.
