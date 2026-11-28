@@ -132,6 +132,9 @@
     },
     {
       "path": "templates"
+    },
+    {
+      "path": "factory"
     }
   ],
   "extends": "./tsconfig.base.json",

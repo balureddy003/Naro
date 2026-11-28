@@ -19,6 +19,7 @@
     "evaluation",
     "verification",
     "templates",
+    "factory",
     "multiagent",
     "adapters/*",
     "contract-tests",
